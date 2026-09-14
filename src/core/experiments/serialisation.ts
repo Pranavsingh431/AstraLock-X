@@ -23,7 +23,12 @@
 
 import type { z } from 'zod';
 
-import { evaluationSampleSchema, experimentEventSchema, telemetrySampleSchema } from './schema';
+import {
+  TELEMETRY_V2_COLUMNS,
+  evaluationSampleSchema,
+  experimentEventSchema,
+  telemetrySampleSchema,
+} from './schema';
 import type { EvaluationSample, ExperimentEvent, TelemetrySample } from './schema';
 
 type ColumnKind = 'number' | 'nullable-number' | 'boolean' | 'text';
@@ -48,6 +53,10 @@ function columnsOf(schema: z.ZodObject): readonly Column[] {
 }
 
 export const TELEMETRY_COLUMNS = columnsOf(telemetrySampleSchema);
+/** The telemetry columns a schema-v1 (Phase 5) file has. */
+export const TELEMETRY_V1_COLUMNS = TELEMETRY_COLUMNS.filter(
+  (column) => !(TELEMETRY_V2_COLUMNS as readonly string[]).includes(column.name),
+);
 export const EVALUATION_COLUMNS = columnsOf(evaluationSampleSchema);
 
 /** Exact text for a double. */
@@ -119,12 +128,23 @@ function parseCell(column: Column, text: string): unknown {
 export class CsvSampleParser<T> {
   private headerSeen = false;
   private lineNumber = 0;
+  private active: readonly Column[];
+  private absent: readonly Column[] = [];
 
+  /**
+   * @param columns the current schema's columns, in order
+   * @param earlier column layouts of earlier schema versions this build still
+   *   reads. A file with one of those exact headers is parsed with it, and the
+   *   columns it lacks are read as empty.
+   */
   constructor(
     private readonly columns: readonly Column[],
     private readonly schema: z.ZodType<T>,
     private readonly fileName: string,
-  ) {}
+    private readonly earlier: readonly (readonly Column[])[] = [],
+  ) {
+    this.active = columns;
+  }
 
   /** Returns the parsed row, or `null` for the header and blank lines. */
   public line(text: string): T | null {
@@ -132,26 +152,29 @@ export class CsvSampleParser<T> {
     if (text.trim().length === 0) return null;
 
     if (!this.headerSeen) {
-      const expected = header(this.columns);
-      if (text !== expected) {
+      const layout = [this.columns, ...this.earlier].find((columns) => header(columns) === text);
+      if (layout === undefined) {
         throw new Error(
-          `${this.fileName}: header does not match this schema version.\n  expected ${expected}\n  found    ${text}`,
+          `${this.fileName}: header does not match any schema version this build reads.\n  expected ${header(this.columns)}\n  found    ${text}`,
         );
       }
+      this.active = layout;
+      this.absent = this.columns.filter((column) => !layout.includes(column));
       this.headerSeen = true;
       return null;
     }
 
     const cells = text.split(',');
-    if (cells.length !== this.columns.length) {
+    if (cells.length !== this.active.length) {
       throw new Error(
-        `${this.fileName}:${String(this.lineNumber)}: expected ${String(this.columns.length)} cells, found ${String(cells.length)}`,
+        `${this.fileName}:${String(this.lineNumber)}: expected ${String(this.active.length)} cells, found ${String(cells.length)}`,
       );
     }
     const record: Record<string, unknown> = {};
-    this.columns.forEach((column, index) => {
+    this.active.forEach((column, index) => {
       record[column.name] = parseCell(column, cells[index]!);
     });
+    for (const column of this.absent) record[column.name] = null;
 
     const parsed = this.schema.safeParse(record);
     if (!parsed.success) {
@@ -169,7 +192,9 @@ export class CsvSampleParser<T> {
 }
 
 export const telemetryParser = (): CsvSampleParser<TelemetrySample> =>
-  new CsvSampleParser(TELEMETRY_COLUMNS, telemetrySampleSchema, 'telemetry.csv');
+  new CsvSampleParser(TELEMETRY_COLUMNS, telemetrySampleSchema, 'telemetry.csv', [
+    TELEMETRY_V1_COLUMNS,
+  ]);
 
 export const evaluationParser = (): CsvSampleParser<EvaluationSample> =>
   new CsvSampleParser(EVALUATION_COLUMNS, evaluationSampleSchema, 'evaluation.csv');

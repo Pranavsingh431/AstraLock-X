@@ -12,6 +12,11 @@
 
 import { type SimulationConfig, parseSimulationConfig } from '@/core/contracts/simulation';
 
+import astralockHandoff from './astralock-handoff.json';
+import astralockManeuver from './astralock-maneuver.json';
+import astralockMoving from './astralock-moving.json';
+import astralockShortLoss from './astralock-short-loss.json';
+import astralockStationary from './astralock-stationary.json';
 import cameraBoresight from './camera-boresight.json';
 import cameraOutsideFov from './camera-target-outside-fov.json';
 import circular from './circular.json';
@@ -42,6 +47,11 @@ export const SCENARIO_IDS = [
   'pat-stationary-outside-fov',
   'pat-moving-target',
   'pat-loss',
+  'astralock-stationary',
+  'astralock-moving',
+  'astralock-maneuver',
+  'astralock-short-loss',
+  'astralock-handoff',
 ] as const;
 
 export type ScenarioId = (typeof SCENARIO_IDS)[number];
@@ -61,6 +71,11 @@ const RAW_SCENARIOS: Record<ScenarioId, unknown> = {
   'pat-stationary-outside-fov': patStationary,
   'pat-moving-target': patMoving,
   'pat-loss': patLoss,
+  'astralock-stationary': astralockStationary,
+  'astralock-moving': astralockMoving,
+  'astralock-maneuver': astralockManeuver,
+  'astralock-short-loss': astralockShortLoss,
+  'astralock-handoff': astralockHandoff,
 };
 
 const cache = new Map<ScenarioId, SimulationConfig>();

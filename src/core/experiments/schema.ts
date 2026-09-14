@@ -27,8 +27,21 @@ import { z } from 'zod';
 
 import { measurementSchema } from '@/core/contracts/measurement';
 
-/** Bumped whenever a stored artifact's shape changes incompatibly. */
-export const EXPERIMENT_SCHEMA_VERSION = 1;
+/**
+ * Version of the stored artifact format.
+ *
+ * - **1** — Phase 5.
+ * - **2** — Phase 6: telemetry gains nullable columns for estimator and
+ *   recovery diagnostics, and the summary gains optional handoff, recovery and
+ *   estimator sections.
+ *
+ * Every version listed in {@link SUPPORTED_SCHEMA_VERSIONS} still loads,
+ * recomputes and verifies. A run is always read under the version it declares.
+ */
+export const EXPERIMENT_SCHEMA_VERSION = 2;
+export const SUPPORTED_SCHEMA_VERSIONS = [1, 2] as const;
+const schemaVersionSchema = z.union([z.literal(1), z.literal(2)]);
+export type ExperimentSchemaVersion = z.infer<typeof schemaVersionSchema>;
 
 /**
  * Version of the *metric definitions*, separate from the file format.
@@ -38,7 +51,26 @@ export const EXPERIMENT_SCHEMA_VERSION = 1;
  * recomputation under a different version is a new result rather than a
  * correction of the old one.
  */
-export const METRICS_DEFINITION_VERSION = 1;
+export const METRICS_DEFINITION_VERSION = 2;
+
+/**
+ * The PAT modes that count as the algorithm claiming a measured track, per
+ * metrics-definition version.
+ *
+ * - **v1** (Phase 5): `track` only — the only such state the baseline has.
+ * - **v2** (Phase 6): `track` and `handoff`. Handoff-ready is tracking with
+ *   stricter conditions met, so time spent there must not count against the
+ *   tracker. `reacquire` (RECOVER) is **not** included: it is the algorithm
+ *   stating that it has lost measurement support, even while it keeps pointing
+ *   at its prediction.
+ *
+ * For the baseline, which never reports `handoff`, the two versions give
+ * identical results.
+ */
+export const TRACKING_MODES: Readonly<Record<number, readonly string[]>> = {
+  1: ['track'],
+  2: ['track', 'handoff'],
+};
 
 // --- Lifecycle --------------------------------------------------------------
 
@@ -66,6 +98,7 @@ export const terminationReasonSchema = z.enum([
   'autonomy-disabled',
   'simulation-reset',
   'scenario-changed',
+  'algorithm-changed',
   'runtime-error',
   'writer-error',
 ]);
@@ -73,9 +106,7 @@ export type TerminationReason = z.infer<typeof terminationReasonSchema>;
 
 // --- Metric definitions -----------------------------------------------------
 
-/** The thresholds a run is scored against. Recorded so a score is reproducible. */
-export const metricsConfigSchema = z.strictObject({
-  definitionVersion: z.literal(METRICS_DEFINITION_VERSION),
+const metricsThresholdFields = {
   /** Angular pointing error at or below which the evaluator calls it locked. */
   lockErrorThresholdRad: z.number().positive(),
   /** How long the lock condition must hold continuously before lock is confirmed. */
@@ -92,16 +123,39 @@ export const metricsConfigSchema = z.strictObject({
   /**
    * How close a detection must be to the designated emitter's true projected
    * centre to count as a detection *of that emitter*.
-   *
-   * Used for the first-detection milestone. A candidate that is nearer another
-   * emitter, or far from every emitter, is not a detection of the target.
    */
   detectionAssociationRadiusPx: z.number().positive(),
+};
+
+/** Metrics definition v1 (Phase 5). Still accepted for every run recorded under it. */
+export const metricsConfigV1Schema = z.strictObject({
+  definitionVersion: z.literal(1),
+  ...metricsThresholdFields,
 });
+
+/** Metrics definition v2 (Phase 6): v1 plus handoff validity, and HANDOFF counts as tracking. */
+export const metricsConfigV2Schema = z.strictObject({
+  definitionVersion: z.literal(2),
+  ...metricsThresholdFields,
+  /**
+   * True angular pointing error at or below which a handoff-ready claim is
+   * judged physically valid by the evaluator.
+   */
+  handoffValidityThresholdRad: z.number().positive(),
+});
+
+/** The thresholds a run is scored against. Recorded so a score is reproducible. */
+export const metricsConfigSchema = z.discriminatedUnion('definitionVersion', [
+  metricsConfigV1Schema,
+  metricsConfigV2Schema,
+]);
 export type MetricsConfig = z.infer<typeof metricsConfigSchema>;
 
 export const DEFAULT_METRICS_CONFIG: MetricsConfig = metricsConfigSchema.parse({
   definitionVersion: METRICS_DEFINITION_VERSION,
+  // One milliradian: half the coarse-lock threshold. A handoff-ready claim is a
+  // claim of better-than-coarse alignment, so it is held to a tighter bar.
+  handoffValidityThresholdRad: 1e-3,
   // Two milliradians. The bundled cameras have a 12-degree field, so this is
   // about 1% of the field: comfortably inside, and far tighter than "somewhere
   // in frame", but loose enough that the mount's own deadband and backlash do
@@ -181,7 +235,7 @@ export type ArtifactClassification = z.infer<typeof artifactClassificationSchema
 
 /** Everything needed to know what was run, and to run it again. */
 export const experimentManifestSchema = z.strictObject({
-  schemaVersion: z.literal(EXPERIMENT_SCHEMA_VERSION),
+  schemaVersion: schemaVersionSchema,
   metricsDefinitionVersion: z.number().int().positive(),
 
   /** Identity of this *recording*. Not deterministic; see the fingerprints. */
@@ -290,7 +344,12 @@ export const experimentEventTypeSchema = z.enum([
   'operator-override',
   'search-started',
   'candidate-detected',
+  'acquire-entered',
   'track-entered',
+  'recover-entered',
+  'reacquired',
+  'handoff-ready',
+  'handoff-lost',
   'detection-missed',
   'lock-lost',
   'lost-entered',
@@ -390,8 +449,48 @@ export const telemetrySampleSchema = z.strictObject({
   host_estimator_ms: z.number().nullable(),
   host_controller_ms: z.number().nullable(),
   host_orchestration_ms: z.number(),
+  // --- Schema v2: estimator, association, control and recovery diagnostics.
+  // Empty for an algorithm that does not report them, and for every v1 file.
+  track_quality: z.number().nullable(),
+  acquisition_evidence: z.number().nullable(),
+  innovation_nis: z.number().nullable(),
+  gate_accepted: z.number().nullable(),
+  imm_cv_probability: z.number().nullable(),
+  imm_ca_probability: z.number().nullable(),
+  filtered_azimuth_accel_rad_s2: z.number().nullable(),
+  filtered_elevation_accel_rad_s2: z.number().nullable(),
+  angular_sigma_rad: z.number().nullable(),
+  prediction_horizon_s: z.number().nullable(),
+  predicted_azimuth_rad: z.number().nullable(),
+  predicted_elevation_rad: z.number().nullable(),
+  feedforward_pan_rad: z.number().nullable(),
+  feedforward_tilt_rad: z.number().nullable(),
+  recovery_age_s: z.number().nullable(),
+  local_search_radius_rad: z.number().nullable(),
+  handoff_dwell_s: z.number().nullable(),
 });
 export type TelemetrySample = z.infer<typeof telemetrySampleSchema>;
+
+/** Telemetry columns added in schema v2; absent from v1 files and read as empty. */
+export const TELEMETRY_V2_COLUMNS = [
+  'track_quality',
+  'acquisition_evidence',
+  'innovation_nis',
+  'gate_accepted',
+  'imm_cv_probability',
+  'imm_ca_probability',
+  'filtered_azimuth_accel_rad_s2',
+  'filtered_elevation_accel_rad_s2',
+  'angular_sigma_rad',
+  'prediction_horizon_s',
+  'predicted_azimuth_rad',
+  'predicted_elevation_rad',
+  'feedforward_pan_rad',
+  'feedforward_tilt_rad',
+  'recovery_age_s',
+  'local_search_radius_rad',
+  'handoff_dwell_s',
+] as const;
 
 // --- Evaluation (privileged) ------------------------------------------------
 
@@ -499,8 +598,38 @@ export type RetentionStatus = z.infer<typeof retentionStatusSchema>;
  * telemetry.csv, evaluation.csv and the manifest — and `recomputeSummary` does
  * exactly that. Nothing here is typed in by anyone.
  */
+/** Handoff-readiness results (metrics definition v2). */
+const handoffSummarySchema = z.strictObject({
+  firstHandoffReadyTime: measurementSchema,
+  /** First handoff-ready instant minus search start. */
+  timeToHandoffReady: measurementSchema,
+  episodes: z.number().int().nonnegative(),
+  durationSeconds: measurementSchema,
+  /** Handoff-ready time during which true pointing error met the validity threshold. */
+  validDurationSeconds: measurementSchema,
+  validityRate: measurementSchema,
+});
+
+/** The algorithm's own recovery attempts, from its RECOVER transitions (v2). */
+const algorithmRecoverySummarySchema = z.strictObject({
+  entries: z.number().int().nonnegative(),
+  reacquired: z.number().int().nonnegative(),
+  fellBackToSearch: z.number().int().nonnegative(),
+  /** Still in RECOVER when the run ended. Censored, not dropped. */
+  unresolved: z.number().int().nonnegative(),
+  /** RECOVER entry to reacquisition, over successful recoveries only. */
+  recoveryTime: statisticsSchema,
+});
+
+/** What an interacting-multiple-model estimator reported, if the algorithm has one (v2). */
+const estimatorSummarySchema = z.strictObject({
+  framesWithModelProbabilities: z.number().int().nonnegative(),
+  /** Constant-acceleration model probability over frames in a tracking mode. */
+  caProbabilityWhileTracking: statisticsSchema,
+});
+
 export const experimentSummarySchema = z.strictObject({
-  schemaVersion: z.literal(EXPERIMENT_SCHEMA_VERSION),
+  schemaVersion: schemaVersionSchema,
   metricsDefinitionVersion: z.number().int().positive(),
   metricsFingerprint: z.string().min(1),
   runId: z.string().min(1),
@@ -557,6 +686,14 @@ export const experimentSummarySchema = z.strictObject({
   falseLockRate: measurementSchema,
 
   // --- Host processing time (wall clock, diagnostics) ---
+  /**
+   * Coarse-to-fine handoff, or `null` for an algorithm that has no such state.
+   *
+   * Nullable rather than a block of N/A rows: the baseline cannot reach handoff
+   * readiness at all, and a report that showed it an empty handoff table would
+   * be describing a capability it does not have. Only produced under metrics
+   * definition v2 and later, which is where the concept was introduced.
+   */
   hostProcessingTime: z.strictObject({
     worldStep: statisticsSchema,
     sensorFrameGeneration: statisticsSchema,
@@ -579,5 +716,12 @@ export const experimentSummarySchema = z.strictObject({
     captureToApplication: statisticsSchema,
     scheduledToActualApplication: statisticsSchema,
   }),
+
+  // --- Metrics definition v2 only. Absent from every v1 summary.
+  /** The PAT modes this summary treated as the algorithm claiming a track. */
+  trackingModes: z.array(z.string()).optional(),
+  handoff: handoffSummarySchema.optional(),
+  algorithmRecovery: algorithmRecoverySummarySchema.optional(),
+  estimator: estimatorSummarySchema.optional(),
 });
 export type ExperimentSummary = z.infer<typeof experimentSummarySchema>;

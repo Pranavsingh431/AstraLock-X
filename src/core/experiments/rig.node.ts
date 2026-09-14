@@ -7,8 +7,8 @@
  */
 
 import { DEFAULT_BASELINE_PAT_CONFIG, baselineKfPidPat } from '@/core/algorithms';
-import type { BaselinePatConfig } from '@/core/algorithms/baseline/config';
 import type { SimulationConfig } from '@/core/contracts/simulation';
+import type { AlgorithmPlugin } from '@/core/contracts/algorithm-plugin';
 import type { LoopObserver } from '@/core/runtime/closed-loop';
 import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';
 import { SimulationEngine } from '@/core/simulation/engine';
@@ -30,7 +30,13 @@ export interface Rig {
 
 export interface RigOptions {
   readonly scenario: ScenarioId | SimulationConfig;
-  readonly algorithmConfig?: BaselinePatConfig;
+  /**
+   * Which tracker to run. Defaults to the baseline, so every Phase 5 caller
+   * keeps the arm it was written against.
+   */
+  readonly plugin?: AlgorithmPlugin<unknown, unknown>;
+  /** Its configuration. Must match the plugin; defaults to the baseline's. */
+  readonly algorithmConfig?: unknown;
   readonly storage?: ExperimentStorage | null;
   readonly runId?: string;
   readonly metricsConfig?: MetricsConfig;
@@ -42,6 +48,7 @@ export interface RigOptions {
 export function buildRig(options: RigOptions): Rig {
   const config =
     typeof options.scenario === 'string' ? loadScenario(options.scenario) : options.scenario;
+  const plugin = options.plugin ?? baselineKfPidPat;
   const algorithmConfig = options.algorithmConfig ?? DEFAULT_BASELINE_PAT_CONFIG;
   const engine = new SimulationEngine(config);
   const sensor = new VirtualCameraSensor({ config: engine.config });
@@ -54,8 +61,8 @@ export function buildRig(options: RigOptions): Rig {
           engine,
           config: engine.config,
           scenarioId: config.id,
-          algorithmId: baselineKfPidPat.manifest.id,
-          algorithmVersion: baselineKfPidPat.manifest.version,
+          algorithmId: plugin.manifest.id,
+          algorithmVersion: plugin.manifest.version,
           algorithmConfig,
           metricsConfig: options.metricsConfig,
           applicationVersion: '0.0.0-test',
@@ -72,7 +79,7 @@ export function buildRig(options: RigOptions): Rig {
     engine,
     sensor,
     sampler: new ExactWorldSampler(engine),
-    plugin: baselineKfPidPat,
+    plugin,
     config: algorithmConfig,
     // Unbounded, so a comparison sees every command rather than the last 256.
     historyLimit: Number.MAX_SAFE_INTEGER,

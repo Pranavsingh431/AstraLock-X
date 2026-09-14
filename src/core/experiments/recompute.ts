@@ -112,6 +112,7 @@ export async function summariseStoredRun(
       ? manifest.metricsConfig
       : metricsConfigSchema.parse(options.metricsConfig);
   const builder = new SummaryBuilder({
+    schemaVersion: manifest.schemaVersion,
     runId: manifest.runId,
     metricsConfig,
     metricsFingerprint: fingerprint(metricsConfig),

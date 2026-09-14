@@ -25,7 +25,16 @@ import type { Decibels, Radians, Seconds } from './units';
  * deliberately left to the robust algorithm, and the baseline must not be able
  * to claim it.
  */
-export type PATMode = 'idle' | 'scan' | 'acquire' | 'track' | 'lost' | 'reacquire' | 'fault';
+/**
+ * Where a PAT algorithm is.
+ *
+ * `handoff` is **handoff-ready**: the coarse tracker judges that alignment meets
+ * the fine-pointing stage's acceptance conditions and keeps holding it. No
+ * fine-pointing actuator is modelled; the mode says the coarse loop is ready to
+ * hand over, not that anything has taken over.
+ */
+export type PATMode =
+  'idle' | 'scan' | 'acquire' | 'track' | 'lost' | 'reacquire' | 'handoff' | 'fault';
 
 /** Why the mode last changed. Recorded so a run can be explained afterwards. */
 export type PATTransitionReason =

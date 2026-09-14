@@ -140,6 +140,39 @@ function show(measurement: Measurement, digits = 3): string {
   return escape(formatMeasurement(measurement, digits));
 }
 
+/**
+ * A frame rate, quoted to a precision its measurement window can support.
+ *
+ * Every rate here is a count divided by a window, so one frame either way moves
+ * it by `1 / window` fps. Over a minute that is a sixtieth of a frame per
+ * second and three decimals are meaningful; over a fifth of a second it is five
+ * fps and even the units digit is arguable. Printing a fixed three decimals in
+ * both cases claims a precision that does not exist in the second.
+ *
+ * The measured value is never altered — not clamped, not rounded to something
+ * tidier, not replaced by the configured rate. A short window earns fewer
+ * digits and a footnote saying what a single frame is worth, and the count and
+ * the window are both shown so the division can be checked by hand.
+ */
+function rateCell(rate: Measurement, window: Measurement, count: number, noun: string): string {
+  const frames = `${String(count)} ${noun}`;
+  if (rate.value === null || window.value === null || window.value <= 0) {
+    return `${show(rate, 3)} <span class="sub">${frames}</span>`;
+  }
+
+  const perFrame = 1 / window.value;
+  // Digits down to the ±1 frame resolution, capped at three: beyond that the
+  // column is wider than it is informative.
+  const digits = Math.max(0, Math.min(3, Math.ceil(-Math.log10(perFrame))));
+  const worth = perFrame >= 10 ? perFrame.toFixed(0) : perFrame.toFixed(1);
+  const footnote =
+    perFrame >= 0.5
+      ? ` <span class="sub">Short window: one frame either way is ${worth} fps, so this is quoted to ${String(digits)} decimal${digits === 1 ? '' : 's'}.</span>`
+      : '';
+
+  return `${rate.value.toFixed(digits)} fps <span class="sub">${frames} over ${window.value.toFixed(3)} s</span>${footnote}`;
+}
+
 const statRow = (label: string, stats: SummaryStatistics, digits = 3): string => `
   <tr><th>${escape(label)}</th><td>${String(stats.count)}</td><td>${show(stats.mean, digits)}</td><td>${show(stats.rms, digits)}</td><td>${show(stats.median, digits)}</td><td>${show(stats.p95, digits)}</td><td>${show(stats.max, digits)}</td></tr>`;
 
@@ -515,6 +548,77 @@ interface DocumentInputs {
   readonly charts: readonly string[];
 }
 
+/**
+ * Sections that exist only for an algorithm with a robust state machine.
+ *
+ * Rendered conditionally rather than as a block of N/A rows. The baseline
+ * cannot reach handoff readiness or a recovery state at all, and showing it an
+ * empty handoff table would describe a capability it does not have.
+ */
+function robustSections(s: ExperimentSummary): string {
+  const parts: string[] = [];
+  const threshold = (s.metricsConfig as { handoffValidityThresholdRad?: number })
+    .handoffValidityThresholdRad;
+
+  // Whether this run came from an algorithm with a robust state machine at all.
+  //
+  // Decided from what the run *produced*, not from its id: an algorithm that
+  // reported model probabilities, entered recovery, or claimed handoff
+  // readiness has these states; one that did none of those things does not, and
+  // a page of zeroes about capabilities it lacks would be noise. Under metrics
+  // definition v2 the blocks are computed for every run, so the gate is here in
+  // the presentation rather than in the data.
+  const isRobust =
+    (s.estimator?.framesWithModelProbabilities ?? 0) > 0 ||
+    (s.algorithmRecovery?.entries ?? 0) > 0 ||
+    (s.handoff?.episodes ?? 0) > 0;
+
+  if (!isRobust) return '';
+
+  if (s.handoff !== undefined) {
+    parts.push(`
+<h2>Handoff readiness</h2>
+<p class="lede">The coarse tracker's own claim that the target is ready for a future fine-pointing stage, made from measured residual, estimator covariance, estimated rate and track quality. <strong>No fine-pointing actuator exists</strong>: this is readiness, not a handover, and the coarse loop keeps tracking throughout. The validity row is the evaluator's separate verdict on that claim and played no part in making it.</p>
+<table class="kv">
+<tr><th>First ready at</th><td>${show(s.handoff.firstHandoffReadyTime)}</td></tr>
+<tr><th>Time to ready</th><td>${show(s.handoff.timeToHandoffReady)} <span class="sub">from search start</span></td></tr>
+<tr><th>Ready episodes</th><td>${String(s.handoff.episodes)}</td></tr>
+<tr><th>Ready duration</th><td>${show(s.handoff.durationSeconds)}</td></tr>
+<tr><th>Of that, justified</th><td>${show(s.handoff.validDurationSeconds)}${
+      threshold === undefined
+        ? ''
+        : ` <span class="sub">true pointing error within ${(threshold * 1e6).toFixed(0)} µrad</span>`
+    }</td></tr>
+<tr><th>Validity rate</th><td>${show(s.handoff.validityRate, 4)}</td></tr>
+</table>`);
+  }
+
+  if (s.algorithmRecovery !== undefined) {
+    parts.push(`
+<h2>Algorithm recovery</h2>
+<p class="lede">The algorithm's own RECOVER state: coasting its estimate through missing measurements and looking where it predicts, rather than restarting a global sweep. Distinct from the evaluator's loss-of-lock episodes above, which judge pointing rather than algorithm state.</p>
+<table class="kv">
+<tr><th>Entered recovery</th><td>${String(s.algorithmRecovery.entries)} times</td></tr>
+<tr><th>Reacquired from recovery</th><td>${String(s.algorithmRecovery.reacquired)}</td></tr>
+<tr><th>Fell back to global search</th><td>${String(s.algorithmRecovery.fellBackToSearch)}</td></tr>
+<tr><th>Unresolved at end of run</th><td>${String(s.algorithmRecovery.unresolved)}</td></tr>
+</table>
+<table>${statHead('Time in recovery before reacquisition')}<tbody>${statRow('Recovery time', s.algorithmRecovery.recoveryTime)}</tbody></table>`);
+  }
+
+  if (s.estimator !== undefined) {
+    parts.push(`
+<h2>Estimator</h2>
+<p class="lede">Interacting multiple model: a nearly-constant-velocity and a nearly-constant-acceleration model run together, mixed each cycle by their transition probabilities and weighted by measurement likelihood. A rising acceleration-model probability is the estimator reporting a manoeuvre.</p>
+<table class="kv">
+<tr><th>Frames with model probabilities</th><td>${String(s.estimator.framesWithModelProbabilities)}</td></tr>
+</table>
+<table>${statHead('Acceleration-model probability while tracking')}<tbody>${statRow('NCA probability', s.estimator.caProbabilityWhileTracking, 4)}</tbody></table>`);
+  }
+
+  return parts.join('\n');
+}
+
 function document(inputs: DocumentInputs): string {
   const { manifest, summary, scenario, algorithm, notable, notableTotal, charts } = inputs;
   const m = manifest;
@@ -703,11 +807,16 @@ ${
 <tr><th>Rate (of time in TRACK)</th><td>${show(s.falseLockRate)}</td></tr>
 </table>
 
+${robustSections(s)}
 <h2>Frame statistics</h2>
+<p class="note">Four different quantities that all get called "FPS", kept apart: what the camera was <em>configured</em> to do, how many frames were actually <em>generated</em>, the <em>window</em> those frames were counted over, and the <em>observed</em> rate that results. The rates are counts divided by the window and nothing else — no smoothing, and no substitution of the configured figure when the observed one is awkward.</p>
 <table class="kv">
-<tr><th>Configured sensor FPS</th><td>${show(s.configuredSensorFps, 1)}</td></tr>
-<tr><th>Effective sensor FPS</th><td>${show(s.effectiveSensorFps, 3)} <span class="sub">${String(s.sensorFramesGenerated)} frames over ${show(s.autonomousDurationSeconds)} autonomous</span></td></tr>
-<tr><th>Algorithm processed FPS</th><td>${show(s.algorithmProcessedFps, 3)} <span class="sub">${String(s.algorithmFramesProcessed)} frames processed</span></td></tr>
+<tr><th>Configured sensor rate</th><td>${show(s.configuredSensorFps, 1)} <span class="sub">What the camera was asked for, not a measurement.</span></td></tr>
+<tr><th>Measurement window</th><td>${show(s.autonomousDurationSeconds)} <span class="sub">Autonomous operation only. Frames captured before autonomy was enabled are not counted, and neither is the time.</span></td></tr>
+<tr><th>Sensor frames generated</th><td>${String(s.sensorFramesGenerated)}</td></tr>
+<tr><th>Observed sensor rate</th><td>${rateCell(s.effectiveSensorFps, s.autonomousDurationSeconds, s.sensorFramesGenerated, 'frames')}</td></tr>
+<tr><th>Algorithm frames processed</th><td>${String(s.algorithmFramesProcessed)}</td></tr>
+<tr><th>Observed algorithm rate</th><td>${rateCell(s.algorithmProcessedFps, s.autonomousDurationSeconds, s.algorithmFramesProcessed, 'frames processed')}</td></tr>
 <tr><th>Display FPS</th><td><span class="absent">Not measured</span> <span class="sub">The report describes the simulation, not the interface.</span></td></tr>
 <tr><th>Commands</th><td>${String(s.commandsIssued)} issued &middot; ${String(s.commandsApplied)} applied &middot; ${String(s.commandsPendingAtEnd)} still in flight at the end</td></tr>
 </table>

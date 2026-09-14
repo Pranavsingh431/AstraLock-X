@@ -493,6 +493,24 @@ export class ExperimentRecorder implements LoopObserver {
       host_estimator_ms: timings.stages.estimator,
       host_controller_ms: timings.stages.controller,
       host_orchestration_ms: timings.orchestrationMs,
+      track_quality: nullableNumber(debug['trackQuality']),
+      acquisition_evidence: nullableNumber(debug['acquisitionEvidence']),
+      innovation_nis: nullableNumber(debug['innovationNis']),
+      gate_accepted:
+        typeof debug['gateAccepted'] === 'boolean' ? (debug['gateAccepted'] ? 1 : 0) : null,
+      imm_cv_probability: nullableNumber(debug['immCvProbability']),
+      imm_ca_probability: nullableNumber(debug['immCaProbability']),
+      filtered_azimuth_accel_rad_s2: nullableNumber(debug['azimuthAcceleration']),
+      filtered_elevation_accel_rad_s2: nullableNumber(debug['elevationAcceleration']),
+      angular_sigma_rad: nullableNumber(debug['angularSigma']),
+      prediction_horizon_s: nullableNumber(debug['predictionHorizon']),
+      predicted_azimuth_rad: nullableNumber(debug['predictedAzimuth']),
+      predicted_elevation_rad: nullableNumber(debug['predictedElevation']),
+      feedforward_pan_rad: nullableNumber(debug['feedforwardPan']),
+      feedforward_tilt_rad: nullableNumber(debug['feedforwardTilt']),
+      recovery_age_s: nullableNumber(debug['recoveryAge']),
+      local_search_radius_rad: nullableNumber(debug['localSearchRadius']),
+      handoff_dwell_s: nullableNumber(debug['handoffDwell']),
     };
     this.telemetryBatch.push(telemetryRow(telemetry));
     this.telemetryRows += 1;
@@ -526,7 +544,13 @@ export class ExperimentRecorder implements LoopObserver {
     if (this.telemetryBatch.length >= BATCH_ROWS) this.flushAll();
   }
 
-  /** Maps a PAT mode change onto the event vocabulary. */
+  /**
+   * Maps a PAT mode change onto the event vocabulary.
+   *
+   * Generic over algorithms: the baseline's SEARCH/TRACK/LOST and AstraLock-X's
+   * SEARCH/ACQUIRE/TRACK/RECOVER/HANDOFF both map here, so historical baseline
+   * runs record exactly the events they always did.
+   */
   private emitModeEvents(from: string | null, to: string, frameId: number): void {
     // The first frame a recording sees establishes the state; it is a change
     // only if that state is the start of a search. Joining a run mid-track is
@@ -535,10 +559,21 @@ export class ExperimentRecorder implements LoopObserver {
       if (to === 'scan') this.recordEvent('search-started', { frameId });
       return;
     }
+    if (from === 'handoff' && to !== 'handoff') {
+      this.recordEvent('handoff-lost', { to, frameId });
+    }
     if (to === 'scan') {
       this.recordEvent('search-reentered', { from, frameId });
+    } else if (to === 'acquire') {
+      this.recordEvent('acquire-entered', { from, frameId });
+    } else if (to === 'reacquire') {
+      this.recordEvent('recover-entered', { from, frameId });
+    } else if (to === 'handoff') {
+      this.recordEvent('handoff-ready', { from, frameId });
     } else if (to === 'track') {
-      this.recordEvent('track-entered', { from, frameId });
+      if (from === 'reacquire') this.recordEvent('reacquired', { frameId });
+      // Returning from handoff-ready is not a new track entry.
+      if (from !== 'handoff') this.recordEvent('track-entered', { from, frameId });
     } else if (to === 'lost') {
       if (from === 'track') {
         // The algorithm's own declaration. The evaluator's view of lock is

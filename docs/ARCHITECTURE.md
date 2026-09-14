@@ -73,8 +73,14 @@ src/
                 experiments/
     algorithms/ AlgorithmPlugin implementations and their registry. The most
                 restricted directory: it may not reach ground truth, the
-                simulator, the sensor, the mount, the runtime or the bundled
-                scenarios (docs/BASELINE_PAT.md)
+                simulator, the sensor, the mount, the runtime, the bundled
+                scenarios or the experiment evaluator.
+                  baseline/  the Phase 4 control: threshold detector, CV Kalman,
+                             PID, raster search (docs/BASELINE_PAT.md)
+                  astralock/ the robust reference: validated acquisition, IMM,
+                             gated association, latency-aware control,
+                             predictive recovery, handoff readiness
+                             (docs/ASTRALOCK_PAT.md, ADR-0017, ADR-0018)
   workers/      Web Workers for the tick loop and batch runs
   stores/       Zustand stores for UI state
   lib/          Small shared utilities
@@ -145,6 +151,13 @@ Host processing time is measured around that work and handed only to observers.
 The algorithm reports its own stages through a write-only profiler that returns
 the work's result and never a duration, so a clock reading cannot influence what
 it computes ([ADR-0016](adr/0016-host-time-is-not-simulated-time.md)).
+
+Two algorithms now run through that seam, and the distinction between them is
+deliberate. **Baseline KF + PID is a scientific control**: unchanged since Phase
+4, regression-tested, never tuned to flatter anything. **AstraLock-X Reference
+PAT** is the robust implementation measured against it, on identical physics
+through a paired harness in which only the plugin and its configuration differ.
+The runtime contains no special case for either.
 
 So does the autonomous loop. `core/runtime` owns the meeting point of world,
 mount, camera and algorithm, and with it the two things that decide whether the

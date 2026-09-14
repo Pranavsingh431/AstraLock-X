@@ -87,7 +87,7 @@ describe('number formatting', () => {
 
 describe('sample files', () => {
   it('put units in every numeric column name', () => {
-    const unitSuffix = /_(s|m|px|rad|rad_s|ms)$/;
+    const unitSuffix = /_(s|m|px|rad|rad_s|rad_s2|ms)$/;
     const unitless = new Set([
       'frame_id',
       'tick',
@@ -111,6 +111,14 @@ describe('sample files', () => {
       'truth_target_in_image',
       'truth_detection_on_other_emitter',
       'truth_other_emitters_in_image',
+      // Dimensionless diagnostics: a quality index, an evidence fraction, a
+      // normalised innovation, a flag and two model probabilities.
+      'track_quality',
+      'acquisition_evidence',
+      'innovation_nis',
+      'gate_accepted',
+      'imm_cv_probability',
+      'imm_ca_probability',
     ]);
     for (const column of [...TELEMETRY_COLUMNS, ...EVALUATION_COLUMNS]) {
       if (unitless.has(column.name)) continue;

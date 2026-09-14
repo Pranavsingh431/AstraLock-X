@@ -1,0 +1,815 @@
+{
+  "schemaVersion": 4,
+  "id": "astralock-maneuver",
+  "name": "AstraLock: manoeuvring target",
+  "seed": 6003,
+  "duration": 45.0,
+  "tickRate": 200,
+  "platform": {
+    "initialPosition": {
+      "x": 0,
+      "y": 0,
+      "z": 12
+    },
+    "initialVelocity": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "baseDisturbanceRms": 0.0015,
+    "baseDisturbanceBandwidth": 25
+  },
+  "targets": [
+    {
+      "label": "Manoeuvring beacon",
+      "trajectory": {
+        "kind": "waypoint",
+        "loop": false,
+        "waypoints": [
+          {
+            "position": {
+              "x": 370.3122,
+              "y": 1139.7038,
+              "z": 74.8031
+            },
+            "arrivalTime": 0.0
+          },
+          {
+            "position": {
+              "x": 364.3397,
+              "y": 1141.6271,
+              "z": 74.8031
+            },
+            "arrivalTime": 0.5
+          },
+          {
+            "position": {
+              "x": 358.3572,
+              "y": 1143.5191,
+              "z": 74.8031
+            },
+            "arrivalTime": 1.0
+          },
+          {
+            "position": {
+              "x": 352.3648,
+              "y": 1145.3798,
+              "z": 74.8031
+            },
+            "arrivalTime": 1.5
+          },
+          {
+            "position": {
+              "x": 346.3628,
+              "y": 1147.209,
+              "z": 74.8031
+            },
+            "arrivalTime": 2.0
+          },
+          {
+            "position": {
+              "x": 340.3513,
+              "y": 1149.0068,
+              "z": 74.8031
+            },
+            "arrivalTime": 2.5
+          },
+          {
+            "position": {
+              "x": 334.3305,
+              "y": 1150.7732,
+              "z": 74.8031
+            },
+            "arrivalTime": 3.0
+          },
+          {
+            "position": {
+              "x": 328.3005,
+              "y": 1152.5079,
+              "z": 74.8031
+            },
+            "arrivalTime": 3.5
+          },
+          {
+            "position": {
+              "x": 322.2615,
+              "y": 1154.2111,
+              "z": 74.8031
+            },
+            "arrivalTime": 4.0
+          },
+          {
+            "position": {
+              "x": 316.2137,
+              "y": 1155.8826,
+              "z": 74.8031
+            },
+            "arrivalTime": 4.5
+          },
+          {
+            "position": {
+              "x": 310.1572,
+              "y": 1157.5225,
+              "z": 74.8031
+            },
+            "arrivalTime": 5.0
+          },
+          {
+            "position": {
+              "x": 304.0922,
+              "y": 1159.1306,
+              "z": 74.8031
+            },
+            "arrivalTime": 5.5
+          },
+          {
+            "position": {
+              "x": 298.0189,
+              "y": 1160.7069,
+              "z": 74.8031
+            },
+            "arrivalTime": 6.0
+          },
+          {
+            "position": {
+              "x": 291.9374,
+              "y": 1162.2514,
+              "z": 74.8031
+            },
+            "arrivalTime": 6.5
+          },
+          {
+            "position": {
+              "x": 285.8479,
+              "y": 1163.764,
+              "z": 74.8031
+            },
+            "arrivalTime": 7.0
+          },
+          {
+            "position": {
+              "x": 279.7505,
+              "y": 1165.2448,
+              "z": 74.8031
+            },
+            "arrivalTime": 7.5
+          },
+          {
+            "position": {
+              "x": 273.6455,
+              "y": 1166.6936,
+              "z": 74.8031
+            },
+            "arrivalTime": 8.0
+          },
+          {
+            "position": {
+              "x": 267.533,
+              "y": 1168.1104,
+              "z": 74.8031
+            },
+            "arrivalTime": 8.5
+          },
+          {
+            "position": {
+              "x": 261.4131,
+              "y": 1169.4952,
+              "z": 74.8031
+            },
+            "arrivalTime": 9.0
+          },
+          {
+            "position": {
+              "x": 255.2861,
+              "y": 1170.8479,
+              "z": 74.8031
+            },
+            "arrivalTime": 9.5
+          },
+          {
+            "position": {
+              "x": 249.1521,
+              "y": 1172.1685,
+              "z": 74.8031
+            },
+            "arrivalTime": 10.0
+          },
+          {
+            "position": {
+              "x": 243.0113,
+              "y": 1173.457,
+              "z": 74.8031
+            },
+            "arrivalTime": 10.5
+          },
+          {
+            "position": {
+              "x": 236.8637,
+              "y": 1174.7133,
+              "z": 74.8031
+            },
+            "arrivalTime": 11.0
+          },
+          {
+            "position": {
+              "x": 230.7097,
+              "y": 1175.9374,
+              "z": 74.8031
+            },
+            "arrivalTime": 11.5
+          },
+          {
+            "position": {
+              "x": 224.5494,
+              "y": 1177.1293,
+              "z": 74.8031
+            },
+            "arrivalTime": 12.0
+          },
+          {
+            "position": {
+              "x": 218.3829,
+              "y": 1178.2889,
+              "z": 74.8031
+            },
+            "arrivalTime": 12.5
+          },
+          {
+            "position": {
+              "x": 212.2105,
+              "y": 1179.4162,
+              "z": 74.8031
+            },
+            "arrivalTime": 13.0
+          },
+          {
+            "position": {
+              "x": 206.0322,
+              "y": 1180.5111,
+              "z": 74.8031
+            },
+            "arrivalTime": 13.5
+          },
+          {
+            "position": {
+              "x": 199.8482,
+              "y": 1181.5737,
+              "z": 74.8031
+            },
+            "arrivalTime": 14.0
+          },
+          {
+            "position": {
+              "x": 193.6588,
+              "y": 1182.6039,
+              "z": 74.8031
+            },
+            "arrivalTime": 14.5
+          },
+          {
+            "position": {
+              "x": 187.4641,
+              "y": 1183.6017,
+              "z": 74.8031
+            },
+            "arrivalTime": 15.0
+          },
+          {
+            "position": {
+              "x": 181.2642,
+              "y": 1184.567,
+              "z": 74.8031
+            },
+            "arrivalTime": 15.5
+          },
+          {
+            "position": {
+              "x": 175.0594,
+              "y": 1185.4999,
+              "z": 74.8031
+            },
+            "arrivalTime": 16.0
+          },
+          {
+            "position": {
+              "x": 168.8498,
+              "y": 1186.4002,
+              "z": 74.8031
+            },
+            "arrivalTime": 16.5
+          },
+          {
+            "position": {
+              "x": 162.6355,
+              "y": 1187.2681,
+              "z": 74.8031
+            },
+            "arrivalTime": 17.0
+          },
+          {
+            "position": {
+              "x": 156.4168,
+              "y": 1188.1033,
+              "z": 74.8031
+            },
+            "arrivalTime": 17.5
+          },
+          {
+            "position": {
+              "x": 150.1938,
+              "y": 1188.9061,
+              "z": 74.8031
+            },
+            "arrivalTime": 18.0
+          },
+          {
+            "position": {
+              "x": 142.7986,
+              "y": 1189.8169,
+              "z": 74.8031
+            },
+            "arrivalTime": 18.5
+          },
+          {
+            "position": {
+              "x": 133.0598,
+              "y": 1190.9454,
+              "z": 74.8031
+            },
+            "arrivalTime": 19.0
+          },
+          {
+            "position": {
+              "x": 120.9713,
+              "y": 1192.2339,
+              "z": 74.8031
+            },
+            "arrivalTime": 19.5
+          },
+          {
+            "position": {
+              "x": 106.527,
+              "y": 1193.6112,
+              "z": 74.8031
+            },
+            "arrivalTime": 20.0
+          },
+          {
+            "position": {
+              "x": 89.7208,
+              "y": 1194.992,
+              "z": 74.8031
+            },
+            "arrivalTime": 20.5
+          },
+          {
+            "position": {
+              "x": 70.5481,
+              "y": 1196.277,
+              "z": 74.8031
+            },
+            "arrivalTime": 21.0
+          },
+          {
+            "position": {
+              "x": 49.0064,
+              "y": 1197.353,
+              "z": 74.8031
+            },
+            "arrivalTime": 21.5
+          },
+          {
+            "position": {
+              "x": 25.0965,
+              "y": 1198.0926,
+              "z": 74.8031
+            },
+            "arrivalTime": 22.0
+          },
+          {
+            "position": {
+              "x": -1.1765,
+              "y": 1198.3549,
+              "z": 74.8031
+            },
+            "arrivalTime": 22.5
+          },
+          {
+            "position": {
+              "x": -29.8012,
+              "y": 1197.9848,
+              "z": 74.8031
+            },
+            "arrivalTime": 23.0
+          },
+          {
+            "position": {
+              "x": -60.7589,
+              "y": 1196.8142,
+              "z": 74.8031
+            },
+            "arrivalTime": 23.5
+          },
+          {
+            "position": {
+              "x": -94.0219,
+              "y": 1194.6613,
+              "z": 74.8031
+            },
+            "arrivalTime": 24.0
+          },
+          {
+            "position": {
+              "x": -129.5516,
+              "y": 1191.3321,
+              "z": 74.8031
+            },
+            "arrivalTime": 24.5
+          },
+          {
+            "position": {
+              "x": -167.2966,
+              "y": 1186.6202,
+              "z": 74.8031
+            },
+            "arrivalTime": 25.0
+          },
+          {
+            "position": {
+              "x": -207.191,
+              "y": 1180.3083,
+              "z": 74.8031
+            },
+            "arrivalTime": 25.5
+          },
+          {
+            "position": {
+              "x": -249.1521,
+              "y": 1172.1685,
+              "z": 74.8031
+            },
+            "arrivalTime": 26.0
+          },
+          {
+            "position": {
+              "x": -291.9374,
+              "y": 1162.2514,
+              "z": 74.8031
+            },
+            "arrivalTime": 26.5
+          },
+          {
+            "position": {
+              "x": -334.3305,
+              "y": 1150.7732,
+              "z": 74.8031
+            },
+            "arrivalTime": 27.0
+          },
+          {
+            "position": {
+              "x": -376.2746,
+              "y": 1137.7492,
+              "z": 74.8031
+            },
+            "arrivalTime": 27.5
+          },
+          {
+            "position": {
+              "x": -417.7132,
+              "y": 1123.197,
+              "z": 74.8031
+            },
+            "arrivalTime": 28.0
+          },
+          {
+            "position": {
+              "x": -458.5908,
+              "y": 1107.1361,
+              "z": 74.8031
+            },
+            "arrivalTime": 28.5
+          },
+          {
+            "position": {
+              "x": -498.8524,
+              "y": 1089.588,
+              "z": 74.8031
+            },
+            "arrivalTime": 29.0
+          },
+          {
+            "position": {
+              "x": -538.4439,
+              "y": 1070.5765,
+              "z": 74.8031
+            },
+            "arrivalTime": 29.5
+          },
+          {
+            "position": {
+              "x": -577.3121,
+              "y": 1050.1269,
+              "z": 74.8031
+            },
+            "arrivalTime": 30.0
+          },
+          {
+            "position": {
+              "x": -615.405,
+              "y": 1028.2667,
+              "z": 74.8031
+            },
+            "arrivalTime": 30.5
+          },
+          {
+            "position": {
+              "x": -652.6712,
+              "y": 1005.0254,
+              "z": 74.8031
+            },
+            "arrivalTime": 31.0
+          },
+          {
+            "position": {
+              "x": -689.0607,
+              "y": 980.4342,
+              "z": 74.8031
+            },
+            "arrivalTime": 31.5
+          },
+          {
+            "position": {
+              "x": -724.5246,
+              "y": 954.526,
+              "z": 74.8031
+            },
+            "arrivalTime": 32.0
+          },
+          {
+            "position": {
+              "x": -759.0154,
+              "y": 927.3356,
+              "z": 74.8031
+            },
+            "arrivalTime": 32.5
+          },
+          {
+            "position": {
+              "x": -792.4867,
+              "y": 898.8997,
+              "z": 74.8031
+            },
+            "arrivalTime": 33.0
+          },
+          {
+            "position": {
+              "x": -824.8935,
+              "y": 869.2563,
+              "z": 74.8031
+            },
+            "arrivalTime": 33.5
+          },
+          {
+            "position": {
+              "x": -856.1922,
+              "y": 838.4454,
+              "z": 74.8031
+            },
+            "arrivalTime": 34.0
+          },
+          {
+            "position": {
+              "x": -886.3409,
+              "y": 806.5082,
+              "z": 74.8031
+            },
+            "arrivalTime": 34.5
+          },
+          {
+            "position": {
+              "x": -915.2991,
+              "y": 773.4877,
+              "z": 74.8031
+            },
+            "arrivalTime": 35.0
+          },
+          {
+            "position": {
+              "x": -943.0279,
+              "y": 739.4283,
+              "z": 74.8031
+            },
+            "arrivalTime": 35.5
+          },
+          {
+            "position": {
+              "x": -969.4899,
+              "y": 704.3757,
+              "z": 74.8031
+            },
+            "arrivalTime": 36.0
+          },
+          {
+            "position": {
+              "x": -994.6497,
+              "y": 668.3769,
+              "z": 74.8031
+            },
+            "arrivalTime": 36.5
+          },
+          {
+            "position": {
+              "x": -1018.4735,
+              "y": 631.4803,
+              "z": 74.8031
+            },
+            "arrivalTime": 37.0
+          },
+          {
+            "position": {
+              "x": -1040.9293,
+              "y": 593.7356,
+              "z": 74.8031
+            },
+            "arrivalTime": 37.5
+          },
+          {
+            "position": {
+              "x": -1061.9869,
+              "y": 555.1933,
+              "z": 74.8031
+            },
+            "arrivalTime": 38.0
+          },
+          {
+            "position": {
+              "x": -1081.618,
+              "y": 515.9053,
+              "z": 74.8031
+            },
+            "arrivalTime": 38.5
+          },
+          {
+            "position": {
+              "x": -1099.7962,
+              "y": 475.9243,
+              "z": 74.8031
+            },
+            "arrivalTime": 39.0
+          },
+          {
+            "position": {
+              "x": -1116.4973,
+              "y": 435.3041,
+              "z": 74.8031
+            },
+            "arrivalTime": 39.5
+          },
+          {
+            "position": {
+              "x": -1131.6986,
+              "y": 394.0991,
+              "z": 74.8031
+            },
+            "arrivalTime": 40.0
+          },
+          {
+            "position": {
+              "x": -1145.3798,
+              "y": 352.3648,
+              "z": 74.8031
+            },
+            "arrivalTime": 40.5
+          },
+          {
+            "position": {
+              "x": -1157.5225,
+              "y": 310.1572,
+              "z": 74.8031
+            },
+            "arrivalTime": 41.0
+          },
+          {
+            "position": {
+              "x": -1168.1104,
+              "y": 267.533,
+              "z": 74.8031
+            },
+            "arrivalTime": 41.5
+          },
+          {
+            "position": {
+              "x": -1177.1293,
+              "y": 224.5494,
+              "z": 74.8031
+            },
+            "arrivalTime": 42.0
+          },
+          {
+            "position": {
+              "x": -1184.567,
+              "y": 181.2642,
+              "z": 74.8031
+            },
+            "arrivalTime": 42.5
+          },
+          {
+            "position": {
+              "x": -1190.4137,
+              "y": 137.7356,
+              "z": 74.8031
+            },
+            "arrivalTime": 43.0
+          },
+          {
+            "position": {
+              "x": -1194.6613,
+              "y": 94.0219,
+              "z": 74.8031
+            },
+            "arrivalTime": 43.5
+          },
+          {
+            "position": {
+              "x": -1197.3043,
+              "y": 50.1819,
+              "z": 74.8031
+            },
+            "arrivalTime": 44.0
+          },
+          {
+            "position": {
+              "x": -1198.339,
+              "y": 6.2745,
+              "z": 74.8031
+            },
+            "arrivalTime": 44.5
+          },
+          {
+            "position": {
+              "x": -1197.7641,
+              "y": -37.6413,
+              "z": 74.8031
+            },
+            "arrivalTime": 45.0
+          }
+        ]
+      },
+      "radius": 1.0,
+      "beacon": {
+        "transmitPower": 0.05,
+        "intensity": 0.9,
+        "psfSigma": 2.4
+      }
+    }
+  ],
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "horizontalFov": 0.20943951,
+    "verticalFovPolicy": "square-pixels",
+    "principalPoint": null,
+    "nearRange": 1.0,
+    "farRange": 50000.0,
+    "frameRate": 60,
+    "backgroundLevel": 0.0,
+    "exposure": 0.002,
+    "gain": 1,
+    "format": "mono8",
+    "readNoiseElectrons": 3.2,
+    "fullWellElectrons": 10000,
+    "dropoutProbability": 0.0
+  },
+  "gimbal": {
+    "pan": {
+      "initialAngle": 0.0,
+      "minAngle": -2.967059728,
+      "maxAngle": 2.967059728,
+      "maxRate": 0.698131701,
+      "maxAcceleration": 3.490658504,
+      "naturalFrequency": 6.0,
+      "dampingRatio": 0.65,
+      "deadband": 6.9813e-5,
+      "backlash": 0.000872665,
+      "encoderResolution": 0.000174533
+    },
+    "tilt": {
+      "initialAngle": 0.0,
+      "minAngle": -0.34906585,
+      "maxAngle": 1.396263402,
+      "maxRate": 0.523598776,
+      "maxAcceleration": 2.617993878,
+      "naturalFrequency": 5.0,
+      "dampingRatio": 0.7,
+      "deadband": 6.9813e-5,
+      "backlash": 0.000698132,
+      "encoderResolution": 0.000174533
+    },
+    "commandLatency": 0.023
+  },
+  "atmosphere": {
+    "refractiveIndexStructure": 1e-14,
+    "visibility": 20000
+  }
+}

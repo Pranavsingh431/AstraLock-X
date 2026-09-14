@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "detector": {
+    "threshold": 40,
+    "minArea": 3,
+    "maxArea": 4000,
+    "minPeak": 70,
+    "minIntegratedIntensity": 150
+  },
+  "kalman": {
+    "processNoiseSpectralDensity": 0.0002,
+    "measurementNoiseStdDev": 0.0001,
+    "initialAngleVariance": 0.01,
+    "initialRateVariance": 0.1,
+    "maxPredictStep": 0.05
+  },
+  "panPid": {
+    "kp": 0.55,
+    "ki": 0.35,
+    "kd": 0.02,
+    "outputLimit": 0.20943951023931956,
+    "integralLimit": 0.03490658503988659,
+    "derivativeFilterTau": 0.08
+  },
+  "tiltPid": {
+    "kp": 0.55,
+    "ki": 0.35,
+    "kd": 0.02,
+    "outputLimit": 0.20943951023931956,
+    "integralLimit": 0.03490658503988659,
+    "derivativeFilterTau": 0.08
+  },
+  "search": {
+    "panMin": -0.5235987755982988,
+    "panMax": 0.5235987755982988,
+    "tiltMin": -0.08726646259971647,
+    "tiltMax": 0.2617993877991494,
+    "horizontalStep": 0.08726646259971647,
+    "verticalStep": 0.061086523819801536,
+    "settleTolerance": 0.010471975511965976,
+    "measuredRateTolerance": 0.026179938779914945,
+    "dwellTime": 0.05,
+    "waypointTimeout": 1.5,
+    "loop": true
+  },
+  "missesBeforeLost": 12,
+  "lostHoldTime": 0.5,
+  "detectionsBeforeTrack": 2
+}

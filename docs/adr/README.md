@@ -23,5 +23,7 @@ supersedes the old one, so the reasoning at the time stays visible.
 | [0014](0014-evaluation-reads-truth-one-way.md)            | Evaluation reads ground truth; nothing reads evaluation back          | Accepted |
 | [0015](0015-persisted-raw-data-is-the-source-of-truth.md) | A run's summary is computed from its persisted raw files              | Accepted |
 | [0016](0016-host-time-is-not-simulated-time.md)           | Host processing time and simulated latency are different quantities   | Accepted |
+| [0017](0017-interacting-multiple-model-estimation.md)     | Two motion models, interacting — not one model, and not a race        | Accepted |
+| [0018](0018-prediction-to-actuation-and-recovery.md)      | Point where the target will be, and coast when it disappears          | Accepted |
 
 Use [0000-template.md](0000-template.md) for new records.

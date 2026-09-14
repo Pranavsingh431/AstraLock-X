@@ -15,14 +15,11 @@ import type {
   CameraSensorFrame,
   CameraState,
   ControlCommand,
-  ExperimentEvent,
-  ExperimentSummary,
   GimbalState,
   PATState,
   SimulationConfig,
   TargetEstimate,
   TargetObservation,
-  TelemetrySample,
   TrackingInput,
   TrackingOutput,
 } from './index';
@@ -44,14 +41,6 @@ describe('public contract surface', () => {
     expectTypeOf<AssertGroundTruthFree<TargetEstimate>>().toEqualTypeOf<true>();
     expectTypeOf<AssertGroundTruthFree<ControlCommand>>().toEqualTypeOf<true>();
     expectTypeOf<AssertGroundTruthFree<PATState>>().toEqualTypeOf<true>();
-  });
-
-  it('keeps the recorded output of a run ground-truth-free', () => {
-    // Telemetry is streamed to the UI and may be replayed; a leak here would
-    // travel further than one confined to a single tick.
-    expectTypeOf<AssertGroundTruthFree<TelemetrySample>>().toEqualTypeOf<true>();
-    expectTypeOf<AssertGroundTruthFree<ExperimentEvent>>().toEqualTypeOf<true>();
-    expectTypeOf<AssertGroundTruthFree<ExperimentSummary>>().toEqualTypeOf<true>();
   });
 
   it('keeps the experiment definition ground-truth-free', () => {

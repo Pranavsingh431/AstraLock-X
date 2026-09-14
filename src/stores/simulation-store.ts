@@ -33,7 +33,14 @@ import type { CameraSensorFrame } from '@/core/contracts/sensors';
 import type { ActuatorTruth } from '@/core/gimbal/actuator-truth';
 import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
 import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';
-import { DEFAULT_BASELINE_PAT_CONFIG, baselineKfPidPat } from '@/core/algorithms';
+import {
+  DEFAULT_ASTRALOCK_CONFIG,
+  DEFAULT_BASELINE_PAT_CONFIG,
+  algorithmById,
+  astraLockXPat,
+  baselineKfPidPat,
+} from '@/core/algorithms';
+import type { AstraLockDebug } from '@/core/algorithms';
 import type { BaselineDebug } from '@/core/algorithms';
 import type { Measurement } from '@/core/contracts/measurement';
 import type { PATMode } from '@/core/contracts/pat';
@@ -77,6 +84,8 @@ interface Session {
    * switched off, so a manual session carries none of its state.
    */
   runtime: ClosedLoopRuntime | null;
+  /** Which algorithm this session's runtime was built with. */
+  algorithmId: string;
   /** The experiment recorder, or `null` when nothing is being recorded. */
   recorder: ExperimentRecorder | null;
   /**
@@ -186,7 +195,7 @@ export interface SimulationStoreState {
   /** PAT mode, read from the algorithm itself. Never a decoration. */
   readonly patMode: PATMode | null;
   /** The algorithm's own safe diagnostics, or `null` when it is not running. */
-  readonly algorithmDebug: BaselineDebug | null;
+  readonly algorithmDebug: BaselineDebug | AstraLockDebug | null;
   /**
    * Signal-to-noise ratio of the current detection, as the algorithm reported
    * it, or `null` when there is no detection. The sensor has no noise model, so
@@ -250,6 +259,8 @@ export interface SimulationStoreState {
   /** Immediately disengages autonomy and pauses the run. */
   emergencyStop: () => void;
   setAlgorithmOverlay: (visible: boolean) => void;
+  /** Chooses which tracker flies the mount. Ends any recording in progress. */
+  setAlgorithm: (id: string) => void;
   setManualOverride: (enabled: boolean) => void;
 
   /** Begins recording. Resolves once the run directory exists and recording has begun. */
@@ -302,9 +313,14 @@ function buildRuntime(active: Session): ClosedLoopRuntime {
     engine: active.engine,
     sensor: active.sensor,
     sampler: active.sampler,
-    plugin: baselineKfPidPat,
-    config: DEFAULT_BASELINE_PAT_CONFIG,
+    plugin: selectedPlugin(active.algorithmId),
+    config: selectedConfig(active.algorithmId),
     historyLimit: 256,
+    // Where the sensor has already been read to. Zero when autonomy is being
+    // enabled on a fresh session, non-zero when the operator swaps algorithms
+    // mid-run: the replacement must pick the frame stream up where the world
+    // actually is rather than rewinding to the start.
+    capturedThrough: active.capturedThrough,
     ...(active.recorder === null ? {} : { observer: active.recorder }),
     // The interface's only connection to the loop: it is told what happened,
     // after the fact, and copies the frame it wants to draw.
@@ -328,6 +344,20 @@ function canCommandManually(state: SimulationStoreState): boolean {
   return !state.autonomyEnabled || state.manualOverride;
 }
 
+/**
+ * The two shipped algorithms, by id.
+ *
+ * The baseline stays available as a scientific control: a comparison needs both
+ * arms, and the robust algorithm's numbers mean nothing without it.
+ */
+const ALGORITHM_CONFIGS: Record<string, unknown> = {
+  [baselineKfPidPat.manifest.id]: DEFAULT_BASELINE_PAT_CONFIG,
+  [astraLockXPat.manifest.id]: DEFAULT_ASTRALOCK_CONFIG,
+};
+
+const selectedPlugin = (id: string) => algorithmById(id) ?? baselineKfPidPat;
+const selectedConfig = (id: string) => ALGORITHM_CONFIGS[id] ?? DEFAULT_BASELINE_PAT_CONFIG;
+
 /** Drains the parked result into the shape the store stores. */
 function drainAutonomousFrame(): Partial<SimulationStoreState> {
   if (pendingDisplayFrame === null) return {};
@@ -335,7 +365,7 @@ function drainAutonomousFrame(): Partial<SimulationStoreState> {
     sensorFrame: pendingDisplayFrame,
     sensorTruth: pendingDisplayTruth,
     patMode: pendingOutput?.pat.mode ?? null,
-    algorithmDebug: (pendingOutput?.debug ?? null) as BaselineDebug | null,
+    algorithmDebug: (pendingOutput?.debug ?? null) as BaselineDebug | AstraLockDebug | null,
     detectionSnr: pendingOutput?.observations[0]?.snr ?? null,
   };
   pendingDisplayFrame = null;
@@ -360,6 +390,7 @@ function createSession(config: SimulationConfig): Session {
     lastFrameIndex: 0,
     heldCapture: null,
     runtime: null,
+    algorithmId: baselineKfPidPat.manifest.id,
     recorder: null,
     evaluator: new Evaluator({ engine, config }),
   };
@@ -596,7 +627,12 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       void endRecording(session, 'abort', 'scenario-changed');
     }
     const wasAutonomous = get().autonomyEnabled;
+    const chosenAlgorithm = get().algorithmId;
     session = createSession(config);
+    // A new world does not change which tracker the operator picked. The
+    // session is rebuilt around the new scenario, so the choice has to be
+    // carried across explicitly or it silently reverts to the default.
+    session.algorithmId = chosenAlgorithm;
     set({
       scenarioId,
       config,
@@ -804,6 +840,10 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       return;
     }
 
+    // Built first, so it inherits the watermark as it stands. The distinction
+    // matters at tick zero: `-1` means no frame has been taken yet and the
+    // frame at t = 0 is still to come, whereas `0` would mean it had already
+    // been consumed and the runtime would skip it.
     active.runtime = buildRuntime(active);
     active.recorder?.recordEvent('autonomy-enabled');
 
@@ -907,6 +947,28 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
 
   abortExperiment: async (reason = 'operator-aborted') => {
     await endRecording(requireSession(), 'abort', reason);
+  },
+
+  setAlgorithm: (id) => {
+    const active = requireSession();
+    if (active.algorithmId === id) return;
+
+    // Changing the tracker mid-recording would splice two different experiments
+    // into one record, so the run is ended honestly first. The operator is told
+    // rather than silently losing the recording.
+    if (active.recorder !== null) {
+      set({ recorderError: 'Recording stopped: the algorithm was changed mid-run.' });
+      void active.recorder.abort('algorithm-changed');
+      active.recorder = null;
+      set({ recorderStatus: null });
+    }
+
+    active.algorithmId = id;
+    // The runtime holds the plugin, so switching means rebuilding it. The
+    // engine, sensor and mount are untouched: the physical run continues.
+    if (active.runtime !== null) active.runtime = buildRuntime(active);
+
+    set({ algorithmId: id, patMode: null, algorithmDebug: null });
   },
 
   setLiveEvaluation: (visible) => {
@@ -1097,7 +1159,15 @@ function startDriver(): void {
   const onFrame = (now: number): void => {
     // Wall-clock time decides how many ticks to run. It never reaches the
     // world: the engine only ever advances by whole fixed steps.
-    const elapsed = Math.min((now - lastFrameTime) / 1000, MAX_FRAME_DELTA);
+    //
+    // Clamped at zero because the delta really can come out negative. The
+    // argument is the instant the browser began the frame, which may precede
+    // the `performance.now()` read that started the driver — press play partway
+    // through a frame and the first callback looks like about a millisecond of
+    // travel backwards. Unclamped, `advance` rejects it, and the throw escapes
+    // before the next frame is scheduled, so playback stops for good. A zero
+    // delta is the honest reading: no time has passed, so no tick is due.
+    const elapsed = Math.min(Math.max(now - lastFrameTime, 0) / 1000, MAX_FRAME_DELTA);
     lastFrameTime = now;
     useSimulationStore.getState().advance(elapsed);
     frameHandle = requestAnimationFrame(onFrame);

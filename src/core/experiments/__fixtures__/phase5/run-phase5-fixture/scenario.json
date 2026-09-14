@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 4,
+  "id": "pat-loss",
+  "name": "PAT: target outruns the baseline",
+  "seed": 4003,
+  "duration": 60,
+  "tickRate": 200,
+  "platform": {
+    "initialPosition": {
+      "x": 0,
+      "y": 0,
+      "z": 12
+    },
+    "initialVelocity": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "baseDisturbanceRms": 0.0015,
+    "baseDisturbanceBandwidth": 25
+  },
+  "targets": [
+    {
+      "label": "Departing beacon",
+      "trajectory": {
+        "kind": "waypoint",
+        "waypoints": [
+          {
+            "position": {
+              "x": 52,
+              "y": 1500,
+              "z": 51
+            },
+            "arrivalTime": 0
+          },
+          {
+            "position": {
+              "x": 52,
+              "y": 1500,
+              "z": 51
+            },
+            "arrivalTime": 6
+          },
+          {
+            "position": {
+              "x": 10052,
+              "y": 1500,
+              "z": 51
+            },
+            "arrivalTime": 11
+          }
+        ],
+        "loop": false
+      },
+      "radius": 1,
+      "beacon": {
+        "transmitPower": 0.05,
+        "intensity": 0.9,
+        "psfSigma": 2.4
+      }
+    }
+  ],
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "horizontalFov": 0.20943951,
+    "verticalFovPolicy": "square-pixels",
+    "principalPoint": null,
+    "nearRange": 1,
+    "farRange": 50000,
+    "frameRate": 60,
+    "backgroundLevel": 0,
+    "exposure": 0.002,
+    "gain": 1,
+    "format": "mono8",
+    "readNoiseElectrons": 3.2,
+    "fullWellElectrons": 10000,
+    "dropoutProbability": 0
+  },
+  "gimbal": {
+    "pan": {
+      "initialAngle": 0,
+      "minAngle": -2.967059728,
+      "maxAngle": 2.967059728,
+      "maxRate": 0.698131701,
+      "maxAcceleration": 3.490658504,
+      "naturalFrequency": 6,
+      "dampingRatio": 0.65,
+      "deadband": 0.000069813,
+      "backlash": 0.000872665,
+      "encoderResolution": 0.000174533
+    },
+    "tilt": {
+      "initialAngle": 0,
+      "minAngle": -0.34906585,
+      "maxAngle": 1.396263402,
+      "maxRate": 0.523598776,
+      "maxAcceleration": 2.617993878,
+      "naturalFrequency": 5,
+      "dampingRatio": 0.7,
+      "deadband": 0.000069813,
+      "backlash": 0.000698132,
+      "encoderResolution": 0.000174533
+    },
+    "commandLatency": 0.023
+  },
+  "atmosphere": {
+    "refractiveIndexStructure": 1e-14,
+    "visibility": 20000
+  }
+}

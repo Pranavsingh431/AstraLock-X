@@ -8,19 +8,21 @@ and — eventually — hardware-in-the-loop validation of coarse PAT systems. It
 runs offline, produces reproducible experiments, and reports measured results
 rather than illustrative ones.
 
-> **Status: Phase 5 — experiment recorder, KPI engine and reporting.** Runs are
-> now records. Starting an experiment writes a versioned manifest, a snapshot of
-> the exact scenario and algorithm configuration, an ordered event log, safe
-> telemetry and privileged evaluation samples — then derives a summary and a
-> self-contained HTML report from them. The summary is recomputable offline from
-> the raw files, and the application will verify it for you.
+> **Status: Phase 6 — robust reference PAT engine.** There are now two trackers.
+> **Baseline KF + PID** is unchanged from Phase 4 and is kept as a scientific
+> control. **AstraLock-X Reference PAT** is the robust implementation: it
+> validates a candidate before committing to it, estimates with an interacting
+> multiple model that reports when the target is manoeuvring, gates measurements
+> on innovation, points where the target will be when the mount responds, coasts
+> and searches locally when it loses sight of it, and declares coarse-to-fine
+> handoff readiness from its own measurements.
 >
-> Recording is an observer: a test requires the same scenario to produce an
-> identical engineering result with the recorder on and off. No metric is
-> fabricated — a quantity the simulator does not model reports "Not modelled",
-> never a plausible zero.
+> Both run through the same plugin contract and the same closed-loop runtime,
+> and a paired harness runs them on identical physics so the comparison means
+> something. Neither can reach ground truth.
 >
-> The tracker itself is still the deliberately simple **baseline** from Phase 4.
+> Identity is still unsolved: a plausible decoy inside the association gate can
+> capture either tracker, and a test says so.
 > See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
 
 ## What the problem is
@@ -106,7 +108,8 @@ pnpm verify
 - [docs/SIMULATION.md](docs/SIMULATION.md) — coordinates, clock, PRNG, trajectory equations, and what is not modelled
 - [docs/SENSOR_MODEL.md](docs/SENSOR_MODEL.md) — pinhole projection, camera clock, point spread, the frame contract and the truth boundary
 - [docs/GIMBAL_MODEL.md](docs/GIMBAL_MODEL.md) — the actuator: servo dynamics, latency, deadband, backlash, encoder quantisation, measured accuracy and what is not modelled
-- [docs/BASELINE_PAT.md](docs/BASELINE_PAT.md) — the autonomous tracker: detector, pixel-to-bearing, Kalman filter, PID, search, control timing, measured results and known weaknesses
+- [docs/ASTRALOCK_PAT.md](docs/ASTRALOCK_PAT.md) — the robust reference tracker: states, acquisition evidence, IMM mathematics, gating, prediction to actuation, recovery, handoff readiness, measured results and known weaknesses
+- [docs/BASELINE_PAT.md](docs/BASELINE_PAT.md) — the control algorithm: detector, pixel-to-bearing, Kalman filter, PID, search, control timing, measured results and known weaknesses
 - [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) — recording a run: lifecycle, artifacts, run identity, storage, recomputation and reproducibility
 - [docs/METRICS.md](docs/METRICS.md) — every KPI formula, denominator, unit and N/A rule
 - [docs/REPORTING.md](docs/REPORTING.md) — the generated offline report and the Reports screen

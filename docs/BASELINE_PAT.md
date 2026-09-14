@@ -1,7 +1,14 @@
 # The baseline PAT algorithm
 
-`baseline-kf-pid` — the first autonomous tracker in AstraLock-X, and the
-reference every later algorithm has to beat.
+`baseline-kf-pid` — the first autonomous tracker in AstraLock-X, and since
+Phase 6 the **scientific control** that the robust algorithm is measured
+against.
+
+It is deliberately unchanged. Improving it would destroy the comparison it
+exists to make, and a robust result quoted without a control is not a result.
+The robust tracker is [AstraLock-X Reference PAT](ASTRALOCK_PAT.md); both run
+through the same plugin contract and the same closed-loop runtime, and the
+paired harness gives them identical physics.
 
 It is deliberately simple. Threshold, connected components, centroid, inverse
 pinhole, constant-velocity Kalman filter, PID, raster scan. No beacon identity,
@@ -459,4 +466,7 @@ Stated because the robust algorithm needs a real baseline to beat.
     equal to noise, and therefore a lie about a noiseless sensor. See
     [METRICS.md](METRICS.md#na-and-unmodelled-semantics).
 
-Items 1, 3, 4, 5 and 6 are precisely what the robust algorithm is for.
+Items 1, 3, 4, 5 and 6 are precisely what the robust algorithm is for, and
+[ASTRALOCK_PAT.md](ASTRALOCK_PAT.md) records how far it gets with each. Item 1 —
+identity — is not solved there either, and remains open until coded beacon
+identification.

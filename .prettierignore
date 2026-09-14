@@ -5,3 +5,5 @@ pnpm-lock.yaml
 src-tauri/target
 src-tauri/gen
 src-tauri/icons
+# Experiment runs recorded by an earlier build, kept byte for byte.
+src/core/experiments/__fixtures__

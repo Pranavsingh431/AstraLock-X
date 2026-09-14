@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "metricsDefinitionVersion": 1,
+  "runId": "run-phase5-fixture",
+  "status": "completed",
+  "terminationReason": "operator-finalised",
+  "scenarioId": "pat-loss",
+  "scenarioName": "PAT: target outruns the baseline",
+  "scenarioSeed": 4003,
+  "algorithmId": "baseline-kf-pid",
+  "algorithmVersion": "1.0.0",
+  "scenarioFingerprint": "sha256:12c78ca40421ec4436db0a442a09e4b6855d679a3f5cd6cb69f11bc090113dcd",
+  "algorithmFingerprint": "sha256:9e54716d66b33caa82f1cf85559ed24325ed8451d9609495027769b6e3397db4",
+  "metricsFingerprint": "sha256:530dd01a71e267267adc3355581bd03169f3132802289e23fbe42b1bb0bddda2",
+  "metricsConfig": {
+    "definitionVersion": 1,
+    "lockErrorThresholdRad": 0.002,
+    "lockDwellSeconds": 0.5,
+    "lockDropoutGraceSeconds": 0.25,
+    "maxTrackableRangeM": 50000,
+    "detectionAssociationRadiusPx": 5
+  },
+  "designatedTargetIndex": 0,
+  "designatedTargetLabel": "Departing beacon",
+  "targetCount": 1,
+  "simulationTimestepSeconds": 0.005,
+  "tickRate": 200,
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "frameRate": 60,
+    "horizontalFovRad": 0.20943951,
+    "principalPointXPx": 320,
+    "principalPointYPx": 240
+  },
+  "gimbal": {
+    "commandLatencySeconds": 0.023,
+    "panMinRad": -2.967059728,
+    "panMaxRad": 2.967059728,
+    "tiltMinRad": -0.34906585,
+    "tiltMaxRad": 1.396263402,
+    "panMaxRateRadS": 0.698131701,
+    "tiltMaxRateRadS": 0.523598776
+  },
+  "startSimulationTime": 0,
+  "endSimulationTime": 7,
+  "endStateHash": "d32fe231",
+  "sensorFramesGenerated": 420,
+  "artifacts": {
+    "manifest.json": "provenance",
+    "scenario.json": "configuration",
+    "algorithm.json": "configuration",
+    "events.jsonl": "event-log",
+    "telemetry.csv": "safe-telemetry",
+    "evaluation.csv": "privileged-evaluation",
+    "summary.json": "derived-summary",
+    "report.html": "derived-report"
+  },
+  "host": {
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "endedAt": "2026-01-01T00:00:00.000Z",
+    "platform": "test",
+    "applicationVersion": "0.0.0-test",
+    "sourceCommit": null,
+    "sourceTreeModified": null,
+    "timerResolutionMs": 0.0000829999999609754
+  }
+}

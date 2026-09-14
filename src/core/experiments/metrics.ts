@@ -33,10 +33,13 @@ import type {
   TerminationReason,
   WindowedStatistics,
 } from './schema';
-import { EXPERIMENT_SCHEMA_VERSION } from './schema';
+import { TRACKING_MODES } from './schema';
+import type { ExperimentSchemaVersion } from './schema';
 
-/** The PAT mode string that counts as tracking. */
-export const TRACK_MODE = 'track';
+/** The PAT modes a metrics definition treats as the algorithm claiming a track. */
+export function trackingModesFor(config: MetricsConfig): readonly string[] {
+  return TRACKING_MODES[config.definitionVersion] ?? ['track'];
+}
 
 // --- Statistics -------------------------------------------------------------
 
@@ -182,7 +185,7 @@ export function lockConditionMet(sample: EvaluationSample, config: MetricsConfig
     error !== null &&
     error <= config.lockErrorThresholdRad &&
     isTrackable(sample, config) &&
-    sample.pat_state === TRACK_MODE
+    trackingModesFor(config).includes(sample.pat_state)
   );
 }
 
@@ -375,6 +378,8 @@ export function analyseLock(
 
 /** What the summary needs that is not in a row. All of it comes from the manifest. */
 export interface SummaryContext {
+  /** The artifact format version the run was recorded under. */
+  readonly schemaVersion: ExperimentSchemaVersion;
   readonly runId: string;
   readonly metricsConfig: MetricsConfig;
   readonly metricsFingerprint: string;
@@ -449,13 +454,34 @@ export class SummaryBuilder {
     inTrack: boolean;
     falseLocked: boolean;
     conditionMet: boolean;
+    inHandoff: boolean;
+    handoffValid: boolean;
   } | null = null;
+
+  // Definition v2: handoff readiness, from evaluation rows.
+  private firstHandoff: number | null = null;
+  private handoffEpisodes = 0;
+  private handoffDuration = 0;
+  private handoffValidDuration = 0;
+
+  // Definition v2: the algorithm's own recovery attempts, from events.
+  private recoverSince: number | null = null;
+  private recoverEntries = 0;
+  private recoverSuccesses = 0;
+  private recoverFallbacks = 0;
+  private readonly recoveryTimes = new SampleSeries();
+
+  // Definition v2: estimator model probabilities, from telemetry.
+  private framesWithImm = 0;
+  private readonly caProbability = new SampleSeries();
+  private readonly trackingModes: readonly string[];
 
   private readonly config: MetricsConfig;
 
   constructor(private readonly context: SummaryContext) {
     this.config = context.metricsConfig;
     this.lock = new LockAnalyser(context.metricsConfig);
+    this.trackingModes = trackingModesFor(context.metricsConfig);
   }
 
   public addEvent(event: ExperimentEvent): void {
@@ -468,6 +494,23 @@ export class SummaryBuilder {
         break;
       case 'autonomy-enabled':
         this.autonomyStart ??= event.simulationTime;
+        break;
+      case 'recover-entered':
+        this.recoverEntries += 1;
+        this.recoverSince = event.simulationTime;
+        break;
+      case 'reacquired':
+        if (this.recoverSince !== null) {
+          this.recoverSuccesses += 1;
+          this.recoveryTimes.push(event.simulationTime - this.recoverSince);
+          this.recoverSince = null;
+        }
+        break;
+      case 'search-reentered':
+        if (this.recoverSince !== null) {
+          this.recoverFallbacks += 1;
+          this.recoverSince = null;
+        }
         break;
       case 'command-issued': {
         const id = numberDetail(event, 'commandId');
@@ -520,12 +563,25 @@ export class SummaryBuilder {
     }
     if (sample.host_estimator_ms !== null) host.estimator.push(sample.host_estimator_ms);
     if (sample.host_controller_ms !== null) host.controller.push(sample.host_controller_ms);
+    if (sample.imm_ca_probability !== null) {
+      this.framesWithImm += 1;
+      if (this.trackingModes.includes(sample.pat_state)) {
+        this.caProbability.push(sample.imm_ca_probability);
+      }
+    }
   }
 
   public addEvaluation(sample: EvaluationSample): void {
     const config = this.config;
     const time = sample.capture_time_s;
-    const inTrack = sample.pat_state === TRACK_MODE;
+    const inTrack = this.trackingModes.includes(sample.pat_state);
+    const inHandoff = sample.pat_state === 'handoff';
+    const handoffValid =
+      inHandoff &&
+      config.definitionVersion === 2 &&
+      sample.truth_angular_pointing_error_rad !== null &&
+      sample.truth_angular_pointing_error_rad <= config.handoffValidityThresholdRad;
+    if (inHandoff) this.firstHandoff ??= time;
     const conditionMet = lockConditionMet(sample, config);
     this.evaluationCount += 1;
 
@@ -557,10 +613,13 @@ export class SummaryBuilder {
       if (this.previous.inTrack) this.trackDuration += dt;
       if (this.previous.falseLocked) this.falseLockDuration += dt;
       if (this.previous.inTrack && !this.previous.conditionMet) this.trackWithoutLock += dt;
+      if (this.previous.inHandoff) this.handoffDuration += dt;
+      if (this.previous.handoffValid) this.handoffValidDuration += dt;
     }
     if (falseLocked && this.previous?.falseLocked !== true) this.falseLockEpisodes += 1;
+    if (inHandoff && this.previous?.inHandoff !== true) this.handoffEpisodes += 1;
 
-    this.previous = { time, inTrack, falseLocked, conditionMet };
+    this.previous = { time, inTrack, falseLocked, conditionMet, inHandoff, handoffValid };
   }
 
   public finish(): ExperimentSummary {
@@ -613,8 +672,8 @@ export class SummaryBuilder {
       if (episode.duration_s !== null) recovered.push(episode.duration_s);
     }
 
-    return {
-      schemaVersion: EXPERIMENT_SCHEMA_VERSION,
+    const summary: ExperimentSummary = {
+      schemaVersion: context.schemaVersion,
       metricsDefinitionVersion: context.metricsConfig.definitionVersion,
       metricsFingerprint: context.metricsFingerprint,
       runId: context.runId,
@@ -686,6 +745,37 @@ export class SummaryBuilder {
         issueToApplication: this.issueToApplication.statistics('s'),
         captureToApplication: this.captureToApplication.statistics('s'),
         scheduledToActualApplication: this.scheduledToActual.statistics('s'),
+      },
+    };
+
+    // Definition v1 summaries stop here, exactly as Phase 5 wrote them, so a
+    // historical run recomputes to the summary it stored.
+    if (context.metricsConfig.definitionVersion === 1) return summary;
+
+    return {
+      ...summary,
+      trackingModes: [...this.trackingModes],
+      handoff: {
+        firstHandoffReadyTime: optional(this.firstHandoff, 's'),
+        timeToHandoffReady: difference(this.firstHandoff, this.searchStart, 's'),
+        episodes: this.handoffEpisodes,
+        durationSeconds: derived(this.handoffDuration, 's'),
+        validDurationSeconds: derived(this.handoffValidDuration, 's'),
+        validityRate:
+          this.handoffDuration > 0
+            ? derived(this.handoffValidDuration / this.handoffDuration, '1')
+            : notApplicable('1'),
+      },
+      algorithmRecovery: {
+        entries: this.recoverEntries,
+        reacquired: this.recoverSuccesses,
+        fellBackToSearch: this.recoverFallbacks,
+        unresolved: this.recoverSince === null ? 0 : 1,
+        recoveryTime: this.recoveryTimes.statistics('s'),
+      },
+      estimator: {
+        framesWithModelProbabilities: this.framesWithImm,
+        caProbabilityWhileTracking: this.caProbability.statistics('1'),
       },
     };
   }

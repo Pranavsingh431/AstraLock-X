@@ -20,6 +20,7 @@ import type { PATMode } from '@/core/contracts/pat';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { ALGORITHMS } from '@/core/algorithms';
 import { useSimulationStore } from '@/stores/simulation-store';
 
 import { confirmIfRecording } from '../recording-guard';
@@ -27,14 +28,22 @@ import { confirmIfRecording } from '../recording-guard';
 /** How the baseline's three states are presented. */
 const STATE_STYLE: Partial<Record<PATMode, string>> = {
   scan: 'border-sky-500/40 text-sky-300',
+  acquire: 'border-violet-500/50 text-violet-300',
   track: 'border-emerald-500/50 text-emerald-300',
   lost: 'border-amber-500/50 text-amber-300',
+  reacquire: 'border-amber-500/50 text-amber-300',
+  handoff: 'border-cyan-400/60 text-cyan-300',
 };
 
 const STATE_LABEL: Partial<Record<PATMode, string>> = {
   scan: 'SEARCH',
+  acquire: 'ACQUIRE',
   track: 'TRACK',
   lost: 'LOST',
+  reacquire: 'RECOVER',
+  // Readiness, not a handover: no fine-pointing actuator exists, and the
+  // coarse loop keeps tracking throughout. The label says so.
+  handoff: 'HANDOFF READY',
 };
 
 function Field({ label, value }: { label: string; value: string }): React.JSX.Element {
@@ -60,6 +69,12 @@ export function AutonomyControls(): React.JSX.Element {
   const emergencyStop = useSimulationStore((state) => state.emergencyStop);
   const setAlgorithmOverlay = useSimulationStore((state) => state.setAlgorithmOverlay);
   const setManualOverride = useSimulationStore((state) => state.setManualOverride);
+  const setAlgorithm = useSimulationStore((state) => state.setAlgorithm);
+  const recorderStatus = useSimulationStore((state) => state.recorderStatus);
+
+  // The tracker cannot be swapped while an experiment is recording: doing so
+  // would splice two different experiments into one record.
+  const recording = recorderStatus !== null && recorderStatus.state === 'running';
 
   const deg = (value: number | null): string =>
     value === null ? '—' : `${radiansToDegrees(value as never).toFixed(3)}°`;
@@ -122,7 +137,24 @@ export function AutonomyControls(): React.JSX.Element {
           Stop
         </Button>
 
-        <span className="tabular text-[10px] text-muted-foreground">{algorithmId}</span>
+        <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <span className="sr-only">Algorithm</span>
+          <select
+            aria-label="Algorithm"
+            value={algorithmId}
+            disabled={recording}
+            onChange={(event) => {
+              setAlgorithm(event.target.value);
+            }}
+            className="h-6 rounded-sm border bg-background px-1 text-[10px] text-foreground/90 disabled:opacity-50"
+          >
+            {ALGORITHMS.map((plugin) => (
+              <option key={plugin.manifest.id} value={plugin.manifest.id}>
+                {plugin.manifest.name}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {runtimeError !== null && (
@@ -179,6 +211,8 @@ export function AutonomyControls(): React.JSX.Element {
             <Field label="Frames" value={debug === null ? '—' : String(debug.framesProcessed)} />
           </div>
 
+          <EstimatorPanel />
+
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-1.5 text-[11px] text-emerald-400/90">
               <input
@@ -216,6 +250,96 @@ export function AutonomyControls(): React.JSX.Element {
       ) : (
         <p className="text-[10px] leading-snug text-muted-foreground">
           Not running. The mount is under manual control and nothing reads the pixels.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** A bar showing how the two motion models divide the estimator's belief. */
+function ModelBar({ cv }: { cv: number }): React.JSX.Element {
+  const cvPercent = Math.round(cv * 100);
+  return (
+    <div className="flex h-1.5 overflow-hidden rounded-sm bg-muted" aria-hidden>
+      <div className="bg-sky-400" style={{ width: `${String(cvPercent)}%` }} />
+      <div className="bg-orange-400" style={{ width: `${String(100 - cvPercent)}%` }} />
+    </div>
+  );
+}
+
+/**
+ * Estimator and recovery diagnostics for the robust algorithm.
+ *
+ * Rendered only when the running tracker actually produces them — the baseline
+ * has a single motion model and no recovery state, and a panel of dashes about
+ * capabilities it does not have would be noise.
+ *
+ * Every value is the algorithm's own. The uncertainty figure is the estimator's
+ * covariance, not a measured error.
+ */
+function EstimatorPanel(): React.JSX.Element | null {
+  const debug = useSimulationStore((state) => state.algorithmDebug);
+  if (debug === null || !('immCvProbability' in debug)) return null;
+
+  const robust = debug;
+  const cv = robust.immCvProbability;
+  const ca = robust.immCaProbability;
+  if (cv === null || ca === null) return null;
+
+  const deg = (value: number | null, digits = 3): string =>
+    value === null ? '—' : `${radiansToDegrees(value as never).toFixed(digits)}°`;
+
+  return (
+    <div className="space-y-1.5 rounded-sm border border-sky-500/30 bg-sky-500/5 px-2 py-1.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[9px] font-semibold tracking-wider text-sky-400 uppercase">
+          Estimator — IMM
+        </span>
+        <span className="tabular text-[10px] text-muted-foreground">
+          horizon{' '}
+          {robust.predictionHorizon === null
+            ? '—'
+            : `${(robust.predictionHorizon * 1000).toFixed(0)} ms`}
+        </span>
+      </div>
+
+      <ModelBar cv={cv} />
+      <div className="flex justify-between text-[10px]">
+        <span className="tabular text-sky-300">CV {cv.toFixed(2)}</span>
+        <span className="tabular text-orange-300">CA {ca.toFixed(2)}</span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+        <Field
+          label="Track quality"
+          value={robust.trackQuality === null ? '—' : robust.trackQuality.toFixed(2)}
+        />
+        <Field label="Uncertainty" value={deg(robust.angularSigma, 4)} />
+        <Field
+          label="NIS"
+          value={robust.innovationNis === null ? '—' : robust.innovationNis.toFixed(2)}
+        />
+        <Field label="Feed-forward" value={deg(robust.feedforwardPan, 4)} />
+        <Field
+          label="Evidence"
+          value={robust.acquisitionEvidence === null ? '—' : robust.acquisitionEvidence.toFixed(2)}
+        />
+        <Field
+          label="Recovery age"
+          value={robust.recoveryAge === null ? '—' : `${robust.recoveryAge.toFixed(2)} s`}
+        />
+      </div>
+
+      {robust.localSearchRadius !== null && (
+        <p className="text-[10px] text-amber-400/90">
+          Local search radius {deg(robust.localSearchRadius, 2)}, pattern step{' '}
+          {robust.localSearchIndex === null ? '—' : String(robust.localSearchIndex)}
+        </p>
+      )}
+      {robust.handoffDwell !== null && (
+        <p className="text-[10px] text-cyan-300/90">
+          Handoff dwell {robust.handoffDwell.toFixed(2)} s of{' '}
+          {robust.handoffRequiredDwell.toFixed(2)} s
         </p>
       )}
     </div>

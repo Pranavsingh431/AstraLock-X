@@ -1311,5 +1311,138 @@ Recorder overhead +3.1 % (median of three interleaved runs); writer alone
 
 No IMM, constant-acceleration model, beacon identity, AI verifier, adaptive
 search, predictive recovery, handoff, feed-forward control, disturbances, sensor
-noise, AstraBench, FailureHunter, replay, HIL or UI redesign was added. Phase 6
-has not been started.
+noise, AstraBench, FailureHunter, replay, HIL or UI redesign was added.
+
+## Phase 6 — Robust AstraLock-X reference PAT engine
+
+**Complete.**
+
+A second real algorithm, `astralock-x`, runs alongside the Phase-4 baseline. The
+baseline was not modified, replaced or "upgraded in place": it is kept as a
+scientific control, and both are selectable at runtime so every claim below is a
+paired comparison on identical physics. See
+[ASTRALOCK_PAT.md](ASTRALOCK_PAT.md) and ADRs
+[0017](adr/0017-interacting-multiple-model-estimation.md) and
+[0018](adr/0018-prediction-to-actuation-and-recovery.md).
+
+### What was built
+
+- **States** SEARCH → ACQUIRE → TRACK ⇄ RECOVER → HANDOFF, against the
+  baseline's scan → track → lost.
+- **Acquisition validation**: a candidate must survive a persistence window,
+  supporting observations, a bearing-displacement bound and a mean-NIS check
+  before TRACK. The baseline commits on the first detection.
+- **IMM estimator**: six-state, nearly-constant-velocity and
+  nearly-constant-acceleration models, full mixing, log-domain likelihoods, and
+  a fused covariance that includes between-model dispersion.
+- **Gating**: chi-square innovation gate plus an independent hard angular
+  radius, with separate thresholds for TRACK and RECOVER.
+- **Latency-aware control**: the state is predicted forward by
+  `commandLatency + servoLag` — a configured horizon, never a measured host
+  time — and the controller adds motion feed-forward to feedback without
+  double-counting.
+- **Predictive RECOVER**: the estimate coasts through missing measurements and
+  the mount is pointed where the target is predicted to be, with an
+  uncertainty-scaled local search, instead of restarting a global sweep.
+- **Coarse-to-fine HANDOFF readiness** with an explicit dwell, and an
+  evaluator verdict on that claim that plays no part in making it.
+- **FOV-aware search** with measured coverage, an optional prior, and a
+  coverage-gap assertion.
+- Five new scenarios, recorder/metrics/report support for the new states
+  (metrics definition v2), and algorithm selection in Mission Control.
+
+### Ground-truth isolation
+
+Unchanged and re-proved for the new algorithm: the ESLint import barrier now
+also covers `src/core/algorithms/astralock/**`, and the phase adds 17 isolation
+tests including a blank-pixel anti-cheat run in which the tracker must fail to
+acquire.
+
+### Measured results
+
+Paired, identical physics, post-acquisition angular RMS. Full table with method
+and caveats in [ASTRALOCK_PAT.md](ASTRALOCK_PAT.md#measured-results).
+
+| Scenario   | Baseline | AstraLock-X | Retention (base → robust) |
+| ---------- | -------- | ----------- | ------------------------- |
+| stationary | 172 µrad | 158         | 1.000 → 1.000             |
+| moving     | **167**  | 209         | 1.000 → 1.000             |
+| manoeuvre  | 371      | **297**     | 1.000 → 1.000             |
+| short loss | 422590   | **39275**   | **0.127 → 0.871**         |
+| handoff    | 193      | **168**     | 1.000 → 1.000             |
+
+Acquisition is about twice as fast on every scenario, but that is FOV-aware
+search spacing rather than the estimator. **The robust algorithm is honestly
+worse on the constant-velocity scenario** — 209 µrad against 167 — because a
+six-state filter estimating an absent acceleration has more freedom to be wrong.
+That is the price of the loss-recovery behaviour, which is the result the phase
+exists for: an order of magnitude in RMS and seven-fold in retention.
+
+IMM behaviour: NCA probability 0.07 steady, peaking at 0.79 during the
+manoeuvre. Cost 0.81 ms per frame against the baseline's 0.63, on a 16.67 ms
+budget; the IMM cycle itself is 61 µs.
+
+### Bugs found while building this
+
+1. **`ncvResidualAccelerationStdDev` had no effect at all.** The NCV transition
+   matrix zeroes the acceleration row, so the parameter only inflated an unused
+   state. Renamed and documented as what it actually is: a numerical floor that
+   keeps the covariance block invertible for mixing.
+2. **The CA model could never win.** The first jerk density made the NCA
+   likelihood so broad that the probabilities sat at the transition matrix's
+   stationary distribution whatever the target did. Found by sweep, retuned, and
+   the sweep recorded rather than left as folklore.
+3. **Three scenarios did not exercise what they claimed.** The "manoeuvre" was
+   invisible frame-to-frame, the "loss" was a climb the mount simply followed,
+   and a later loss excursion outlasted the recovery timeout. All three were
+   redesigned in bearing space against the mount's actual rate limits.
+4. **Switching algorithm mid-run stopped the control loop** with `Tick count
+must be a non-negative integer, received -5200`. The replacement runtime
+   began frame accounting at time zero and asked the engine to step backwards
+   over frames the previous runtime had already consumed. Found by flying the
+   application, not by a test.
+5. **A negative animation-frame delta could kill playback permanently.** The
+   callback's timestamp is when the browser began the frame, which can precede
+   the `performance.now()` reading taken when the driver started; the resulting
+   negative elapsed time was rejected, and the throw escaped before the next
+   frame was requested. Found in the browser console during manual validation.
+6. **The published results table was measured unfairly.** Its window was sized
+   for AstraLock-X and ended while the baseline was still converging, so it
+   reported baseline errors an order of magnitude too large and overstated the
+   improvement. Remeasured over windows long enough for both arms.
+
+### Verification
+
+| Check                          | Result                                                    |
+| ------------------------------ | --------------------------------------------------------- |
+| `pnpm format:check` / `lint`   | clean                                                     |
+| `pnpm typecheck`               | 0 errors                                                  |
+| `pnpm test` (main pass)        | 1162 tests in 66 files                                    |
+| `pnpm test` (performance pass) | 15 tests in 4 files, run sequentially after the main pass |
+| `pnpm build`                   | succeeds                                                  |
+| `cargo fmt --check` / `clippy` | clean, `-D warnings`                                      |
+| `cargo test`                   | 5 passed                                                  |
+
+### Known limitations
+
+- The IMM costs accuracy on targets that never accelerate; see the moving row
+  above. It is the wrong estimator for a link whose targets are always inertial.
+- HANDOFF readiness is a claim about the coarse loop's own state. No fine
+  pointing stage exists, so nothing consumes it.
+- Recovery is bounded by a timeout; a loss longer than it falls back to SEARCH,
+  which is correct but means the recovery advantage has a horizon.
+- Manual desktop validation was performed against the dev view at
+  `localhost:1420` — identical frontend, store and algorithm code — because no
+  automation available here can drive a native macOS WKWebView. Experiment
+  recording cannot run there at all: browser storage is `UnavailableStorage` and
+  the app says so rather than pretending. The record → finalise → report →
+  recompute chain was therefore validated headlessly against `NodeFileStorage`
+  on real files, which exercises the same recorder, metrics, report and
+  recompute code the desktop uses, and by the automated suites. The Tauri IPC
+  layer itself remains covered only by its pure helpers.
+
+### Not started
+
+No coded beacon identification, AI/ONNX verifier, atmospheric disturbance
+engine, sensor-noise engine, AstraBench batch benchmarking, FailureHunter,
+replay, HIL or final UI redesign was added. Phase 7 has not been started.

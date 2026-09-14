@@ -129,6 +129,18 @@ export interface ClosedLoopOptions {
    * Can also be attached and detached later with {@link ClosedLoopRuntime.observe}.
    */
   readonly observer?: LoopObserver;
+  /**
+   * Capture time, in seconds, already covered by whoever ran the sensor before
+   * this runtime existed. Defaults to `-1`, meaning "nothing yet".
+   *
+   * A runtime normally starts with the world, so the default is right. But one
+   * built against an engine that is already running — the operator switching
+   * algorithms mid-flight — must not begin frame accounting at time zero: it
+   * would ask the engine to step backwards to collect frames that the previous
+   * runtime already consumed, and the engine correctly refuses a negative tick
+   * count. Passing the caller's watermark resumes from the present instead.
+   */
+  readonly capturedThrough?: number;
 }
 
 /**
@@ -354,7 +366,7 @@ export class ClosedLoopRuntime {
   private readonly historyLimit: number;
   private readonly blankPixels: boolean;
 
-  private capturedThrough = -1;
+  private capturedThrough: number;
   private previousCommand: ControlCommand | null = null;
   private lastOutput: TrackingOutput<unknown> | null = null;
   private commands: IssuedCommand[] = [];
@@ -383,6 +395,7 @@ export class ClosedLoopRuntime {
     this.onFrame = options.onFrame;
     this.observer = options.observer ?? null;
     this.appliedSeen = options.engine.gimbal.appliedCommandCount;
+    this.capturedThrough = options.capturedThrough ?? -1;
 
     const parsed = options.plugin.manifest.configSchema.parse(options.config);
     this.instance = options.plugin.create({

@@ -394,3 +394,54 @@ under 0.01 px. The loss scenario's post-acquisition error is large because the
 window deliberately includes everything after the target outran the mount. The
 image medians agree with the Phase 4 validation (0.48 px and 0.19 px, measured
 from 3 s after acquisition).
+
+## Metrics definition v2 (Phase 6)
+
+Phase 6 added states the Phase 5 definitions did not know about, which changes
+what some existing metrics mean. Rather than reinterpreting stored results, the
+change is versioned: a run recorded under **v1 recomputes under v1 and gets the
+numbers it stored**, and a compatibility test using a real Phase 5 run
+directory enforces that.
+
+**What changed.**
+
+_Which states count as tracking._ Under v1, `track` alone. Under v2, `track` and
+`handoff` — a tracker that is holding the target and reporting it ready for a
+fine-pointing stage is still tracking, and excluding handoff time would make a
+successful run look like a short one. `recover` counts as **not** tracking under
+both: the algorithm has lost measurement support, and whether it gets the target
+back is exactly what the recovery metrics measure.
+
+For the baseline, which never reports `handoff`, the two versions give identical
+results.
+
+**What was added**, all present only under v2 and only for a run that actually
+produced the data:
+
+| Metric                                 | Meaning                                   |
+| -------------------------------------- | ----------------------------------------- |
+| `handoff.firstHandoffReadyTime`        | First handoff-ready claim, simulated time |
+| `handoff.timeToHandoffReady`           | That, minus search start                  |
+| `handoff.episodes`                     | Distinct ready episodes                   |
+| `handoff.durationSeconds`              | Total time ready                          |
+| `handoff.validDurationSeconds`         | Of that, the time the claim was justified |
+| `handoff.validityRate`                 | The ratio                                 |
+| `algorithmRecovery.entries`            | Times the algorithm entered RECOVER       |
+| `algorithmRecovery.reacquired`         | Recoveries that returned to TRACK         |
+| `algorithmRecovery.fellBackToSearch`   | Recoveries that gave up                   |
+| `algorithmRecovery.unresolved`         | Still recovering when the run ended       |
+| `algorithmRecovery.recoveryTime`       | Time in recovery before reacquisition     |
+| `estimator.caProbabilityWhileTracking` | Acceleration-model probability            |
+
+**Handoff validity** is the evaluator's verdict on the algorithm's own claim:
+the fraction of handoff-ready time during which the _true_ angular pointing
+error was within `handoffValidityThresholdRad` (1 mrad — half the coarse-lock
+threshold). The algorithm never sees it, and it plays no part in deciding to
+enter handoff. It exists to answer "when this system says it is ready, is it?".
+
+**Algorithm recovery is distinct from loss of lock.** The loss-of-lock episodes
+above are the evaluator's judgement about _pointing_; these are the algorithm's
+own state transitions. A tracker can enter RECOVER and return without the
+evaluator ever registering a loss, and it can hold the lock condition while
+believing itself lost. Both are worth recording, and they are recorded
+separately.

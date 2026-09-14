@@ -13,7 +13,22 @@
 
 import { useEffect, useRef } from 'react';
 
-import type { BaselineDebug } from '@/core/algorithms';
+/**
+ * The part of an algorithm's diagnostics the overlay draws.
+ *
+ * Structural rather than a union of the two concrete debug types: the overlay
+ * shows what a detection and an estimate look like on the image, which every
+ * tracker has, and naming exactly that set keeps the drawing code from caring
+ * which one is running.
+ */
+interface OverlayDebug {
+  readonly centroidX: number | null;
+  readonly centroidY: number | null;
+  readonly boundingBox: { x: number; y: number; width: number; height: number } | null;
+  readonly candidateScore: number | null;
+  readonly predictedImageX: number | null;
+  readonly predictedImageY: number | null;
+}
 import type { CameraSensorFrame } from '@/core/contracts/sensors';
 import type { SensorEvaluationTruth } from '@/core/sensors/sensor-truth';
 import { useSimulationStore } from '@/stores/simulation-store';
@@ -89,7 +104,7 @@ function drawTruthOverlay(
  */
 function drawAlgorithmOverlay(
   context: CanvasRenderingContext2D,
-  debug: BaselineDebug,
+  debug: OverlayDebug,
   width: number,
   height: number,
 ): void {

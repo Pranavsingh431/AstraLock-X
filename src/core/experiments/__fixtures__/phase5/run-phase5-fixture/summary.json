@@ -1,0 +1,694 @@
+{
+  "schemaVersion": 1,
+  "metricsDefinitionVersion": 1,
+  "metricsFingerprint": "sha256:530dd01a71e267267adc3355581bd03169f3132802289e23fbe42b1bb0bddda2",
+  "runId": "run-phase5-fixture",
+  "metricsConfig": {
+    "definitionVersion": 1,
+    "lockErrorThresholdRad": 0.002,
+    "lockDwellSeconds": 0.5,
+    "lockDropoutGraceSeconds": 0.25,
+    "maxTrackableRangeM": 50000,
+    "detectionAssociationRadiusPx": 5
+  },
+  "terminationReason": "operator-finalised",
+  "simulationDurationSeconds": {
+    "value": 7,
+    "status": "derived",
+    "unit": "s"
+  },
+  "autonomousDurationSeconds": {
+    "value": 7,
+    "status": "derived",
+    "unit": "s"
+  },
+  "configuredSensorFps": {
+    "value": 60,
+    "status": "configured",
+    "unit": "fps"
+  },
+  "effectiveSensorFps": {
+    "value": 60,
+    "status": "derived",
+    "unit": "fps"
+  },
+  "algorithmProcessedFps": {
+    "value": 60,
+    "status": "derived",
+    "unit": "fps"
+  },
+  "sensorFramesGenerated": 420,
+  "algorithmFramesProcessed": 420,
+  "acquisitionOutcome": "acquired",
+  "searchStartTime": {
+    "value": 0,
+    "status": "derived",
+    "unit": "s"
+  },
+  "firstDetectionTime": {
+    "value": 0,
+    "status": "derived",
+    "unit": "s"
+  },
+  "trackEntryTime": {
+    "value": 0.02,
+    "status": "derived",
+    "unit": "s"
+  },
+  "coarseLockTime": {
+    "value": 3.533333333333333,
+    "status": "derived",
+    "unit": "s"
+  },
+  "timeToFirstDetection": {
+    "value": 0,
+    "status": "derived",
+    "unit": "s"
+  },
+  "timeToTrack": {
+    "value": 0.02,
+    "status": "derived",
+    "unit": "s"
+  },
+  "coarseAcquisitionTime": {
+    "value": 3.533333333333333,
+    "status": "derived",
+    "unit": "s"
+  },
+  "angularPointingError": {
+    "wholeRun": {
+      "count": 421,
+      "mean": {
+        "value": 0.07016214773277954,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "rms": {
+        "value": 0.19973024504147,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "median": {
+        "value": 0.0025137514843295993,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "p95": {
+        "value": 0.6061545244062162,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "max": {
+        "value": 0.8783479074766397,
+        "status": "derived",
+        "unit": "rad"
+      }
+    },
+    "postAcquisition": {
+      "count": 209,
+      "mean": {
+        "value": 0.13542050418519253,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "rms": {
+        "value": 0.28324676538093313,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "median": {
+        "value": 0.0007822015931634306,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "p95": {
+        "value": 0.7224285547852171,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "max": {
+        "value": 0.8783479074766397,
+        "status": "derived",
+        "unit": "rad"
+      }
+    },
+    "trackState": {
+      "count": 375,
+      "mean": {
+        "value": 0.009464853569104448,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "rms": {
+        "value": 0.03420063530123884,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "median": {
+        "value": 0.001999275409112755,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "p95": {
+        "value": 0.04422184272242358,
+        "status": "derived",
+        "unit": "rad"
+      },
+      "max": {
+        "value": 0.25033699039969665,
+        "status": "derived",
+        "unit": "rad"
+      }
+    }
+  },
+  "imagePointingError": {
+    "wholeRun": {
+      "count": 365,
+      "mean": {
+        "value": 12.979955334805357,
+        "status": "derived",
+        "unit": "px"
+      },
+      "rms": {
+        "value": 32.4524689177775,
+        "status": "derived",
+        "unit": "px"
+      },
+      "median": {
+        "value": 5.644867791670889,
+        "status": "derived",
+        "unit": "px"
+      },
+      "p95": {
+        "value": 49.82072869257065,
+        "status": "derived",
+        "unit": "px"
+      },
+      "max": {
+        "value": 267.9475114007564,
+        "status": "derived",
+        "unit": "px"
+      }
+    },
+    "postAcquisition": {
+      "count": 153,
+      "mean": {
+        "value": 6.375058874981028,
+        "status": "derived",
+        "unit": "px"
+      },
+      "rms": {
+        "value": 29.781642932643564,
+        "status": "derived",
+        "unit": "px"
+      },
+      "median": {
+        "value": 2.1530140229471724,
+        "status": "derived",
+        "unit": "px"
+      },
+      "p95": {
+        "value": 4.2117458195483195,
+        "status": "derived",
+        "unit": "px"
+      },
+      "max": {
+        "value": 267.9475114007564,
+        "status": "derived",
+        "unit": "px"
+      }
+    },
+    "trackState": {
+      "count": 364,
+      "mean": {
+        "value": 12.65316257313244,
+        "status": "derived",
+        "unit": "px"
+      },
+      "rms": {
+        "value": 31.752745390349535,
+        "status": "derived",
+        "unit": "px"
+      },
+      "median": {
+        "value": 5.620076973261581,
+        "status": "derived",
+        "unit": "px"
+      },
+      "p95": {
+        "value": 42.38431967939364,
+        "status": "derived",
+        "unit": "px"
+      },
+      "max": {
+        "value": 267.9475114007564,
+        "status": "derived",
+        "unit": "px"
+      }
+    }
+  },
+  "detectorCentroidError": {
+    "count": 365,
+    "mean": {
+      "value": 0.006491347191615699,
+      "status": "derived",
+      "unit": "px"
+    },
+    "rms": {
+      "value": 0.006842813272139475,
+      "status": "derived",
+      "unit": "px"
+    },
+    "median": {
+      "value": 0.0069720422874084385,
+      "status": "derived",
+      "unit": "px"
+    },
+    "p95": {
+      "value": 0.0095253624074593,
+      "status": "derived",
+      "unit": "px"
+    },
+    "max": {
+      "value": 0.0126203299568046,
+      "status": "derived",
+      "unit": "px"
+    }
+  },
+  "detectorMissesWithTargetInImage": 0,
+  "lockRetentionRate": {
+    "value": 0.7163461538461539,
+    "status": "derived",
+    "unit": "1"
+  },
+  "lockRetentionStatus": "computed",
+  "lockedDurationSeconds": {
+    "value": 2.4833333333333334,
+    "status": "derived",
+    "unit": "s"
+  },
+  "trackableOpportunitySeconds": {
+    "value": 3.466666666666667,
+    "status": "derived",
+    "unit": "s"
+  },
+  "lossOfLockEpisodes": 1,
+  "unrecoveredLosses": 1,
+  "reacquisitionCount": 0,
+  "reacquisitionTime": {
+    "count": 0,
+    "mean": {
+      "value": null,
+      "status": "not-measured",
+      "unit": "s"
+    },
+    "rms": {
+      "value": null,
+      "status": "not-measured",
+      "unit": "s"
+    },
+    "median": {
+      "value": null,
+      "status": "not-measured",
+      "unit": "s"
+    },
+    "p95": {
+      "value": null,
+      "status": "not-measured",
+      "unit": "s"
+    },
+    "max": {
+      "value": null,
+      "status": "not-measured",
+      "unit": "s"
+    }
+  },
+  "episodes": [
+    {
+      "lost_at_s": 6.016666666666667,
+      "recovered_at_s": null,
+      "duration_s": null,
+      "unrecovered": true
+    }
+  ],
+  "trackClaimedWithoutLockSeconds": {
+    "value": 3.1166666666666667,
+    "status": "derived",
+    "unit": "s"
+  },
+  "falseLockExercised": false,
+  "falseLockEpisodes": 0,
+  "falseLockDurationSeconds": {
+    "value": null,
+    "status": "not-applicable",
+    "unit": "s"
+  },
+  "falseLockRate": {
+    "value": null,
+    "status": "not-applicable",
+    "unit": "1"
+  },
+  "hostProcessingTime": {
+    "worldStep": {
+      "count": 421,
+      "mean": {
+        "value": 0.0012196413301651583,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "rms": {
+        "value": 0.0022603356933302158,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "median": {
+        "value": 0.0005840000000034706,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "p95": {
+        "value": 0.003500000000030923,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "max": {
+        "value": 0.028124999999931788,
+        "status": "derived",
+        "unit": "ms"
+      }
+    },
+    "sensorFrameGeneration": {
+      "count": 421,
+      "mean": {
+        "value": 0.0213692399049897,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "rms": {
+        "value": 0.06888811923264603,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "median": {
+        "value": 0.013583000000039647,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "p95": {
+        "value": 0.036125000000083674,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "max": {
+        "value": 1.2921250000000555,
+        "status": "derived",
+        "unit": "ms"
+      }
+    },
+    "detector": {
+      "count": 421,
+      "mean": {
+        "value": 0.6222755201900221,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "rms": {
+        "value": 0.6378563716874088,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "median": {
+        "value": 0.6004580000000033,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "p95": {
+        "value": 0.648834000000079,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "max": {
+        "value": 2.1909590000000208,
+        "status": "derived",
+        "unit": "ms"
+      }
+    },
+    "bearingTransform": {
+      "count": 365,
+      "mean": {
+        "value": 0.0014871068493130847,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "rms": {
+        "value": 0.004635682285490168,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "median": {
+        "value": 0.0009170000000722212,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "p95": {
+        "value": 0.0032913999999891553,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "max": {
+        "value": 0.0822089999999207,
+        "status": "derived",
+        "unit": "ms"
+      }
+    },
+    "estimator": {
+      "count": 376,
+      "mean": {
+        "value": 0.005948276595746995,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "rms": {
+        "value": 0.028768225780144475,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "median": {
+        "value": 0.00204200000007404,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "p95": {
+        "value": 0.012208249999986265,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "max": {
+        "value": 0.5409170000000358,
+        "status": "derived",
+        "unit": "ms"
+      }
+    },
+    "controller": {
+      "count": 389,
+      "mean": {
+        "value": 0.0014646143958872767,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "rms": {
+        "value": 0.005827138679948892,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "median": {
+        "value": 0.0008749999999508873,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "p95": {
+        "value": 0.002199999999993447,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "max": {
+        "value": 0.08545900000001438,
+        "status": "derived",
+        "unit": "ms"
+      }
+    },
+    "algorithmTotal": {
+      "count": 421,
+      "mean": {
+        "value": 0.6388806342042782,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "rms": {
+        "value": 0.6632572282346396,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "median": {
+        "value": 0.610834000000068,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "p95": {
+        "value": 0.6795419999999694,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "max": {
+        "value": 2.730583000000024,
+        "status": "derived",
+        "unit": "ms"
+      }
+    },
+    "runtimeOrchestration": {
+      "count": 421,
+      "mean": {
+        "value": 0.012941456056998478,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "rms": {
+        "value": 0.02429672298885515,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "median": {
+        "value": 0.009666999999808468,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "p95": {
+        "value": 0.021915999999919222,
+        "status": "derived",
+        "unit": "ms"
+      },
+      "max": {
+        "value": 0.39345799999978226,
+        "status": "derived",
+        "unit": "ms"
+      }
+    }
+  },
+  "commandsIssued": 390,
+  "commandsApplied": 388,
+  "commandsPendingAtEnd": 2,
+  "controlLatency": {
+    "captureToIssue": {
+      "count": 390,
+      "mean": {
+        "value": 0.0016581196581196452,
+        "status": "derived",
+        "unit": "s"
+      },
+      "rms": {
+        "value": 0.0021450267133860004,
+        "status": "derived",
+        "unit": "s"
+      },
+      "median": {
+        "value": 0.0016666666666667052,
+        "status": "derived",
+        "unit": "s"
+      },
+      "p95": {
+        "value": 0.0033333333333336545,
+        "status": "derived",
+        "unit": "s"
+      },
+      "max": {
+        "value": 0.0033333333333338544,
+        "status": "derived",
+        "unit": "s"
+      }
+    },
+    "issueToApplication": {
+      "count": 388,
+      "mean": {
+        "value": 0.02299999999999982,
+        "status": "derived",
+        "unit": "s"
+      },
+      "rms": {
+        "value": 0.02299999999999978,
+        "status": "derived",
+        "unit": "s"
+      },
+      "median": {
+        "value": 0.02299999999999991,
+        "status": "derived",
+        "unit": "s"
+      },
+      "p95": {
+        "value": 0.02300000000000013,
+        "status": "derived",
+        "unit": "s"
+      },
+      "max": {
+        "value": 0.02300000000000013,
+        "status": "derived",
+        "unit": "s"
+      }
+    },
+    "captureToApplication": {
+      "count": 388,
+      "mean": {
+        "value": 0.024662371134020488,
+        "status": "derived",
+        "unit": "s"
+      },
+      "rms": {
+        "value": 0.02469993461042852,
+        "status": "derived",
+        "unit": "s"
+      },
+      "median": {
+        "value": 0.024666666666666615,
+        "status": "derived",
+        "unit": "s"
+      },
+      "p95": {
+        "value": 0.026333333333333542,
+        "status": "derived",
+        "unit": "s"
+      },
+      "max": {
+        "value": 0.026333333333333542,
+        "status": "derived",
+        "unit": "s"
+      }
+    },
+    "scheduledToActualApplication": {
+      "count": 388,
+      "mean": {
+        "value": 0,
+        "status": "derived",
+        "unit": "s"
+      },
+      "rms": {
+        "value": 0,
+        "status": "derived",
+        "unit": "s"
+      },
+      "median": {
+        "value": 0,
+        "status": "derived",
+        "unit": "s"
+      },
+      "p95": {
+        "value": 0,
+        "status": "derived",
+        "unit": "s"
+      },
+      "max": {
+        "value": 0,
+        "status": "derived",
+        "unit": "s"
+      }
+    }
+  }
+}
