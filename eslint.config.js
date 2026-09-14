@@ -123,6 +123,26 @@ const GROUND_TRUTH_PATTERNS = [
     message:
       'The sensor subsystem consumes world state and produces the evaluation truth for each frame. A tracker receives a CameraSensorFrame from the harness; it never builds one (ADR-0003, ADR-0009).',
   },
+  {
+    group: [
+      '@/core/gimbal',
+      '@/core/gimbal/**',
+      '**/core/gimbal',
+      '**/core/gimbal/**',
+      // Relative paths that reach the directory without spelling "core".
+      // `**/gimbal/*` deliberately requires a segment after the directory, so
+      // it catches `../../gimbal/dynamic-gimbal` while leaving the public
+      // `@/core/contracts/gimbal` module — which a controller legitimately
+      // needs — alone.
+      '**/gimbal/*',
+      '../gimbal',
+      '../../gimbal',
+      '../../../gimbal',
+    ],
+    allowTypeImports: false,
+    message:
+      'The mount implementation exposes the actuator interior: motor angle, backlash take-up, the acceleration the servo demanded. A controller sees an encoder reading and issues position commands. Use the GimbalConfig and GimbalPositionCommand types in @/core/contracts/gimbal (ADR-0003, ADR-0011).',
+  },
 ];
 
 /**

@@ -11,7 +11,6 @@
 export * from './camera-clock';
 export * from './emitters';
 export * from './frame-pool';
-export * from './mount';
 export * from './pinhole';
 export * from './psf';
 export * from './sensor-truth';

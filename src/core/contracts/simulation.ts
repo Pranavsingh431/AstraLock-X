@@ -19,7 +19,13 @@ import {
   unitIntervalNumber,
   vec3Schema,
 } from './schema';
-import type { GimbalAxisLimits, PixelFormat } from './sensors';
+import {
+  type GimbalConfig,
+  gimbalConfigSchema,
+  servoStepParameter,
+  MAX_SERVO_OMEGA_TIMESTEP,
+} from './gimbal';
+import type { PixelFormat } from './sensors';
 import { type TrajectoryConfig, trajectoryConfigSchema } from './trajectory';
 import type {
   Hertz,
@@ -55,13 +61,15 @@ export const MAX_SIMULATION_SEED = 0xffff_ffff;
  * trajectory, and gave the platform a boresight. Version 3 (Phase 2) gives the
  * camera a real optical description — field of view, ranges, initial pointing —
  * and replaces a target's bare `beaconPower` with a beacon that has apparent
- * optical properties.
+ * optical properties. Version 4 (Phase 3) replaces the static mount with a
+ * dynamic actuator, and consolidates initial pointing — previously declared in
+ * three places — into the gimbal's own axis angles.
  *
  * Older documents are rejected rather than migrated. Guessing a field of view
  * for a config that never specified one would be inventing the instrument, in
  * the same way that guessing a trajectory would be inventing the experiment.
  */
-export const SIMULATION_CONFIG_SCHEMA_VERSION = 3;
+export const SIMULATION_CONFIG_SCHEMA_VERSION = 4;
 
 /**
  * Largest image dimension a scenario may ask for.
@@ -85,24 +93,10 @@ export function simulationSeed(value: number): SimulationSeed {
   return value as SimulationSeed;
 }
 
-/**
- * Fixed pointing direction of the observer platform.
- *
- * A static reference direction, not a servo: Phase 1 models no gimbal control
- * loop, so this is where the mount is aimed and it stays there. Azimuth is
- * clockwise from North, elevation is positive upward.
- */
-export interface BoresightConfig {
-  readonly azimuth: Radians;
-  readonly elevation: Radians;
-}
-
 /** Motion and disturbance of the platform carrying the gimbal. */
 export interface PlatformConfig {
   readonly initialPosition: Vec3<Meters>;
   readonly initialVelocity: Vec3<MetersPerSecond>;
-  /** Where the mount points. See {@link BoresightConfig}. */
-  readonly boresight: BoresightConfig;
   /**
    * RMS angular disturbance injected at the gimbal base, per axis.
    *
@@ -196,9 +190,6 @@ export interface CameraConfig {
   /** Nothing further than this projects. */
   readonly farRange: Meters;
   readonly frameRate: Hertz;
-  /** Where the mount points at the start of a run. */
-  readonly initialAzimuth: Radians;
-  readonly initialElevation: Radians;
   /**
    * Uniform background level on [0, 1], scaled to the format's full range.
    *
@@ -220,20 +211,6 @@ export interface CameraConfig {
   readonly dropoutProbability: Normalized;
 }
 
-/** Gimbal mechanics and encoder behaviour. */
-export interface GimbalConfig {
-  readonly azimuthLimits: GimbalAxisLimits;
-  readonly elevationLimits: GimbalAxisLimits;
-  /** Encoder quantisation step. */
-  readonly encoderResolution: Radians;
-  /** Fixed encoder bias, which calibration is meant to find. */
-  readonly encoderBias: Radians;
-  /** Delay between a physical angle and its appearance in `GimbalState`. */
-  readonly reportingLatency: Seconds;
-  /** Closed-loop bandwidth of the servo. */
-  readonly servoBandwidth: Hertz;
-}
-
 /** Propagation conditions along the optical path. */
 export interface AtmosphereConfig {
   /**
@@ -249,7 +226,7 @@ export interface AtmosphereConfig {
 /** Complete, self-contained description of one experiment. */
 export interface SimulationConfig {
   /** Bumped whenever this shape changes, so stored scenarios stay readable. */
-  readonly schemaVersion: 3;
+  readonly schemaVersion: 4;
   readonly id: string;
   readonly name: string;
   readonly seed: SimulationSeed;
@@ -274,13 +251,6 @@ export interface SimulationConfig {
 // Configs arrive from disk and from the Scenario Lab, so they are parsed rather
 // than trusted. `z.number()` already rejects NaN and Infinity in Zod 4.
 
-const axisLimitsSchema = z.strictObject({
-  minAngle: tagged<Radians>(z.number()),
-  maxAngle: tagged<Radians>(z.number()),
-  maxRate: tagged<RadiansPerSecond>(positiveNumber),
-  maxAcceleration: positiveNumber,
-});
-
 /** Runtime schema for {@link SimulationConfig}. */
 export const simulationConfigSchema = z.strictObject({
   schemaVersion: z.literal(SIMULATION_CONFIG_SCHEMA_VERSION),
@@ -298,10 +268,6 @@ export const simulationConfigSchema = z.strictObject({
   platform: z.strictObject({
     initialPosition: vec3Schema<Meters>(),
     initialVelocity: vec3Schema<MetersPerSecond>(),
-    boresight: z.strictObject({
-      azimuth: tagged<Radians>(z.number()),
-      elevation: tagged<Radians>(z.number()),
-    }),
     baseDisturbanceRms: tagged<RadiansPerSecond>(nonNegativeNumber),
     baseDisturbanceBandwidth: tagged<Hertz>(positiveNumber),
   }),
@@ -341,13 +307,6 @@ export const simulationConfigSchema = z.strictObject({
       nearRange: tagged<Meters>(positiveNumber),
       farRange: tagged<Meters>(positiveNumber),
       frameRate: tagged<Hertz>(positiveNumber),
-      initialAzimuth: tagged<Radians>(z.number()),
-      initialElevation: tagged<Radians>(
-        z
-          .number()
-          .min(-Math.PI / 2)
-          .max(Math.PI / 2),
-      ),
       backgroundLevel: tagged<Normalized>(unitIntervalNumber),
       exposure: tagged<Seconds>(positiveNumber),
       gain: positiveNumber,
@@ -373,14 +332,7 @@ export const simulationConfigSchema = z.strictObject({
       },
     ),
 
-  gimbal: z.strictObject({
-    azimuthLimits: axisLimitsSchema,
-    elevationLimits: axisLimitsSchema,
-    encoderResolution: tagged<Radians>(positiveNumber),
-    encoderBias: tagged<Radians>(z.number()),
-    reportingLatency: tagged<Seconds>(nonNegativeNumber),
-    servoBandwidth: tagged<Hertz>(positiveNumber),
-  }),
+  gimbal: gimbalConfigSchema,
 
   atmosphere: z.strictObject({
     refractiveIndexStructure: nonNegativeNumber,
@@ -400,21 +352,28 @@ export const validatedSimulationConfigSchema = simulationConfigSchema
     error: 'Camera exposure must not exceed the frame period (1 / frameRate).',
     path: ['camera', 'exposure'],
   })
-  .refine((config) => config.gimbal.azimuthLimits.minAngle < config.gimbal.azimuthLimits.maxAngle, {
-    error: 'Azimuth minAngle must be strictly less than maxAngle.',
-    path: ['gimbal', 'azimuthLimits'],
-  })
-  .refine(
-    (config) => config.gimbal.elevationLimits.minAngle < config.gimbal.elevationLimits.maxAngle,
-    {
-      error: 'Elevation minAngle must be strictly less than maxAngle.',
-      path: ['gimbal', 'elevationLimits'],
-    },
-  )
   .refine((config) => config.tickRate >= config.camera.frameRate, {
     error: 'Physics tick rate must be at least the camera frame rate.',
     path: ['tickRate'],
-  }) satisfies z.ZodType<SimulationConfig, unknown>;
+  })
+  .refine(
+    (config) => servoStepParameter(config.gimbal.pan, config.tickRate) <= MAX_SERVO_OMEGA_TIMESTEP,
+    {
+      // A servo fast enough to be inaccurate at the configured tick is a
+      // configuration error, not something to discover as a wobbling axis.
+      error:
+        'Pan servo is too fast for the physics tick: 2*pi*naturalFrequency / tickRate must not exceed 0.5.',
+      path: ['gimbal', 'pan', 'naturalFrequency'],
+    },
+  )
+  .refine(
+    (config) => servoStepParameter(config.gimbal.tilt, config.tickRate) <= MAX_SERVO_OMEGA_TIMESTEP,
+    {
+      error:
+        'Tilt servo is too fast for the physics tick: 2*pi*naturalFrequency / tickRate must not exceed 0.5.',
+      path: ['gimbal', 'tilt', 'naturalFrequency'],
+    },
+  ) satisfies z.ZodType<SimulationConfig, unknown>;
 
 /**
  * Parses an untrusted config.

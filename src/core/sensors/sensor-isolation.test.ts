@@ -124,8 +124,18 @@ describe('what a hostile consumer can reach from a frame', () => {
     const { frame } = captureFrame();
     const scenario = loadScenario('camera-boresight');
 
-    expect(frame.pose.azimuth).toBeCloseTo(scenario.camera.initialAzimuth, 12);
-    expect(frame.pose.elevation).toBeCloseTo(scenario.camera.initialElevation, 12);
+    // Initial pointing now has a single source: the mount's own configuration.
+    // The reported angle is an encoder reading, so it sits within half a count
+    // of the configured angle rather than exactly on it — which is the point of
+    // the true/measured split (ADR-0011), not a tolerance fudge.
+    const panHalfCount = scenario.gimbal.pan.encoderResolution / 2;
+    const tiltHalfCount = scenario.gimbal.tilt.encoderResolution / 2;
+    expect(Math.abs(frame.pose.azimuth - scenario.gimbal.pan.initialAngle)).toBeLessThanOrEqual(
+      panHalfCount,
+    );
+    expect(Math.abs(frame.pose.elevation - scenario.gimbal.tilt.initialAngle)).toBeLessThanOrEqual(
+      tiltHalfCount,
+    );
     expect(Object.keys(frame.pose).sort()).toEqual(['azimuth', 'elevation']);
   });
 

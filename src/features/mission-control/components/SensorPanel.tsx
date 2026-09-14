@@ -16,8 +16,10 @@ import { radiansToDegrees } from '@/core/contracts/units';
 import { Badge } from '@/components/ui/badge';
 import { useSimulationStore } from '@/stores/simulation-store';
 
-import { CameraControls } from './CameraControls';
+import { ActuatorTruthPanel } from './ActuatorTruthPanel';
+import { GimbalControls } from './GimbalControls';
 import { CameraMonitor } from './CameraMonitor';
+import { ResponseTrace } from './ResponseTrace';
 
 function Field({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
@@ -31,8 +33,8 @@ function Field({ label, value }: { label: string; value: string }): React.JSX.El
 export function SensorPanel(): React.JSX.Element {
   const frame = useSimulationStore((state) => state.sensorFrame);
   const config = useSimulationStore((state) => state.config);
-  const azimuth = useSimulationStore((state) => state.cameraAzimuth);
-  const elevation = useSimulationStore((state) => state.cameraElevation);
+  const measuredPan = useSimulationStore((state) => state.measuredPan);
+  const measuredTilt = useSimulationStore((state) => state.measuredTilt);
   const scheduled = useSimulationStore((state) => state.framesScheduled);
   const superseded = useSimulationStore((state) => state.framesSupersededForDisplay);
   const showTruthOverlay = useSimulationStore((state) => state.showTruthOverlay);
@@ -69,14 +71,23 @@ export function SensorPanel(): React.JSX.Element {
           value={frame === null ? '—' : `${String(frame.width)}×${String(frame.height)}`}
         />
         <Field label="Configured FPS" value={`${String(config.camera.frameRate)} Hz`} />
-        <Field label="Camera az" value={`${radiansToDegrees(azimuth as never).toFixed(2)}°`} />
-        <Field label="Camera el" value={`${radiansToDegrees(elevation as never).toFixed(2)}°`} />
+        <Field label="Camera az" value={`${radiansToDegrees(measuredPan as never).toFixed(3)}°`} />
+        <Field label="Camera el" value={`${radiansToDegrees(measuredTilt as never).toFixed(3)}°`} />
         <Field label="Format" value={frame?.format ?? '—'} />
         <Field label="Scheduled" value={String(scheduled)} />
         <Field label="Superseded" value={String(superseded)} />
       </div>
 
-      <CameraControls />
+      {/* The mount's diagnostics scroll independently so a tall truth panel
+          cannot squeeze the viewfinder above it. */}
+      <div className="max-h-[46%] shrink-0 overflow-y-auto">
+        <GimbalControls />
+        <div className="space-y-2.5 border-t px-3 py-2.5">
+          <ResponseTrace axis="pan" />
+          <ResponseTrace axis="tilt" />
+        </div>
+        <ActuatorTruthPanel />
+      </div>
     </section>
   );
 }

@@ -296,6 +296,19 @@ trajectory. A version 1 document is rejected rather than migrated: guessing a
 trajectory for a config that never specified one would be inventing the
 experiment.
 
+Schema version 4 replaced the placeholder gimbal block with the real actuator
+configuration — per-axis travel, rate, acceleration, bandwidth, damping,
+deadband, backlash and encoder resolution, plus a shared command latency — and
+**removed** `camera.initialAzimuth`, `camera.initialElevation` and
+`platform.boresight`. Initial pointing had been declared in three places that
+could disagree; it now has one source, `gimbal.pan.initialAngle` and
+`gimbal.tilt.initialAngle`. A superseded document is rejected, not migrated.
+
+Validation includes a stability rule the physics depends on: a servo whose
+`2π·naturalFrequency / tickRate` exceeds 0.5 is refused at load time, because
+the discrete integration would diverge. That is a scenario error rather than a
+runtime surprise. See [GIMBAL_MODEL.md](GIMBAL_MODEL.md).
+
 Export writes the validated config and nothing else — no camera pose, no
 playback speed, no view toggles. Those describe how someone was looking at a
 run, not what the run was.

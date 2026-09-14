@@ -14,8 +14,7 @@ import { parseSimulationConfig, type SimulationConfig } from '@/core/contracts/s
 import { makeValidRawConfig } from '@/test/fixtures';
 
 import type { EmitterId, OpticalEmitter } from './emitters';
-import { FrameBufferPool } from './frame-pool';
-import { IdealCameraMount } from './mount';
+import { FrameBufferPool, FrameLeaseError } from './frame-pool';
 import { VirtualCameraSensor, copyFramePixels } from './virtual-camera';
 import { lerpAngleShortestPath, type SensorWorldSample, type WorldSampler } from './world-sampler';
 
@@ -30,8 +29,6 @@ function config(patch: Record<string, unknown> = {}): SimulationConfig {
     nearRange: 1,
     farRange: 50_000,
     frameRate: 60,
-    initialAzimuth: 0,
-    initialElevation: 0,
     backgroundLevel: 0,
     ...patch,
   };
@@ -52,8 +49,14 @@ const driftingSampler = (): WorldSampler => ({
   sampleAt: (time): SensorWorldSample => ({
     time,
     cameraPosition: { x: 0, y: 0, z: 0 },
-    platformAzimuth: 0 as never,
-    platformElevation: 0 as never,
+    cameraPose: {
+      trueAzimuth: 0,
+      trueElevation: 0,
+      measuredAzimuth: 0,
+      measuredElevation: 0,
+      measuredAzimuthRate: 0,
+      measuredElevationRate: 0,
+    },
     emitters: [movingEmitter(time * 40)],
   }),
 });
@@ -63,7 +66,7 @@ describe('frame buffer pool', () => {
     const pool = new FrameBufferPool(1024, 3);
     expect(pool.allocated).toBe(0);
 
-    for (let index = 0; index < 50; index += 1) pool.acquire();
+    for (let index = 0; index < 50; index += 1) pool.acquire().release();
 
     expect(pool.allocated).toBe(3);
     expect(pool.acquired).toBe(50);
@@ -72,10 +75,13 @@ describe('frame buffer pool', () => {
   it('cycles through its buffers in order', () => {
     const pool = new FrameBufferPool(8, 3);
     const first = [pool.acquire(), pool.acquire(), pool.acquire()];
+    const firstPixels = first.map((lease) => lease.pixels);
+    for (const lease of first) lease.release();
+
     const second = [pool.acquire(), pool.acquire(), pool.acquire()];
-    expect(second[0]).toBe(first[0]);
-    expect(second[1]).toBe(first[1]);
-    expect(second[2]).toBe(first[2]);
+    expect(second[0]!.pixels).toBe(firstPixels[0]);
+    expect(second[1]!.pixels).toBe(firstPixels[1]);
+    expect(second[2]!.pixels).toBe(firstPixels[2]);
   });
 
   it('rejects a nonsensical size or capacity', () => {
@@ -85,29 +91,139 @@ describe('frame buffer pool', () => {
   });
 });
 
+// --- Frame ownership --------------------------------------------------------
+
+/**
+ * The lease model, asserted directly.
+ *
+ * Phase 2's pool recycled buffers silently. That was defensible while every
+ * consumer drew the frame and dropped it inside the same synchronous call, but
+ * a mount that answers over time means captures are now taken and held, and a
+ * buffer changing underneath a held frame is a bug that shows up as impossible
+ * pixels rather than as an error. Exhaustion is therefore loud, and use after
+ * release throws.
+ */
+describe('frame ownership', () => {
+  it('refuses to hand out more frames than it owns', () => {
+    const pool = new FrameBufferPool(64, 2);
+    pool.acquire();
+    pool.acquire();
+
+    expect(() => pool.acquire()).toThrow(FrameLeaseError);
+  });
+
+  it('names the fix in the error, because the fix is not obvious', () => {
+    const pool = new FrameBufferPool(64, 1);
+    pool.acquire();
+    expect(() => pool.acquire()).toThrow(/toOwned/);
+  });
+
+  it('throws on use after release instead of returning stale pixels', () => {
+    const pool = new FrameBufferPool(64, 1);
+    const lease = pool.acquire();
+    expect(lease.pixels.length).toBe(64);
+
+    lease.release();
+
+    expect(lease.isReleased).toBe(true);
+    expect(() => lease.pixels).toThrow(FrameLeaseError);
+  });
+
+  it('treats a second release as a no-op rather than freeing twice', () => {
+    // Double release on a ring is worse than a leak: it returns a buffer that
+    // someone else now holds.
+    const pool = new FrameBufferPool(64, 2);
+    const lease = pool.acquire();
+
+    lease.release();
+    lease.release();
+
+    expect(pool.leased).toBe(0);
+    expect(pool.available).toBe(2);
+  });
+
+  it('recovers every buffer when the sensor is reset', () => {
+    const sensor = new VirtualCameraSensor({ config: config(), poolCapacity: 2 });
+    const sampler = driftingSampler();
+    sensor.captureFrame(sampler, 0);
+    sensor.captureFrame(sampler, 1);
+
+    sensor.reset();
+
+    // Two more captures would throw if reset had not reclaimed the leases.
+    expect(() => {
+      sensor.captureFrame(sampler, 2);
+      sensor.captureFrame(sampler, 3);
+    }).not.toThrow();
+  });
+
+  it('lends a frame to a range callback and takes it straight back', () => {
+    // captureRange over a long interval would exhaust a two-buffer pool on its
+    // third frame if the borrow were not returned.
+    const sensor = new VirtualCameraSensor({ config: config(), poolCapacity: 2 });
+    const seen: number[] = [];
+
+    sensor.captureRange(driftingSampler(), 0, 0.25, (capture) => {
+      seen.push(capture.frame.frameId);
+    });
+
+    expect(seen).toHaveLength(15);
+  });
+
+  it('releases the borrow even when the callback throws', () => {
+    const sensor = new VirtualCameraSensor({ config: config(), poolCapacity: 1 });
+    const sampler = driftingSampler();
+
+    expect(() => {
+      sensor.captureRange(sampler, 0, 0.05, () => {
+        throw new Error('consumer blew up');
+      });
+    }).toThrow('consumer blew up');
+
+    // The pool is intact: a leaked lease would make this throw FrameLeaseError.
+    expect(() => sensor.captureFrame(sampler, 99).release()).not.toThrow();
+  });
+
+  it('gives an owned copy that outlives the lease', () => {
+    const sensor = new VirtualCameraSensor({ config: config(), poolCapacity: 1 });
+    const sampler = driftingSampler();
+
+    const capture = sensor.captureFrame(sampler, 0);
+    const owned = capture.toOwned();
+    capture.release();
+
+    expect(owned.data.length).toBe(64 * 48);
+    expect(() => capture.frame).toThrow(FrameLeaseError);
+
+    // And the pool is free again, so the next capture succeeds.
+    const next = sensor.captureFrame(sampler, 40);
+    expect(next.frame.data).not.toEqual(owned.data);
+  });
+});
+
 describe('sensor memory', () => {
   it('does not grow with the number of frames produced', () => {
     const sensor = new VirtualCameraSensor({ config: config(), poolCapacity: 2 });
     const sampler = driftingSampler();
 
-    for (let index = 0; index < 500; index += 1) sensor.captureFrame(sampler, index);
+    for (let index = 0; index < 500; index += 1) sensor.captureFrame(sampler, index).release();
 
     expect(sensor.framesRasterized).toBe(500);
     expect(sensor.buffersAllocated).toBe(2);
   });
 
-  it('recycles a buffer once the ring wraps, which is why copies exist', () => {
-    // The sharp edge, asserted rather than left to be discovered: a retained
-    // frame's pixels change underneath it. `copyFramePixels` is the escape.
-    const sensor = new VirtualCameraSensor({ config: config(), poolCapacity: 2 });
+  it('recycles a buffer once a lease is returned, which is why copies exist', () => {
+    // The sharp edge, asserted rather than left to be discovered: once released,
+    // a frame's pixels belong to the pool again. `toOwned` is the escape.
+    const sensor = new VirtualCameraSensor({ config: config(), poolCapacity: 1 });
     const sampler = driftingSampler();
 
     const first = sensor.captureFrame(sampler, 0);
     const owned = copyFramePixels(first.frame);
     const borrowed = first.frame.data as Uint8Array;
+    first.release();
 
-    sensor.captureFrame(sampler, 40);
-    sensor.captureFrame(sampler, 80);
+    sensor.captureFrame(sampler, 40).release();
 
     expect(borrowed).not.toEqual(owned);
     expect(owned.length).toBe(64 * 48);
@@ -132,6 +248,7 @@ describe('backpressure', () => {
     const result = sensor.captureLatest(sampler, 0, 0.25);
 
     expect(result.capture?.frame.frameId).toBe(15);
+    result.capture?.release();
     expect(result.supersededForDisplay).toBe(14);
     expect(sensor.framesScheduled).toBe(15);
     expect(sensor.framesRasterized).toBe(1);
@@ -164,52 +281,9 @@ describe('backpressure', () => {
   });
 });
 
-describe('ideal camera mount', () => {
-  it('adopts a commanded pose immediately', () => {
-    // No dynamics in Phase 2, stated by the class name and asserted here so
-    // nobody mistakes it for the actuator model that replaces it later.
-    const mount = new IdealCameraMount(0, 0);
-    mount.commandTo(0.3, 0.2);
-    expect(mount.azimuth).toBeCloseTo(0.3, 12);
-    expect(mount.elevation).toBeCloseTo(0.2, 12);
-  });
-
-  it('wraps azimuth rather than accumulating it', () => {
-    const mount = new IdealCameraMount(0, 0);
-    mount.commandTo(Math.PI + 0.1, 0);
-    expect(mount.azimuth).toBeCloseTo(-Math.PI + 0.1, 9);
-  });
-
-  it('nudges relative to the current pose', () => {
-    const mount = new IdealCameraMount(0.1, 0.1);
-    mount.nudge(0.05, -0.02);
-    expect(mount.azimuth).toBeCloseTo(0.15, 12);
-    expect(mount.elevation).toBeCloseTo(0.08, 12);
-  });
-
-  it('returns to its initial pose on reset', () => {
-    const mount = new IdealCameraMount(0.25, -0.1);
-    mount.commandTo(1, 0.5);
-    mount.reset();
-    expect(mount.azimuth).toBeCloseTo(0.25, 12);
-    expect(mount.elevation).toBeCloseTo(-0.1, 12);
-  });
-
-  it('refuses a non-finite command', () => {
-    const mount = new IdealCameraMount(0, 0);
-    expect(() => mount.commandTo(Number.NaN, 0)).toThrow(RangeError);
-    expect(() => mount.commandTo(0, Number.POSITIVE_INFINITY)).toThrow(RangeError);
-  });
-
-  it('is reset along with the sensor', () => {
-    const sensor = new VirtualCameraSensor({ config: config({ initialAzimuth: 0.2 }) });
-    sensor.mount.commandTo(1.1, 0.3);
-    sensor.reset();
-
-    expect(sensor.mount.azimuth).toBeCloseTo(0.2, 12);
-    expect(sensor.framesRasterized).toBe(0);
-  });
-});
+// The mount that used to be exercised here was Phase 2's ideal one, which
+// teleported to whatever it was told. Phase 3 replaced it with DynamicGimbal and
+// deleted it; the mechanism is covered by src/core/gimbal/*.test.ts.
 
 describe('shortest-path angular interpolation', () => {
   it('takes the short way across the branch cut', () => {

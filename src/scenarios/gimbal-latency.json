@@ -1,9 +1,9 @@
 {
   "schemaVersion": 4,
-  "id": "waypoint-route",
-  "name": "Waypoint route",
-  "seed": 1005,
-  "duration": 80.0,
+  "id": "gimbal-latency",
+  "name": "Gimbal command latency",
+  "seed": 3002,
+  "duration": 30.0,
   "tickRate": 200,
   "platform": {
     "initialPosition": {
@@ -21,57 +21,27 @@
   },
   "targets": [
     {
-      "label": "Routed vehicle",
+      "label": "Reference beacon",
       "trajectory": {
-        "kind": "waypoint",
-        "loop": true,
-        "waypoints": [
-          {
-            "position": {
-              "x": -800,
-              "y": 1000,
-              "z": 70
-            },
-            "arrivalTime": 0.0
-          },
-          {
-            "position": {
-              "x": -200,
-              "y": 1600,
-              "z": 110
-            },
-            "arrivalTime": 20.0
-          },
-          {
-            "position": {
-              "x": 600,
-              "y": 1500,
-              "z": 95
-            },
-            "arrivalTime": 45.0
-          },
-          {
-            "position": {
-              "x": 900,
-              "y": 900,
-              "z": 60
-            },
-            "arrivalTime": 70.0
-          }
-        ]
+        "kind": "stationary",
+        "position": {
+          "x": 0,
+          "y": 1200,
+          "z": 60
+        }
       },
-      "radius": 0.8,
+      "radius": 0.5,
       "beacon": {
-        "transmitPower": 0.1,
-        "intensity": 0.92,
-        "psfSigma": 2.0
+        "transmitPower": 0.05,
+        "intensity": 0.95,
+        "psfSigma": 2.2
       }
     }
   ],
   "camera": {
     "width": 640,
     "height": 480,
-    "horizontalFov": 0.523598776,
+    "horizontalFov": 0.174532925,
     "verticalFovPolicy": "square-pixels",
     "principalPoint": null,
     "nearRange": 1.0,
@@ -99,7 +69,7 @@
       "encoderResolution": 8.727e-6
     },
     "tilt": {
-      "initialAngle": 0.057935094,
+      "initialAngle": 0.039978687,
       "minAngle": -0.34906585,
       "maxAngle": 1.396263402,
       "maxRate": 2.094395102,
@@ -110,7 +80,7 @@
       "backlash": 0.0,
       "encoderResolution": 8.727e-6
     },
-    "commandLatency": 0.0
+    "commandLatency": 0.023
   },
   "atmosphere": {
     "refractiveIndexStructure": 1e-14,

@@ -39,6 +39,10 @@ secrets.json
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea/
+
+# Local dev-server launch configuration. Machine-specific (it pins an absolute
+# Node 24 path), so it is not shared.
+.claude/
 *.swp
 *.swo
 *~

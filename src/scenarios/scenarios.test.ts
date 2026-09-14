@@ -23,6 +23,27 @@ describe('bundled scenarios', () => {
     expect(config.name.length).toBeGreaterThan(0);
   });
 
+  it('provides both gimbal profiles', () => {
+    // A near-ideal mount to isolate servo behaviour, and a lab mount with play,
+    // a coarse encoder and a real command delay.
+    const ideal = loadScenario('gimbal-step-response').gimbal;
+    const lab = loadScenario('camera-target-outside-fov').gimbal;
+
+    expect(ideal.pan.backlash).toBe(0);
+    expect(ideal.commandLatency).toBe(0);
+    expect(lab.pan.backlash).toBeGreaterThan(0);
+    expect(lab.commandLatency).toBeGreaterThan(0);
+  });
+
+  it('gives the latency scenario a delay that is not a multiple of the tick', () => {
+    // 23 ms against a 5 ms tick, on purpose: a latency that divided evenly
+    // would hide the whole sub-step question.
+    const config = loadScenario('gimbal-latency');
+    const tickSeconds = 1 / config.tickRate;
+    const ticks = config.gimbal.commandLatency / tickSeconds;
+    expect(Number.isInteger(ticks)).toBe(false);
+  });
+
   it('covers every trajectory family', () => {
     const kinds = SCENARIO_IDS.map((id) => loadScenario(id).targets[0]!.trajectory.kind);
     expect(new Set(kinds)).toEqual(
@@ -193,7 +214,9 @@ describe('invalid scenarios are refused', () => {
     ['a non-positive frame rate', { frameRate: 0 }],
     ['a non-positive near range', { nearRange: 0 }],
     ['a near range beyond the far range', { nearRange: 9000, farRange: 100 }],
-    ['an elevation past the zenith', { initialElevation: 2 }],
+    // Pointing left the camera block in schema v4: the mount owns it now, and a
+    // config still carrying it is stale rather than merely unusual.
+    ['stale camera pointing fields', { initialAzimuth: 0, initialElevation: 0 }],
     ['a principal point outside the image', { principalPoint: { x: 5000, y: 10 } }],
     ['an unsupported pixel format', { format: 'rgba8' }],
     ['a background level above full scale', { backgroundLevel: 1.5 }],
@@ -217,17 +240,61 @@ describe('invalid scenarios are refused', () => {
     expect(safeParseSimulationConfig(raw).success).toBe(false);
   });
 
+  const withGimbal = (patch: Record<string, unknown>): Record<string, unknown> => {
+    const raw = makeValidRawConfig();
+    const gimbal = raw['gimbal'] as Record<string, unknown>;
+    raw['gimbal'] = {
+      ...gimbal,
+      pan: { ...(gimbal['pan'] as Record<string, unknown>), ...patch },
+    };
+    return raw;
+  };
+
+  it.each([
+    ['inverted travel limits', { minAngle: 1, maxAngle: -1 }],
+    ['an initial angle outside travel', { initialAngle: 99 }],
+    ['a non-positive rate limit', { maxRate: 0 }],
+    ['a non-positive acceleration limit', { maxAcceleration: -5 }],
+    ['a non-positive natural frequency', { naturalFrequency: 0 }],
+    ['an undamped servo', { dampingRatio: 0 }],
+    ['an absurdly overdamped servo', { dampingRatio: 50 }],
+    ['a negative deadband', { deadband: -0.001 }],
+    ['a negative backlash', { backlash: -0.01 }],
+    ['backlash wider than the travel', { backlash: 99 }],
+    ['a non-positive encoder step', { encoderResolution: 0 }],
+    ['a non-finite angle', { initialAngle: Number.POSITIVE_INFINITY }],
+  ])('rejects %s', (_label, patch) => {
+    expect(safeParseSimulationConfig(withGimbal(patch)).success).toBe(false);
+  });
+
+  it('rejects a negative command latency', () => {
+    const raw = makeValidRawConfig();
+    (raw['gimbal'] as Record<string, unknown>)['commandLatency'] = -0.01;
+    expect(safeParseSimulationConfig(raw).success).toBe(false);
+  });
+
+  it('rejects a servo too fast for the configured physics tick', () => {
+    // Stability and accuracy of the integrator are a property of the pair, so
+    // an unusable combination is refused rather than discovered as a wobble.
+    expect(safeParseSimulationConfig(withGimbal({ naturalFrequency: 200 })).success).toBe(false);
+  });
+
+  it('accepts a servo comfortably inside the integrator bound', () => {
+    expect(safeParseSimulationConfig(withGimbal({ naturalFrequency: 12 })).success).toBe(true);
+  });
+
   it('rejects a non-positive tick rate', () => {
     const raw = makeValidRawConfig();
     raw['tickRate'] = 0;
     expect(safeParseSimulationConfig(raw).success).toBe(false);
   });
 
-  it.each([1, 2, 4])('rejects schema version %i rather than guessing a migration', (version) => {
-    // Version 1 declared a start position rather than a trajectory; version 2
-    // declared a focal length rather than a field of view. Inventing the
-    // missing half would be inventing the experiment or the instrument, and a
-    // future version cannot be understood at all.
+  it.each([1, 2, 3, 5])('rejects schema version %i rather than guessing a migration', (version) => {
+    // Version 1 declared a start position rather than a trajectory; version 2 a
+    // focal length rather than a field of view; version 3 a static boresight
+    // rather than an actuator. Inventing the missing half would be inventing
+    // the experiment or the instrument, and a future version cannot be
+    // understood at all.
     const raw = makeValidRawConfig();
     raw['schemaVersion'] = version;
     expect(safeParseSimulationConfig(raw).success).toBe(false);

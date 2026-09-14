@@ -7,11 +7,12 @@ What actually works, and what does not. Updated at the end of each phase.
 | 0     | Project foundation: contracts, isolation, tooling, CI, shell       | **Complete** |
 | 1     | Simulation core: world, motion, seeded RNG, tick loop, 3D observer | **Complete** |
 | 2     | Virtual optical camera and sensor image pipeline                   | **Complete** |
-| 3     | Perception and estimation; first algorithm plugins; Scenario Lab   | Not started  |
-| 4     | Control and PAT state machine; Calibration                         | Not started  |
-| 5     | Metrics, experiment runner, AstraBench, Replay, Reports            | Not started  |
-| 6     | Mission Control: live 3D scene, camera view, telemetry plots       | Not started  |
-| 7     | Hardware-in-the-loop: serial and USB device drivers                | Not started  |
+| 3     | Dynamic pan/tilt gimbal and actuator system                        | **Complete** |
+| 4     | Perception and estimation; first algorithm plugins; Scenario Lab   | Not started  |
+| 5     | Control and PAT state machine; Calibration                         | Not started  |
+| 6     | Metrics, experiment runner, AstraBench, Replay, Reports            | Not started  |
+| 7     | Mission Control: live 3D scene, camera view, telemetry plots       | Not started  |
+| 8     | Hardware-in-the-loop: serial and USB device drivers                | Not started  |
 
 ---
 
@@ -803,18 +804,18 @@ Phase 2 additions; earlier entries still apply.
    `transmitPower` is declared but unused. A real beacon dims as `1/r^2` and is
    attenuated by the atmosphere.
 4. **No occlusion.** Nothing ever blocks anything.
-5. **The mount is kinematically ideal.** `IdealCameraMount` adopts a commanded
-   pose exactly and instantly — no rate limit, no settling, no encoder error.
-   The name is the warning; the actuator model replaces it behind the same
-   interface.
+5. ~~**The mount is kinematically ideal.**~~ **Resolved in Phase 3.**
+   `IdealCameraMount` was deleted and replaced by `DynamicGimbal`.
 6. **`mono16` is unsupported.** Declared in the contract and refused by the
    renderer.
 7. **Canvas drawing is not covered by automated tests.** jsdom has no 2D
    context, so the monitor's `getContext` returns null there and the draw path
    is exercised by running the application. The pixel _content_ is tested
    directly against the buffer.
-8. **A frame does not own its pixels.** The ring reuses buffers after
-   `capacity` frames; a consumer that retains one must copy it.
+8. ~~**A frame does not own its pixels.**~~ **Resolved in Phase 3.** The pool
+   now hands out explicit leases: exhaustion throws instead of silently
+   recycling, and using a released frame throws instead of returning another
+   frame's pixels.
 9. **`Math.exp` is not bit-specified across engines.** Cross-platform results
    could differ in the last ulp of a Gaussian weight, which is immaterial after
    quantisation to 8 bits but is worth recording alongside ADR-0004's existing
@@ -822,5 +823,148 @@ Phase 2 additions; earlier entries still apply.
 
 ### Next
 
-Phase 3 — perception and estimation. Do not begin it without an explicit
+Phase 3 — the dynamic gimbal. See below.
+
+---
+
+## Phase 3 — Dynamic pan/tilt gimbal and actuator system
+
+**Complete.**
+
+The camera no longer teleports. Phase 2's `IdealCameraMount` — which adopted
+whatever pose it was handed, exactly and instantly — is deleted, and the camera
+now sits on a mount with dynamics, limits, imperfect gearing and a
+finite-resolution encoder.
+
+### What was built
+
+**Three states where there was one.** COMMAND (what was asked for), TRUE (where
+the optics are), MEASURED (what the encoder reports). Image formation uses TRUE;
+the `CameraSensorFrame` carries MEASURED. They differ by up to half an encoder
+count at every instant, so a future tracker cannot invert its own image
+formation. See [ADR-0011](adr/0011-true-versus-measured-actuator-state.md).
+
+**A real axis model** (`src/core/gimbal/axis.ts`). Second-order servo integrated
+with semi-implicit Euler, in a chain that is observable at every stage:
+
+```
+setpoint → deadband → servo → accel limit → rate limit
+         → motor angle → travel stop → backlash → output angle → encoder
+```
+
+**Six effects, each separately configurable and separately tested:** command
+latency applied at its exact sub-tick due time; subtractive deadband; rate and
+acceleration limits with saturation flags; travel stops that absorb outward
+momentum; backlash as genuine hysteresis; encoder quantisation with rate
+differenced from successive readings rather than sensed.
+
+**Schema v4.** The gimbal block became the real actuator configuration, and
+`camera.initialAzimuth`, `camera.initialElevation` and `platform.boresight` were
+removed: initial pointing had been declared in three places that could disagree
+and now has one. A cross-field rule rejects any scenario whose
+`2π·naturalFrequency / tickRate` exceeds 0.5, because the integration would
+diverge — a load-time error rather than a runtime surprise.
+
+**Three new scenarios** isolating each effect: `gimbal-step-response`,
+`gimbal-latency` (23 ms, deliberately not a multiple of the 5 ms tick) and
+`gimbal-backlash`. Eleven bundled scenarios in total, all parsed and executed by
+the suite.
+
+**Frame ownership** (`src/core/sensors/frame-pool.ts`). The pool now hands out
+explicit leases. Exhaustion throws with a message naming the fix; using a
+released frame throws; double release is a no-op; reset reclaims everything.
+Silent recycling was tolerable when every consumer drew a frame inside one
+synchronous call, and stopped being tolerable once captures are held.
+
+**Mission Control** commands the mount for real. Command against measurement
+side by side, servo state, in-flight command count, latency, live limit and
+saturation warnings, jog controls, a home command, a bounded command-vs-measured
+response plot per axis, and a privileged, labelled, off-by-default ACTUATOR
+TRUTH panel showing the mechanism's interior.
+
+**The barrier was extended.** `@/core/gimbal` is unreachable from the tracking
+side by alias, relative path and type-only import, verified by running the real
+ESLint configuration over probe files. `@/core/contracts/gimbal` stays
+reachable, because a controller legitimately needs to issue commands and to know
+the travel it must work within.
+
+### Verification
+
+| Check             | Result                        |
+| ----------------- | ----------------------------- |
+| `pnpm format`     | clean                         |
+| `pnpm lint`       | 0 errors, 0 warnings          |
+| `tsc -b --force`  | 0 errors                      |
+| `pnpm test`       | 617 passing, 33 files         |
+| `pnpm build`      | succeeds                      |
+| Manual (dev host) | all 11 scenarios load and run |
+
+103 tests were added. The integrator is checked against the **closed-form**
+second-order step response rather than against a recorded trajectory, which is
+the only check that can tell whether the model does what the differential
+equation says.
+
+### Measured accuracy
+
+Peak transient error against the closed form, as a fraction of the commanded
+step, at ω·dt = 0.251 (8 Hz servo, 200 Hz tick): 12% at ζ = 0.3 falling to 6.5%
+at ζ = 1.5. Steady-state error is zero to machine precision; the error is
+first-order in the step (measured convergence ratios 2.05, 2.02, 2.01 over three
+halvings) and proportional to the step size. At ω·dt = 0.0063 it is under 0.3%.
+
+These numbers are stated rather than hidden. A model whose error nobody has
+measured is not a model. Full table in [GIMBAL_MODEL.md](GIMBAL_MODEL.md).
+
+### Measured cost
+
+Median of five runs of 200,000 ticks on the development machine: mount alone
+0.25 µs/tick, engine tick 0.19 µs, engine plus a 640×480 camera at 60 FPS
+3.59 µs. The tick budget at 200 Hz is 5000 µs.
+
+### Two defects found and fixed while building this
+
+1. **The store leaked frame leases.** `stepOnce` captured a frame through
+   `captureLatest` and then captured the same instant again through the snapshot
+   helper, leaking the first lease and inflating the frame counters. The new
+   lease model turned a silent aliasing bug into a loud one, which is what it is
+   for.
+2. **Jogging lost presses.** A relative command measured from the _applied_
+   setpoint meant that every press inside one latency window requested the same
+   angle, so six presses moved one step. It now accumulates from the latest
+   requested position, clamped to travel so jogging into a stop cannot wind up.
+
+### Limitations
+
+1. **No detector, filter, controller or tracking of any kind.** Nothing reads
+   the pixels. This remains the specified scope; the mount is pointed by hand.
+2. **The disturbance hook is always zero.** `advanceTo` takes a
+   `GimbalDisturbance` and nothing generates a non-zero one. The hook exists so
+   base motion and wind loading can be added without reshaping the call path.
+3. **No friction model.** No stiction, Coulomb friction or breakaway torque. The
+   deadband is a crude stand-in for the _pointing consequence_ of stiction, not
+   a model of it.
+4. **No structural flexibility, thermal drift, gravitational sag or unbalanced
+   load.** The load is rigid apart from the backlash gap.
+5. **No motor model.** No current loop, back-EMF, torque ripple or cogging;
+   `maxAcceleration` stands in for all of it.
+6. **No encoder faults.** No bias, non-linearity, missed counts or eccentricity.
+   Quantisation only.
+7. **No axis cross-coupling.** Pan and tilt are fully independent; a real
+   two-axis mount has inertial coupling.
+8. **Reporting is instantaneous.** Only _command_ latency is modelled; there is
+   no measurement transport delay.
+9. **Sub-tick latency changes the discrete response.** Splitting a tick at a
+   command's exact due time gives unequal sub-steps, so a run with latency is
+   not bit-identical to the same run without it. That is inherent to
+   representing a delay exactly; it remains fully deterministic.
+10. **The transient error above is not small.** At the bundled 200 Hz tick and
+    an 8 Hz servo it is several percent of a step. It is first-order in the
+    tick, so a scenario needing better can have it.
+11. **Everything inherited from Phase 2 still applies** — ideal noiseless
+    sensor, no link budget, no occlusion, no `mono16`, canvas drawing untested
+    in jsdom.
+
+### Next
+
+Phase 4 — perception and estimation. Do not begin it without an explicit
 request.

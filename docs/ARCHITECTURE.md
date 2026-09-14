@@ -12,8 +12,8 @@ boundary holding.
                       privileged                 |            unprivileged
                                                  |
   SimulationConfig ──► core/simulation ──────────┼──► core/sensors ──┐
-       + seed              (world, truth)        |    (degrade)      │
-                                │                |                   ▼
+       + seed          (world, truth, mount)     |    (degrade)      │
+                                ▲                |                   ▼
                                 │                |          ┌─────────────────┐
                                 │                |          │ core/perception │
                                 │                |          │ core/estimation │
@@ -25,13 +25,17 @@ boundary holding.
                                 ▼                |                   ▼
                          core/metrics ◄──────────┼──────────  ControlCommand
                           (score a run)          |             TelemetrySample
+                                ▲                |            GimbalPositionCommand
                                 │                |                   │
                                 ▼                |                   │
                        ExperimentSummary ◄───────┴───────────────────┘
 ```
 
 Everything crossing the boundary left-to-right passes through `core/sensors`.
-Nothing crosses right-to-left except gimbal commands. `core/metrics` reads both
+Nothing crosses right-to-left except gimbal commands — a `GimbalPositionCommand`
+naming where the mount should point. The mount answers over simulated time and
+imperfectly, and what comes back is a camera frame, so the loop closes through
+the sensor like everything else. `core/metrics` reads both
 sides but only ever writes to reports — it observes the tracker from outside and
 never feeds it.
 
@@ -49,6 +53,10 @@ src/
     sensors/    Truth to observable. The boundary. The virtual camera lives
                 here: pinhole projection, point-spread rasterisation, its own
                 frame clock. Plain TypeScript, no WebGL (ADR-0009)
+    gimbal/     The pan/tilt mount: servo dynamics, limits, deadband, backlash,
+                encoder quantisation, command latency. Privileged — it holds the
+                actuator interior, so the lint barrier keeps it away from the
+                tracking side (ADR-0011)
     perception/ Frames to detections
     estimation/ Detections to tracks
     control/    Tracks to gimbal commands
@@ -99,6 +107,13 @@ display at whatever the machine manages — and only the first two affect what i
 recorded ([ADR-0010](adr/0010-independent-sensor-clock.md)). A lint rule stops `src/core` importing
 React, Three.js, `@react-three/*` or any store, and a test runs the real ESLint
 configuration over probe files to confirm the rule still fires.
+
+The mount obeys the same discipline. It is a stateful mechanism on the physics
+clock, and image formation uses its **true** output angle while the frame
+carries the **measured** encoder reading — two numbers that differ by up to half
+a count and must not be conflated
+([ADR-0011](adr/0011-true-versus-measured-actuator-state.md),
+[GIMBAL_MODEL.md](GIMBAL_MODEL.md)).
 
 Interactive rendering runs at the display's rate; the physics runs at a fixed
 tick. The renderer blends the previous and current snapshots across the sub-tick

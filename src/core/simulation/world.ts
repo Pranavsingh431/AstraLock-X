@@ -161,22 +161,32 @@ export function platformStateAt(
 }
 
 /**
- * Gimbal state.
+ * True pointing of the mount at one instant.
  *
- * Phase 1 has no control loop: the mount holds the boresight the scenario
- * declared, so the angles are constant and the rates are zero. Reporting it
- * through the same contract as a future servo keeps the consumers stable.
+ * Supplied by the caller rather than read from configuration: the gimbal is a
+ * stateful actuator now, so its angles are a result of the run rather than a
+ * property of the scenario. Keeping this a parameter is what lets
+ * `sampleGroundTruth` stay a pure function of its inputs.
  */
-export function gimbalStateAt(config: SimulationConfig): GroundTruthGimbalState {
+export interface GimbalPoseSample {
+  /** True mechanical output, after servo dynamics and backlash. */
+  readonly azimuth: Radians;
+  readonly elevation: Radians;
+  readonly azimuthRate: number;
+  readonly elevationRate: number;
+}
+
+/** Wraps a true pointing sample in the privileged gimbal contract. */
+export function gimbalStateAt(pose: GimbalPoseSample): GroundTruthGimbalState {
   return brandAsGroundTruth({
-    azimuth: config.platform.boresight.azimuth,
-    elevation: config.platform.boresight.elevation,
-    azimuthRate: radiansPerSecond(0),
-    elevationRate: radiansPerSecond(0),
+    azimuth: pose.azimuth,
+    elevation: pose.elevation,
+    azimuthRate: radiansPerSecond(pose.azimuthRate),
+    elevationRate: radiansPerSecond(pose.elevationRate),
     boresight: {
       frame: WORLD_FRAME,
-      azimuth: config.platform.boresight.azimuth,
-      elevation: config.platform.boresight.elevation,
+      azimuth: pose.azimuth,
+      elevation: pose.elevation,
     },
   }) satisfies GroundTruthGimbalState;
 }
@@ -186,6 +196,8 @@ export interface WorldSampleInput {
   readonly trajectories: readonly Trajectory[];
   readonly tick: number;
   readonly timeSeconds: number;
+  /** True mount pointing at `timeSeconds`, from the actuator. */
+  readonly gimbalPose: GimbalPoseSample;
 }
 
 /** The complete true state of the world at one instant. */
@@ -193,12 +205,12 @@ export function sampleGroundTruth(input: WorldSampleInput): GroundTruthState {
   const { config, trajectories, tick, timeSeconds } = input;
 
   const platform = platformStateAt(config, timeSeconds);
-  const gimbal = gimbalStateAt(config);
+  const gimbal = gimbalStateAt(input.gimbalPose);
   const halfAngles = fieldOfViewHalfAngles(config.camera);
 
   const boresightVector = directionFromBearing({
-    azimuth: config.platform.boresight.azimuth,
-    elevation: config.platform.boresight.elevation,
+    azimuth: input.gimbalPose.azimuth,
+    elevation: input.gimbalPose.elevation,
   });
   const boresight = vec3(boresightVector.x, boresightVector.y, boresightVector.z);
 

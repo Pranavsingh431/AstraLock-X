@@ -1,9 +1,9 @@
 {
   "schemaVersion": 4,
-  "id": "linear-pass",
-  "name": "Linear crossing pass",
-  "seed": 1002,
-  "duration": 60.0,
+  "id": "gimbal-backlash",
+  "name": "Gimbal backlash and coarse encoder",
+  "seed": 3003,
+  "duration": 30.0,
   "tickRate": 200,
   "platform": {
     "initialPosition": {
@@ -21,32 +21,27 @@
   },
   "targets": [
     {
-      "label": "Crossing aircraft",
+      "label": "Reference beacon",
       "trajectory": {
-        "kind": "linear",
+        "kind": "stationary",
         "position": {
-          "x": -900,
-          "y": 1500,
-          "z": 75
-        },
-        "velocity": {
-          "x": 30,
-          "y": 0,
-          "z": 0
+          "x": 0,
+          "y": 1200,
+          "z": 60
         }
       },
-      "radius": 1.2,
+      "radius": 0.5,
       "beacon": {
-        "transmitPower": 0.25,
-        "intensity": 0.92,
-        "psfSigma": 2.0
+        "transmitPower": 0.05,
+        "intensity": 0.95,
+        "psfSigma": 2.2
       }
     }
   ],
   "camera": {
     "width": 640,
     "height": 480,
-    "horizontalFov": 0.244346095,
+    "horizontalFov": 0.174532925,
     "verticalFovPolicy": "square-pixels",
     "principalPoint": null,
     "nearRange": 1.0,
@@ -65,25 +60,25 @@
       "initialAngle": 0.0,
       "minAngle": -2.967059728,
       "maxAngle": 2.967059728,
-      "maxRate": 2.094395102,
-      "maxAcceleration": 10.471975512,
-      "naturalFrequency": 12.0,
-      "dampingRatio": 0.9,
-      "deadband": 8.727e-6,
-      "backlash": 0.0,
-      "encoderResolution": 8.727e-6
+      "maxRate": 0.698131701,
+      "maxAcceleration": 3.490658504,
+      "naturalFrequency": 6.0,
+      "dampingRatio": 0.7,
+      "deadband": 3.4907e-5,
+      "backlash": 0.008726646,
+      "encoderResolution": 0.000349066
     },
     "tilt": {
-      "initialAngle": 0.04197533,
+      "initialAngle": 0.039978687,
       "minAngle": -0.34906585,
       "maxAngle": 1.396263402,
-      "maxRate": 2.094395102,
-      "maxAcceleration": 10.471975512,
-      "naturalFrequency": 12.0,
-      "dampingRatio": 0.9,
-      "deadband": 8.727e-6,
-      "backlash": 0.0,
-      "encoderResolution": 8.727e-6
+      "maxRate": 0.523598776,
+      "maxAcceleration": 2.617993878,
+      "naturalFrequency": 5.0,
+      "dampingRatio": 0.7,
+      "deadband": 6.9813e-5,
+      "backlash": 0.000698132,
+      "encoderResolution": 0.000174533
     },
     "commandLatency": 0.0
   },

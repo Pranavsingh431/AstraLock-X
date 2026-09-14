@@ -16,7 +16,6 @@ import { parseSimulationConfig, type SimulationConfig } from '@/core/contracts/s
 import { makeValidRawConfig } from '@/test/fixtures';
 
 import type { OpticalEmitter, EmitterId } from './emitters';
-import { IdealCameraMount } from './mount';
 import type { Vec3Lite } from './pinhole';
 import { VirtualCameraSensor } from './virtual-camera';
 import type { SensorWorldSample, WorldSampler } from './world-sampler';
@@ -38,8 +37,6 @@ function config(cameraPatch: Record<string, unknown> = {}): SimulationConfig {
     nearRange: 1,
     farRange: 50_000,
     frameRate: 60,
-    initialAzimuth: 0,
-    initialElevation: 0,
     backgroundLevel: 0,
     ...cameraPatch,
   };
@@ -58,18 +55,34 @@ function emitter(position: Vec3Lite, intensity = 0.9, psfSigma = 2): OpticalEmit
   };
 }
 
-/** A sampler with a fixed camera at the origin and fixed emitters. */
+/**
+ * A sampler with a fixed camera at the origin and fixed emitters.
+ *
+ * The pointing is supplied here rather than commanded on a mount: since Phase 3
+ * the camera pose arrives with the world sample, and these tests are about the
+ * pose-to-pixel mapping, not about how the pose was reached. `measured` equals
+ * `true` unless a case deliberately separates them, so the geometry under test
+ * is unaffected by encoder quantisation.
+ */
 function staticSampler(
   emitters: readonly OpticalEmitter[],
   cameraPosition: Vec3Lite = { x: 0, y: 0, z: 0 },
+  azimuth = 0,
+  elevation = 0,
 ): WorldSampler {
   return {
     policy: 'exact',
     sampleAt: (time): SensorWorldSample => ({
       time,
       cameraPosition,
-      platformAzimuth: 0 as never,
-      platformElevation: 0 as never,
+      cameraPose: {
+        trueAzimuth: azimuth,
+        trueElevation: elevation,
+        measuredAzimuth: azimuth,
+        measuredElevation: elevation,
+        measuredAzimuthRate: 0,
+        measuredElevationRate: 0,
+      },
       emitters,
     }),
   };
@@ -78,9 +91,11 @@ function staticSampler(
 const sensorFor = (
   emitters: readonly OpticalEmitter[],
   cameraPatch: Record<string, unknown> = {},
+  azimuth = 0,
+  elevation = 0,
 ): { sensor: VirtualCameraSensor; sampler: WorldSampler } => ({
   sensor: new VirtualCameraSensor({ config: config(cameraPatch) }),
-  sampler: staticSampler(emitters),
+  sampler: staticSampler(emitters, { x: 0, y: 0, z: 0 }, azimuth, elevation),
 });
 
 const brightestPixel = (
@@ -273,36 +288,44 @@ describe('H. manual pan', () => {
   it('moves a fixed beacon left when the camera pans East', () => {
     // Turning right sweeps the scene left. u = cx - fx*tan(az) for a beacon
     // due North, so the sign here is the whole correctness of pan.
-    const { sensor, sampler } = sensorFor([emitter({ x: 0, y: 1200, z: 0 })]);
+    const beacon = [emitter({ x: 0, y: 1200, z: 0 })];
+    const ahead = sensorFor(beacon);
+    const turned = sensorFor(beacon, {}, 0.05, 0);
 
-    const centred = sensor.captureFrame(sampler, 0).truth.projections[0]!.imageX!;
-    sensor.mount.commandTo(0.05, 0);
-    const panned = sensor.captureFrame(sampler, 1).truth.projections[0]!.imageX!;
+    const centred = ahead.sensor.captureFrame(ahead.sampler, 0).truth.projections[0]!.imageX!;
+    const panned = turned.sensor.captureFrame(turned.sampler, 0).truth.projections[0]!.imageX!;
 
     expect(panned).toBeLessThan(centred);
     expect(panned).toBeCloseTo(CX - FX * Math.tan(0.05), 6);
   });
 
   it('moves it right when the camera pans West', () => {
-    const { sensor, sampler } = sensorFor([emitter({ x: 0, y: 1200, z: 0 })]);
-    sensor.mount.commandTo(-0.05, 0);
+    const { sensor, sampler } = sensorFor([emitter({ x: 0, y: 1200, z: 0 })], {}, -0.05, 0);
     expect(sensor.captureFrame(sampler, 0).truth.projections[0]!.imageX!).toBeGreaterThan(CX);
   });
 
   it('does not move the emitter', () => {
-    const { sensor, sampler } = sensorFor([emitter({ x: 0, y: 1200, z: 0 })]);
-    const before = sensor.captureFrame(sampler, 0).truth.projections[0]!.range;
-    sensor.mount.commandTo(0.4, 0.2);
-    expect(sensor.captureFrame(sampler, 1).truth.projections[0]!.range).toBeCloseTo(before, 9);
+    const beacon = [emitter({ x: 0, y: 1200, z: 0 })];
+    const ahead = sensorFor(beacon);
+    const turned = sensorFor(beacon, {}, 0.4, 0.2);
+
+    const before = ahead.sensor.captureFrame(ahead.sampler, 0).truth.projections[0]!.range;
+    expect(turned.sensor.captureFrame(turned.sampler, 0).truth.projections[0]!.range).toBeCloseTo(
+      before,
+      9,
+    );
   });
 
   it('can bring an out-of-view beacon into view', () => {
     // The Phase 2 workflow: the operator finds the beacon by hand.
-    const { sensor, sampler } = sensorFor([emitter({ x: 600, y: 1200, z: 0 })]);
-    expect(sensor.captureFrame(sampler, 0).truth.projections[0]!.visibility).toBe('outside-fov');
+    const beacon = [emitter({ x: 600, y: 1200, z: 0 })];
+    const ahead = sensorFor(beacon);
+    expect(ahead.sensor.captureFrame(ahead.sampler, 0).truth.projections[0]!.visibility).toBe(
+      'outside-fov',
+    );
 
-    sensor.mount.commandTo(Math.atan2(600, 1200), 0);
-    const found = sensor.captureFrame(sampler, 1);
+    const { sensor, sampler } = sensorFor(beacon, {}, Math.atan2(600, 1200), 0);
+    const found = sensor.captureFrame(sampler, 0);
     expect(found.truth.projections[0]!.visibility).toBe('visible');
     expect(found.truth.projections[0]!.imageX).toBeCloseTo(CX, 6);
     expect(sum(found.frame.data as Uint8Array)).toBeGreaterThan(0);
@@ -311,9 +334,8 @@ describe('H. manual pan', () => {
 
 describe('I. manual tilt', () => {
   it('moves a fixed beacon down when the camera tilts up', () => {
-    const { sensor, sampler } = sensorFor([emitter({ x: 0, y: 1200, z: 0 })]);
+    const { sensor, sampler } = sensorFor([emitter({ x: 0, y: 1200, z: 0 })], {}, 0, 0.05);
 
-    sensor.mount.commandTo(0, 0.05);
     const tilted = sensor.captureFrame(sampler, 0).truth.projections[0]!.imageY!;
 
     expect(tilted).toBeGreaterThan(CY);
@@ -323,20 +345,29 @@ describe('I. manual tilt', () => {
   it('centres a raised beacon when tilted to match', () => {
     const range = 1200;
     const up = 120;
-    const { sensor, sampler } = sensorFor([emitter({ x: 0, y: range, z: up })]);
+    const { sensor, sampler } = sensorFor(
+      [emitter({ x: 0, y: range, z: up })],
+      {},
+      0,
+      Math.atan2(up, range),
+    );
 
-    sensor.mount.commandTo(0, Math.atan2(up, range));
     const projection = sensor.captureFrame(sampler, 0).truth.projections[0]!;
     expect(projection.imageX).toBeCloseTo(CX, 6);
     expect(projection.imageY).toBeCloseTo(CY, 6);
   });
 
-  it('clamps at the zenith rather than tipping over', () => {
-    const mount = new IdealCameraMount(0, 0);
-    mount.commandTo(0, 3);
-    expect(mount.elevation).toBeCloseTo(Math.PI / 2, 12);
-    mount.commandTo(0, -3);
-    expect(mount.elevation).toBeCloseTo(-Math.PI / 2, 12);
+  it('still projects sensibly near the zenith', () => {
+    // Travel limits now belong to the mount and are covered in the actuator
+    // suite. What matters here is that the projection stays well behaved when
+    // the pose approaches straight up, where tan(elevation) diverges.
+    const nearZenith = Math.PI / 2 - 1e-3;
+    const { sensor, sampler } = sensorFor([emitter({ x: 0, y: 0, z: 1200 })], {}, 0, nearZenith);
+
+    const projection = sensor.captureFrame(sampler, 0).truth.projections[0]!;
+    expect(projection.visibility).toBe('visible');
+    expect(projection.imageX).toBeCloseTo(CX, 6);
+    expect(Number.isFinite(projection.imageY!)).toBe(true);
   });
 });
 
@@ -444,7 +475,7 @@ describe('L. reproducibility', () => {
     const a = sensorFor([emitter({ x: 37, y: 1234, z: -21 })]);
     const b = sensorFor([emitter({ x: 37, y: 1234, z: -21 })]);
 
-    for (let index = 0; index < 20; index += 1) a.sensor.captureFrame(a.sampler, index);
+    for (let index = 0; index < 20; index += 1) a.sensor.captureFrame(a.sampler, index).release();
     const late = a.sensor.captureFrame(a.sampler, 7);
     const fresh = b.sensor.captureFrame(b.sampler, 7);
 
@@ -454,7 +485,7 @@ describe('L. reproducibility', () => {
   it('carries the configuration identifier on every frame', () => {
     const { sensor, sampler } = sensorFor([emitter({ x: 0, y: 1200, z: 0 })]);
     const { frame } = sensor.captureFrame(sampler, 3);
-    expect(frame.cameraConfigId).toContain('@v3');
+    expect(frame.cameraConfigId).toContain('@v4');
   });
 });
 

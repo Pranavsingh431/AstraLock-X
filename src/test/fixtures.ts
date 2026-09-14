@@ -10,7 +10,7 @@
 /** A raw config object that satisfies every rule in the schema. */
 export function makeValidRawConfig(): Record<string, unknown> {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     id: 'fixture-001',
     name: 'Fixture scenario',
     seed: 12345,
@@ -19,7 +19,6 @@ export function makeValidRawConfig(): Record<string, unknown> {
     platform: {
       initialPosition: { x: 0, y: 0, z: 30 },
       initialVelocity: { x: 0, y: 0, z: 0 },
-      boresight: { azimuth: 0, elevation: 0.1 },
       baseDisturbanceRms: 0.002,
       baseDisturbanceBandwidth: 20,
     },
@@ -44,8 +43,6 @@ export function makeValidRawConfig(): Record<string, unknown> {
       nearRange: 1,
       farRange: 50000,
       frameRate: 100,
-      initialAzimuth: 0,
-      initialElevation: 0.04,
       backgroundLevel: 0,
       exposure: 0.002,
       gain: 1,
@@ -55,12 +52,31 @@ export function makeValidRawConfig(): Record<string, unknown> {
       dropoutProbability: 0.001,
     },
     gimbal: {
-      azimuthLimits: { minAngle: -3.1, maxAngle: 3.1, maxRate: 2, maxAcceleration: 10 },
-      elevationLimits: { minAngle: -0.5, maxAngle: 1.4, maxRate: 2, maxAcceleration: 10 },
-      encoderResolution: 0.00005,
-      encoderBias: 0.0001,
-      reportingLatency: 0.001,
-      servoBandwidth: 30,
+      pan: {
+        initialAngle: 0,
+        minAngle: -3.0,
+        maxAngle: 3.0,
+        maxRate: 2,
+        maxAcceleration: 10,
+        naturalFrequency: 8,
+        dampingRatio: 0.9,
+        deadband: 0.00002,
+        backlash: 0,
+        encoderResolution: 0.00002,
+      },
+      tilt: {
+        initialAngle: 0.04,
+        minAngle: -0.5,
+        maxAngle: 1.4,
+        maxRate: 2,
+        maxAcceleration: 10,
+        naturalFrequency: 8,
+        dampingRatio: 0.9,
+        deadband: 0.00002,
+        backlash: 0,
+        encoderResolution: 0.00002,
+      },
+      commandLatency: 0,
     },
     atmosphere: {
       refractiveIndexStructure: 1e-14,

@@ -30,8 +30,6 @@ function config(patch: Record<string, unknown> = {}): SimulationConfig {
     nearRange: 1,
     farRange: 50_000,
     frameRate: 60,
-    initialAzimuth: 0,
-    initialElevation: 0,
     backgroundLevel: 0,
     ...patch,
   };
@@ -55,8 +53,14 @@ const sampler = (emitters: readonly OpticalEmitter[]): WorldSampler => ({
   sampleAt: (time): SensorWorldSample => ({
     time,
     cameraPosition: { x: 0, y: 0, z: 0 },
-    platformAzimuth: 0 as never,
-    platformElevation: 0 as never,
+    cameraPose: {
+      trueAzimuth: 0,
+      trueElevation: 0,
+      measuredAzimuth: 0,
+      measuredElevation: 0,
+      measuredAzimuthRate: 0,
+      measuredElevationRate: 0,
+    },
     emitters,
   }),
 });

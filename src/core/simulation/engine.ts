@@ -14,12 +14,14 @@
 import type { GroundTruthState, WorldState } from '@/core/contracts/ground-truth';
 import { brandAsGroundTruth } from '@/core/contracts/ground-truth';
 import type { SimulationConfig } from '@/core/contracts/simulation';
-import type { Seconds } from '@/core/contracts/units';
+import { type Seconds, radians } from '@/core/contracts/units';
+
+import { DynamicGimbal } from '@/core/gimbal/dynamic-gimbal';
 
 import { SimulationClock } from './clock';
 import { RandomStreams } from './rng';
 import { type Trajectory, createTrajectory } from './trajectory';
-import { sampleGroundTruth } from './world';
+import { type GimbalPoseSample, sampleGroundTruth } from './world';
 
 /** Recursively freezes a snapshot so a consumer cannot edit the world. */
 function deepFreeze<T>(value: T): T {
@@ -107,6 +109,14 @@ export interface StepOptions {
 export class SimulationEngine {
   public readonly config: SimulationConfig;
   public readonly clock: SimulationClock;
+  /**
+   * The pan/tilt mount.
+   *
+   * Part of the authoritative simulation, not of the interface: it is stepped
+   * by the engine on the same fixed tick as everything else, so a headless run
+   * and an interactive one drive it identically.
+   */
+  public readonly gimbal: DynamicGimbal;
 
   private readonly streams: RandomStreams;
   private trajectories: readonly Trajectory[];
@@ -121,6 +131,7 @@ export class SimulationEngine {
   constructor(config: SimulationConfig) {
     this.config = config;
     this.clock = new SimulationClock(config.tickRate);
+    this.gimbal = new DynamicGimbal(config.gimbal);
     this.streams = new RandomStreams(config.seed);
     this.trajectories = this.buildTrajectories();
   }
@@ -206,7 +217,13 @@ export class SimulationEngine {
         : Math.min(ticks, Math.max(0, this.finalTick - this.clock.tick));
 
     if (allowed > 0) {
-      this.clock.advance(allowed);
+      // Tick by tick rather than in one jump: the mount is stateful, so its
+      // trajectory depends on being integrated at the configured step, and the
+      // pointing history the camera samples between ticks is built here.
+      for (let step = 0; step < allowed; step += 1) {
+        this.clock.advance(1);
+        this.gimbal.advanceTo(this.clock.time);
+      }
       this.cachedSnapshot = null;
     }
     return allowed;
@@ -215,6 +232,7 @@ export class SimulationEngine {
   /** Returns to tick zero, replaying every random stream from its start. */
   public reset(): void {
     this.clock.reset();
+    this.gimbal.reset();
     this.streams.reset();
     this.trajectories = this.buildTrajectories();
     this.cachedSnapshot = null;
@@ -236,6 +254,7 @@ export class SimulationEngine {
       trajectories: this.trajectories,
       tick: this.clock.tick,
       timeSeconds: this.clock.time,
+      gimbalPose: this.gimbalPoseAt(this.clock.time),
     });
 
     const world = brandAsGroundTruth({
@@ -280,7 +299,24 @@ export class SimulationEngine {
       trajectories: this.trajectories,
       tick: tick ?? Math.floor(timeSeconds * this.config.tickRate),
       timeSeconds,
+      gimbalPose: this.gimbalPoseAt(timeSeconds),
     });
+  }
+
+  /**
+   * True mount pointing at an arbitrary time.
+   *
+   * Interpolated from the actuator's own history rather than evaluated, because
+   * a stateful mechanism has no closed form. See `DynamicGimbal.truePointingAt`.
+   */
+  public gimbalPoseAt(timeSeconds: number): GimbalPoseSample {
+    const pointing = this.gimbal.truePointingAt(timeSeconds);
+    return {
+      azimuth: radians(pointing.panAngle),
+      elevation: radians(pointing.tiltAngle),
+      azimuthRate: pointing.panRate,
+      elevationRate: pointing.tiltRate,
+    };
   }
 
   /** Digest of the current true state. */

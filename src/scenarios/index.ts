@@ -15,6 +15,9 @@ import { type SimulationConfig, parseSimulationConfig } from '@/core/contracts/s
 import cameraBoresight from './camera-boresight.json';
 import cameraOutsideFov from './camera-target-outside-fov.json';
 import circular from './circular.json';
+import gimbalBacklash from './gimbal-backlash.json';
+import gimbalLatency from './gimbal-latency.json';
+import gimbalStepResponse from './gimbal-step-response.json';
 import linearPass from './linear-pass.json';
 import seededManeuver from './seeded-maneuver.json';
 import sinusoidal from './sinusoidal.json';
@@ -30,6 +33,9 @@ export const SCENARIO_IDS = [
   'seeded-maneuver',
   'camera-boresight',
   'camera-target-outside-fov',
+  'gimbal-step-response',
+  'gimbal-latency',
+  'gimbal-backlash',
 ] as const;
 
 export type ScenarioId = (typeof SCENARIO_IDS)[number];
@@ -43,6 +49,9 @@ const RAW_SCENARIOS: Record<ScenarioId, unknown> = {
   'seeded-maneuver': seededManeuver,
   'camera-boresight': cameraBoresight,
   'camera-target-outside-fov': cameraOutsideFov,
+  'gimbal-step-response': gimbalStepResponse,
+  'gimbal-latency': gimbalLatency,
+  'gimbal-backlash': gimbalBacklash,
 };
 
 const cache = new Map<ScenarioId, SimulationConfig>();

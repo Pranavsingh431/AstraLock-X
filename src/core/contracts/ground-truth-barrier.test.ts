@@ -105,6 +105,30 @@ const probes: readonly Probe[] = [
     source: `import type { CameraSensorFrame } from '@/core/contracts';\nexport type Probe = CameraSensorFrame;\n`,
   },
   {
+    path: join(probeDirectory, 'gimbal-import.ts'),
+    source: `import { DynamicGimbal } from '@/core/gimbal';\nexport const probe = DynamicGimbal;\n`,
+  },
+  {
+    path: join(probeDirectory, 'gimbal-deep-import.ts'),
+    source: `import { GimbalAxis } from '@/core/gimbal/axis';\nexport const probe = GimbalAxis;\n`,
+  },
+  {
+    path: join(probeDirectory, 'actuator-truth-import.ts'),
+    source: `import type { ActuatorTruth } from '@/core/gimbal/actuator-truth';\nexport type Probe = ActuatorTruth;\n`,
+  },
+  {
+    path: join(probeDirectory, 'gimbal-relative-import.ts'),
+    source: `import type { TruePointing } from '../../gimbal/dynamic-gimbal';\nexport type Probe = TruePointing;\n`,
+  },
+  {
+    path: join(probeDirectory, 'gimbal-contract-import.ts'),
+    source: `import type { GimbalPositionCommand } from '@/core/contracts/gimbal';\nexport type Probe = GimbalPositionCommand;\n`,
+  },
+  {
+    path: join(allowedDirectory, 'gimbal-privileged-import.ts'),
+    source: `import type { ActuatorTruth } from '@/core/gimbal';\nexport type Probe = ActuatorTruth;\n`,
+  },
+  {
     path: join(coreDirectory, 'three-import.ts'),
     source: `import * as three from 'three';\nexport const probe = three;\n`,
   },
@@ -199,6 +223,42 @@ describe('ground-truth import barrier', () => {
 
   it('leaves privileged consumers such as metrics free to read truth', async () => {
     const rules = await lintProbe(eslint, join(allowedDirectory, 'privileged-import.ts'));
+    expect(rules).not.toContain(RESTRICTED_RULE);
+  });
+});
+
+describe('actuator barrier', () => {
+  it('blocks the tracking side from reaching the mount implementation', async () => {
+    // The mount knows the motor angle, the backlash take-up and the demanded
+    // acceleration. A controller sees an encoder reading.
+    const rules = await lintProbe(eslint, join(probeDirectory, 'gimbal-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('blocks a deep import that skips the barrel', async () => {
+    const rules = await lintProbe(eslint, join(probeDirectory, 'gimbal-deep-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('blocks the actuator truth type, even as a type-only import', async () => {
+    const rules = await lintProbe(eslint, join(probeDirectory, 'actuator-truth-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('blocks a relative path into the mount', async () => {
+    const rules = await lintProbe(eslint, join(probeDirectory, 'gimbal-relative-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('still allows the command and configuration contracts', async () => {
+    // A controller has to be able to say where it wants the mount pointed, and
+    // to know the travel and rate it has to work within. None of that is truth.
+    const rules = await lintProbe(eslint, join(probeDirectory, 'gimbal-contract-import.ts'));
+    expect(rules).not.toContain(RESTRICTED_RULE);
+  });
+
+  it('leaves evaluation free to read the actuator interior', async () => {
+    const rules = await lintProbe(eslint, join(allowedDirectory, 'gimbal-privileged-import.ts'));
     expect(rules).not.toContain(RESTRICTED_RULE);
   });
 });

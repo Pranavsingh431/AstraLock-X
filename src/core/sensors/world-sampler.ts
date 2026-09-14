@@ -31,19 +31,40 @@
 import type { WorldState } from '@/core/contracts/ground-truth';
 import { type Radians, radians, wrapToPi } from '@/core/contracts/units';
 
+import type { DynamicGimbal } from '@/core/gimbal/dynamic-gimbal';
 import type { SimulationEngine } from '@/core/simulation/engine';
 
 import { type OpticalEmitter, emittersFrom } from './emitters';
 import type { Vec3Lite } from './pinhole';
+
+/**
+ * Where the camera is pointing, in both senses.
+ *
+ * The split is the whole of ADR-0011. Image formation uses the **true**
+ * mechanical output, because that is where the lens actually is. The frame
+ * reports the **measured** angle, because an encoder count is all a real system
+ * gets. They differ by up to half a count, always, and a future controller has
+ * to cope with that difference rather than be spared it.
+ */
+export interface SensorCameraPose {
+  /** True mechanical output of the mount. Drives the geometry. */
+  readonly trueAzimuth: number;
+  readonly trueElevation: number;
+  /** Encoder reading. Goes on the frame. */
+  readonly measuredAzimuth: number;
+  readonly measuredElevation: number;
+  /** Differenced from successive encoder readings, not sensed. */
+  readonly measuredAzimuthRate: number;
+  readonly measuredElevationRate: number;
+}
 
 /** World state as the sensor needs it, at one instant. */
 export interface SensorWorldSample {
   readonly time: number;
   /** Camera position in world ENU metres. */
   readonly cameraPosition: Vec3Lite;
-  /** Platform boresight, carried so an angular quantity is genuinely sampled. */
-  readonly platformAzimuth: Radians;
-  readonly platformElevation: Radians;
+  /** Where the mount is pointing, true and measured. */
+  readonly cameraPose: SensorCameraPose;
   readonly emitters: readonly OpticalEmitter[];
 }
 
@@ -67,13 +88,29 @@ export function lerpAngleShortestPath(from: number, to: number, alpha: number): 
   return wrapToPi(radians(from + delta * alpha));
 }
 
-function sampleFromWorld(world: WorldState, time: number): SensorWorldSample {
+function poseFromGimbal(gimbal: DynamicGimbal, time: number): SensorCameraPose {
+  const truth = gimbal.truePointingAt(time);
+  const measured = gimbal.measuredPointingAt(time);
+  return {
+    trueAzimuth: truth.panAngle,
+    trueElevation: truth.tiltAngle,
+    measuredAzimuth: measured.panAngle,
+    measuredElevation: measured.tiltAngle,
+    measuredAzimuthRate: measured.derivedPanRate,
+    measuredElevationRate: measured.derivedTiltRate,
+  };
+}
+
+function sampleFromWorld(
+  world: WorldState,
+  time: number,
+  pose: SensorCameraPose,
+): SensorWorldSample {
   const platform = world.truth.platform.pose.position;
   return {
     time,
     cameraPosition: { x: platform.x, y: platform.y, z: platform.z },
-    platformAzimuth: world.truth.gimbal.boresight.azimuth,
-    platformElevation: world.truth.gimbal.boresight.elevation,
+    cameraPose: pose,
     emitters: emittersFrom(
       world.config,
       world.truth.targets.map((target) => target.pose.position),
@@ -99,8 +136,9 @@ export class ExactWorldSampler implements WorldSampler {
     return {
       time: timeSeconds,
       cameraPosition: { x: platform.x, y: platform.y, z: platform.z },
-      platformAzimuth: truth.gimbal.boresight.azimuth,
-      platformElevation: truth.gimbal.boresight.elevation,
+      // The world is exact at this instant; the mount is interpolated from its
+      // own history, because a stateful mechanism has no closed form.
+      cameraPose: poseFromGimbal(this.engine.gimbal, timeSeconds),
       emitters: emittersFrom(
         this.engine.config,
         truth.targets.map((target) => target.pose.position),
@@ -131,6 +169,7 @@ export class InterpolatingWorldSampler implements WorldSampler {
   constructor(
     private readonly earlier: WorldState,
     private readonly later: WorldState,
+    private readonly gimbal: DynamicGimbal,
   ) {
     this.earlierTime = earlier.truth.time;
     this.laterTime = later.truth.time;
@@ -146,7 +185,8 @@ export class InterpolatingWorldSampler implements WorldSampler {
 
   public sampleAt(timeSeconds: number): SensorWorldSample {
     const span = this.laterTime - this.earlierTime;
-    if (span === 0) return sampleFromWorld(this.later, timeSeconds);
+    const pose = poseFromGimbal(this.gimbal, timeSeconds);
+    if (span === 0) return sampleFromWorld(this.later, timeSeconds, pose);
 
     if (timeSeconds < this.earlierTime || timeSeconds > this.laterTime) {
       throw new RangeError(
@@ -156,14 +196,13 @@ export class InterpolatingWorldSampler implements WorldSampler {
     }
 
     const alpha = (timeSeconds - this.earlierTime) / span;
-    const a = sampleFromWorld(this.earlier, this.earlierTime);
-    const b = sampleFromWorld(this.later, this.laterTime);
+    const a = sampleFromWorld(this.earlier, this.earlierTime, pose);
+    const b = sampleFromWorld(this.later, this.laterTime, pose);
 
     return {
       time: timeSeconds,
       cameraPosition: lerpVec(a.cameraPosition, b.cameraPosition, alpha),
-      platformAzimuth: lerpAngleShortestPath(a.platformAzimuth, b.platformAzimuth, alpha),
-      platformElevation: lerpAngleShortestPath(a.platformElevation, b.platformElevation, alpha),
+      cameraPose: pose,
       emitters: b.emitters.map((emitter, index) => {
         const before = a.emitters[index];
         return before === undefined

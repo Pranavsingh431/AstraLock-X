@@ -30,7 +30,9 @@ import {
   interpolateObserverFrame,
 } from '@/core/simulation';
 import type { CameraSensorFrame } from '@/core/contracts/sensors';
+import type { ActuatorTruth } from '@/core/gimbal/actuator-truth';
 import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
+import type { SensorCapture } from '@/core/sensors/virtual-camera';
 import type { SensorEvaluationTruth } from '@/core/sensors/sensor-truth';
 import { ExactWorldSampler } from '@/core/sensors/world-sampler';
 import { DEFAULT_SCENARIO_ID, type ScenarioId, loadScenario } from '@/scenarios';
@@ -47,7 +49,31 @@ interface Session {
   capturedThrough: number;
   /** Newest frame index rasterized, so the viewfinder can re-render it. */
   lastFrameIndex: number;
+  /**
+   * The capture whose lease the store currently holds.
+   *
+   * Exactly one at a time: replacing it releases the previous, which is what
+   * keeps the pool from filling up during a long session.
+   */
+  heldCapture: SensorCapture | null;
 }
+
+/** One point of the command-versus-measured trace. */
+export interface ResponseSample {
+  readonly time: number;
+  readonly commandedPan: number;
+  readonly measuredPan: number;
+  readonly commandedTilt: number;
+  readonly measuredTilt: number;
+}
+
+/**
+ * Points kept in the response trace.
+ *
+ * Bounded on purpose: this is actuator diagnostics, not a recorder, and an
+ * unbounded history is a leak that only shows up after a long run.
+ */
+const RESPONSE_HISTORY_LIMIT = 600;
 
 export interface SimulationStoreState {
   /** Scenario id when a bundled scenario is loaded, `null` after a file import. */
@@ -77,13 +103,31 @@ export interface SimulationStoreState {
    * reach; the lint barrier stops tracking-side code importing its type at all.
    */
   readonly sensorTruth: SensorEvaluationTruth | null;
-  readonly cameraAzimuth: number;
-  readonly cameraElevation: number;
   /** Privileged truth overlay. Off by default. */
   readonly showTruthOverlay: boolean;
   readonly framesScheduled: number;
   readonly framesRasterized: number;
   readonly framesSupersededForDisplay: number;
+
+  /** What the operator asked for. */
+  readonly commandedPan: number;
+  readonly commandedTilt: number;
+  /** What the encoder reports. Not the same thing. */
+  readonly measuredPan: number;
+  readonly measuredTilt: number;
+  readonly measuredPanRate: number;
+  readonly measuredTiltRate: number;
+  readonly servoPhase: 'active' | 'settling' | 'holding';
+  readonly commandsPending: number;
+  readonly panAtLimit: boolean;
+  readonly tiltAtLimit: boolean;
+  readonly panRateSaturated: boolean;
+  readonly tiltRateSaturated: boolean;
+  readonly lastCommandClamped: boolean;
+  /** Privileged actuator interior, for the debug panel. */
+  readonly actuatorTruth: ActuatorTruth | null;
+  readonly showActuatorTruth: boolean;
+  readonly responseHistory: readonly ResponseSample[];
 
   loadScenarioById: (id: ScenarioId) => void;
   loadConfig: (config: SimulationConfig, scenarioId?: ScenarioId | null) => void;
@@ -97,13 +141,14 @@ export interface SimulationStoreState {
   /** Advances by one wall-clock frame. Called by the driver loop. */
   advance: (elapsedSeconds: number) => void;
 
-  /** Commands the mount to an absolute pose, in radians. */
+  /** Issues a position command. The mount responds over simulated time. */
   setCameraPose: (azimuth: number, elevation: number) => void;
-  /** Adjusts the mount relative to where it is now. */
+  /** Issues a command relative to the current setpoint. */
   nudgeCamera: (deltaAzimuth: number, deltaElevation: number) => void;
-  /** Returns the mount to the scenario's configured pointing. */
+  /** Commands the mount back to the scenario's configured pointing. */
   resetCamera: () => void;
   setTruthOverlay: (visible: boolean) => void;
+  setActuatorTruthVisible: (visible: boolean) => void;
 }
 
 /**
@@ -129,7 +174,14 @@ function createSession(config: SimulationConfig): Session {
     // Before -1 so the frame at t = 0 is due on the first advance.
     capturedThrough: -1,
     lastFrameIndex: 0,
+    heldCapture: null,
   };
+}
+
+/** Replaces the held capture, releasing the previous lease. */
+function holdCapture(active: Session, capture: SensorCapture): void {
+  active.heldCapture?.release();
+  active.heldCapture = capture;
 }
 
 function requireSession(): Session {
@@ -153,11 +205,23 @@ type SessionSnapshot = Pick<
   | 'speed'
   | 'sensorFrame'
   | 'sensorTruth'
-  | 'cameraAzimuth'
-  | 'cameraElevation'
   | 'framesScheduled'
   | 'framesRasterized'
   | 'framesSupersededForDisplay'
+  | 'commandedPan'
+  | 'commandedTilt'
+  | 'measuredPan'
+  | 'measuredTilt'
+  | 'measuredPanRate'
+  | 'measuredTiltRate'
+  | 'servoPhase'
+  | 'commandsPending'
+  | 'panAtLimit'
+  | 'tiltAtLimit'
+  | 'panRateSaturated'
+  | 'tiltRateSaturated'
+  | 'lastCommandClamped'
+  | 'actuatorTruth'
 >;
 
 function snapshotState(active: Session): SessionSnapshot {
@@ -166,6 +230,7 @@ function snapshotState(active: Session): SessionSnapshot {
   // A capture at the current instant, so the viewfinder shows the scene before
   // the run starts rather than an empty rectangle.
   const capture = active.sensor.captureFrame(active.sampler, active.lastFrameIndex);
+  holdCapture(active, capture);
 
   return {
     tick: active.engine.tick,
@@ -177,32 +242,79 @@ function snapshotState(active: Session): SessionSnapshot {
     speed: active.scheduler.speed,
     sensorFrame: capture.frame,
     sensorTruth: capture.truth,
-    cameraAzimuth: active.sensor.mount.azimuth,
-    cameraElevation: active.sensor.mount.elevation,
     framesScheduled: active.sensor.framesScheduled,
     framesRasterized: active.sensor.framesRasterized,
     framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
+    ...actuatorState(active),
   };
 }
 
-/**
- * Re-renders the current frame after the mount moves.
- *
- * The camera does not stop existing because the world is paused: pointing it
- * somewhere else must change what it sees. The capture time is unchanged — this
- * is the same instant viewed from a new attitude — so the frame keeps its index
- * and nothing new is counted as produced.
- */
-function refreshViewfinder(
+/** Everything the interface shows about the mount, read from the actuator. */
+function actuatorState(
   active: Session,
-): Pick<SimulationStoreState, 'sensorFrame' | 'sensorTruth' | 'cameraAzimuth' | 'cameraElevation'> {
-  const capture = active.sensor.captureFrame(active.sampler, active.lastFrameIndex);
+): Pick<
+  SimulationStoreState,
+  | 'commandedPan'
+  | 'commandedTilt'
+  | 'measuredPan'
+  | 'measuredTilt'
+  | 'measuredPanRate'
+  | 'measuredTiltRate'
+  | 'servoPhase'
+  | 'commandsPending'
+  | 'panAtLimit'
+  | 'tiltAtLimit'
+  | 'panRateSaturated'
+  | 'tiltRateSaturated'
+  | 'lastCommandClamped'
+  | 'actuatorTruth'
+> {
+  const gimbal = active.engine.gimbal;
+  const measured = gimbal.measuredPointing();
+  const axes = gimbal.axisStates();
+  const lastApplied = gimbal.lastApplied;
+
+  // The setpoint is what the servo is chasing; a command still in flight has
+  // not changed it yet, so the operator sees their request only once it is due.
+  const pendingLatest = gimbal.pendingCommands.at(-1)?.command;
+
   return {
-    sensorFrame: capture.frame,
-    sensorTruth: capture.truth,
-    cameraAzimuth: active.sensor.mount.azimuth,
-    cameraElevation: active.sensor.mount.elevation,
+    commandedPan: pendingLatest?.requestedPan ?? axes.pan.setpoint,
+    commandedTilt: pendingLatest?.requestedTilt ?? axes.tilt.setpoint,
+    measuredPan: measured.panAngle,
+    measuredTilt: measured.tiltAngle,
+    measuredPanRate: measured.derivedPanRate,
+    measuredTiltRate: measured.derivedTiltRate,
+    servoPhase: gimbal.servoPhase(1 / active.engine.config.tickRate),
+    commandsPending: gimbal.pendingCommands.length,
+    panAtLimit: axes.pan.flags.atMinLimit || axes.pan.flags.atMaxLimit,
+    tiltAtLimit: axes.tilt.flags.atMinLimit || axes.tilt.flags.atMaxLimit,
+    panRateSaturated: axes.pan.flags.rateSaturated,
+    tiltRateSaturated: axes.tilt.flags.rateSaturated,
+    lastCommandClamped: (lastApplied?.panClamped ?? false) || (lastApplied?.tiltClamped ?? false),
+    actuatorTruth: gimbal.truth(),
   };
+}
+
+/** Appends a point to the bounded command-versus-measured trace. */
+function appendResponse(
+  history: readonly ResponseSample[],
+  active: Session,
+  state: ReturnType<typeof actuatorState>,
+): readonly ResponseSample[] {
+  const next = [
+    ...history,
+    {
+      time: active.engine.time,
+      commandedPan: state.commandedPan,
+      measuredPan: state.measuredPan,
+      commandedTilt: state.commandedTilt,
+      measuredTilt: state.measuredTilt,
+    },
+  ];
+  return next.length > RESPONSE_HISTORY_LIMIT
+    ? next.slice(next.length - RESPONSE_HISTORY_LIMIT)
+    : next;
 }
 
 const initialConfig = loadScenario(DEFAULT_SCENARIO_ID);
@@ -215,6 +327,8 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   paths: initialSession.paths,
   importError: null,
   showTruthOverlay: false,
+  showActuatorTruth: false,
+  responseHistory: [],
   ...snapshotState(initialSession),
 
   loadScenarioById: (id) => {
@@ -229,6 +343,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       config,
       paths: session.paths,
       importError: null,
+      responseHistory: [],
       ...snapshotState(session),
     });
   },
@@ -263,10 +378,12 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     stopDriver();
     active.engine.reset();
     active.scheduler.reset();
+    active.heldCapture?.release();
+    active.heldCapture = null;
     active.sensor.reset();
     active.capturedThrough = -1;
     active.lastFrameIndex = 0;
-    set(snapshotState(active));
+    set({ ...snapshotState(active), responseHistory: [] });
   },
 
   stepOnce: () => {
@@ -278,16 +395,38 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
 
     const previous = buildObserverFrame(active.engine.snapshot(), active.labels);
     active.engine.step(1);
+    const current = buildObserverFrame(active.engine.snapshot(), active.labels);
 
+    // The frame captured here is the one that gets shown. Calling the snapshot
+    // helper instead would rasterize the same instant a second time, inflate the
+    // frame counters, and leak this lease.
     const capturedTo = active.engine.time;
     const result = active.sensor.captureLatest(active.sampler, active.capturedThrough, capturedTo);
     active.capturedThrough = capturedTo;
-    if (result.capture !== null) active.lastFrameIndex = result.capture.frame.frameId;
+
+    let sensorUpdate: Partial<SimulationStoreState> = {};
+    if (result.capture !== null) {
+      holdCapture(active, result.capture);
+      active.lastFrameIndex = result.capture.frame.frameId;
+      sensorUpdate = { sensorFrame: result.capture.frame, sensorTruth: result.capture.truth };
+    }
+
+    const actuator = actuatorState(active);
 
     set({
-      ...snapshotState(active),
+      tick: active.engine.tick,
+      time: active.engine.time,
       previousFrame: previous,
+      currentFrame: current,
+      alpha: 0,
       status: active.scheduler.status,
+      speed: active.scheduler.speed,
+      framesScheduled: active.sensor.framesScheduled,
+      framesRasterized: active.sensor.framesRasterized,
+      framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
+      ...sensorUpdate,
+      ...actuator,
+      responseHistory: appendResponse(get().responseHistory, active, actuator),
     });
   },
 
@@ -298,25 +437,33 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   },
 
   setCameraPose: (azimuth, elevation) => {
+    // Issues a command. It does not move anything: the mount responds over
+    // simulated time, and while the run is paused nothing mechanical changes at
+    // all. That is the whole difference from the ideal mount this replaced.
     const active = requireSession();
-    active.sensor.mount.commandTo(azimuth, elevation);
-    set(refreshViewfinder(active));
+    active.engine.gimbal.commandPosition(azimuth, elevation);
+    set(actuatorState(active));
   },
 
   nudgeCamera: (deltaAzimuth, deltaElevation) => {
     const active = requireSession();
-    active.sensor.mount.nudge(deltaAzimuth, deltaElevation);
-    set(refreshViewfinder(active));
+    active.engine.gimbal.nudge(deltaAzimuth, deltaElevation);
+    set(actuatorState(active));
   },
 
   resetCamera: () => {
     const active = requireSession();
-    active.sensor.mount.reset();
-    set(refreshViewfinder(active));
+    const gimbal = active.engine.config.gimbal;
+    active.engine.gimbal.commandPosition(gimbal.pan.initialAngle, gimbal.tilt.initialAngle);
+    set(actuatorState(active));
   },
 
   setTruthOverlay: (visible) => {
     set({ showTruthOverlay: visible });
+  },
+
+  setActuatorTruthVisible: (visible) => {
+    set({ showActuatorTruth: visible });
   },
 
   advance: (elapsedSeconds) => {
@@ -340,14 +487,14 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     const result = active.sensor.captureLatest(active.sampler, active.capturedThrough, capturedTo);
     active.capturedThrough = capturedTo;
 
-    const sensorUpdate =
-      result.capture === null
-        ? {}
-        : {
-            sensorFrame: result.capture.frame,
-            sensorTruth: result.capture.truth,
-            lastFrameIndexTracker: (active.lastFrameIndex = result.capture.frame.frameId),
-          };
+    let sensorUpdate: Partial<SimulationStoreState> = {};
+    if (result.capture !== null) {
+      holdCapture(active, result.capture);
+      active.lastFrameIndex = result.capture.frame.frameId;
+      sensorUpdate = { sensorFrame: result.capture.frame, sensorTruth: result.capture.truth };
+    }
+
+    const actuator = actuatorState(active);
 
     set({
       tick: active.engine.tick,
@@ -358,9 +505,9 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       framesScheduled: active.sensor.framesScheduled,
       framesRasterized: active.sensor.framesRasterized,
       framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
-      ...('sensorFrame' in sensorUpdate
-        ? { sensorFrame: sensorUpdate.sensorFrame, sensorTruth: sensorUpdate.sensorTruth }
-        : {}),
+      ...sensorUpdate,
+      ...actuator,
+      responseHistory: appendResponse(get().responseHistory, active, actuator),
     });
 
     if (active.engine.isComplete) {

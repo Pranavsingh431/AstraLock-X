@@ -113,11 +113,29 @@ describe('generating frames headlessly', () => {
         engine.step(Math.min(tickGroups[index % tickGroups.length]!, 400 - engine.tick));
         index += 1;
       }
-      return new Uint8Array(sensor.captureFrame(sampler, frameIndex).frame.data as Uint8Array);
+      const capture = sensor.captureFrame(sampler, frameIndex);
+      try {
+        return new Uint8Array(capture.frame.data as Uint8Array);
+      } finally {
+        capture.release();
+      }
     };
 
-    expect(pixelsFor([7, 3, 11])).toEqual(pixelsFor([400]));
-    expect(pixelsFor([1])).toEqual(pixelsFor([400]));
+    // Compared by scan rather than with `toEqual`: these are 307,200-element
+    // buffers, and vitest's structural equality on typed arrays that size costs
+    // seconds per comparison. The assertion is the same one, and a mismatch
+    // reports the offending index instead of dumping both buffers.
+    const firstDifference = (a: Uint8Array, b: Uint8Array): number => {
+      if (a.length !== b.length) return 0;
+      for (let index = 0; index < a.length; index += 1) {
+        if (a[index] !== b[index]) return index;
+      }
+      return -1;
+    };
+
+    const reference = pixelsFor([400]);
+    expect(firstDifference(pixelsFor([7, 3, 11]), reference)).toBe(-1);
+    expect(firstDifference(pixelsFor([1]), reference)).toBe(-1);
   });
 });
 
@@ -143,7 +161,7 @@ describe('sampling policies', () => {
     engine.step(1);
     const later = engine.snapshot();
 
-    const interpolating = new InterpolatingWorldSampler(earlier, later);
+    const interpolating = new InterpolatingWorldSampler(earlier, later, engine.gimbal);
     expect(interpolating.policy).toBe('linear-between-ticks');
     expect(interpolating.intervalSeconds).toBeCloseTo(1 / 200, 12);
 
@@ -163,7 +181,7 @@ describe('sampling policies', () => {
     engine.step(1);
     const later = engine.snapshot();
 
-    const sampler = new InterpolatingWorldSampler(earlier, later);
+    const sampler = new InterpolatingWorldSampler(earlier, later, engine.gimbal);
     expect(() => sampler.sampleAt(later.truth.time + 1)).toThrow(RangeError);
     expect(() => sampler.sampleAt(earlier.truth.time - 1)).toThrow(RangeError);
   });

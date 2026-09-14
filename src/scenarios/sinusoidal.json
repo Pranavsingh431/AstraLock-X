@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "id": "sinusoidal-weave",
   "name": "Weaving approach",
   "seed": 1004,
@@ -15,10 +15,6 @@
       "x": 0,
       "y": 0,
       "z": 0
-    },
-    "boresight": {
-      "azimuth": 0.0,
-      "elevation": 0.035439701
     },
     "baseDisturbanceRms": 0.0015,
     "baseDisturbanceBandwidth": 25
@@ -78,8 +74,6 @@
     "nearRange": 1.0,
     "farRange": 50000.0,
     "frameRate": 60,
-    "initialAzimuth": 0.0,
-    "initialElevation": 0.035439701,
     "backgroundLevel": 0.0,
     "exposure": 0.002,
     "gain": 1,
@@ -89,22 +83,31 @@
     "dropoutProbability": 0.0
   },
   "gimbal": {
-    "azimuthLimits": {
-      "minAngle": -3.14159,
-      "maxAngle": 3.14159,
-      "maxRate": 2.0,
-      "maxAcceleration": 10.0
+    "pan": {
+      "initialAngle": 0.0,
+      "minAngle": -2.967059728,
+      "maxAngle": 2.967059728,
+      "maxRate": 2.094395102,
+      "maxAcceleration": 10.471975512,
+      "naturalFrequency": 12.0,
+      "dampingRatio": 0.9,
+      "deadband": 8.727e-6,
+      "backlash": 0.0,
+      "encoderResolution": 8.727e-6
     },
-    "elevationLimits": {
-      "minAngle": -0.35,
-      "maxAngle": 1.4,
-      "maxRate": 2.0,
-      "maxAcceleration": 10.0
+    "tilt": {
+      "initialAngle": 0.035439701,
+      "minAngle": -0.34906585,
+      "maxAngle": 1.396263402,
+      "maxRate": 2.094395102,
+      "maxAcceleration": 10.471975512,
+      "naturalFrequency": 12.0,
+      "dampingRatio": 0.9,
+      "deadband": 8.727e-6,
+      "backlash": 0.0,
+      "encoderResolution": 8.727e-6
     },
-    "encoderResolution": 5e-5,
-    "encoderBias": 0.0001,
-    "reportingLatency": 0.001,
-    "servoBandwidth": 30
+    "commandLatency": 0.0
   },
   "atmosphere": {
     "refractiveIndexStructure": 1e-14,

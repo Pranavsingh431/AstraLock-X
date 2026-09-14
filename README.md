@@ -8,15 +8,16 @@ and — eventually — hardware-in-the-loop validation of coarse PAT systems. It
 runs offline, produces reproducible experiments, and reports measured results
 rather than illustrative ones.
 
-> **Status: Phase 2 — virtual camera and sensor image pipeline.** The simulator
-> now feeds a real virtual camera: a CPU pinhole model that turns the world into
-> timestamped GRAY8 pixel buffers, on its own frame clock, runnable headlessly.
-> Mission Control shows the actual sensor feed beside the 3D observer, and the
-> camera is pointed by hand.
+> **Status: Phase 3 — dynamic pan/tilt gimbal and actuator system.** The camera
+> now sits on a real mount. Commanding a pose no longer sets it: the command is
+> delayed, the servo takes time to respond, the axes have rate, acceleration and
+> travel limits, the gearing has play, and the encoder reports a quantised angle
+> that is not the angle forming the image. Mission Control commands the mount and
+> shows command against measurement.
 >
 > There is still **no detector, no Kalman filter, no controller and no
-> autonomous tracking**. Nothing looks at the pixels yet.
-> See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
+> autonomous tracking**. Nothing looks at the pixels yet; the mount is pointed by
+> hand. See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
 
 ## What the problem is
 
@@ -100,6 +101,7 @@ pnpm verify
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the system is put together
 - [docs/SIMULATION.md](docs/SIMULATION.md) — coordinates, clock, PRNG, trajectory equations, and what is not modelled
 - [docs/SENSOR_MODEL.md](docs/SENSOR_MODEL.md) — pinhole projection, camera clock, point spread, the frame contract and the truth boundary
+- [docs/GIMBAL_MODEL.md](docs/GIMBAL_MODEL.md) — the actuator: servo dynamics, latency, deadband, backlash, encoder quantisation, measured accuracy and what is not modelled
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — setup, commands, conventions
 - [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md) — what works, what does not
 - [docs/adr/](docs/adr/) — why things are the way they are

@@ -32,7 +32,6 @@ import {
 
 import { CameraClock } from './camera-clock';
 import { FrameBufferPool } from './frame-pool';
-import { type CameraMount, IdealCameraMount } from './mount';
 import { type ResolvedIntrinsics, cameraBasis, projectPoint, resolveIntrinsics } from './pinhole';
 import { addGaussianPointSource, fillBackground, type RasterTarget } from './psf';
 import {
@@ -51,8 +50,31 @@ import type { SensorWorldSample, WorldSampler } from './world-sampler';
  * system rejects any attempt to hand a plugin the pair.
  */
 export interface SensorCapture extends GroundTruthTainted {
+  /**
+   * The frame, valid until {@link release}.
+   *
+   * A getter rather than a field: reading it after release throws instead of
+   * handing back pixels the pool has since overwritten. That turns the one
+   * failure mode of a buffer pool — a silent data race with an asynchronous
+   * consumer — into an immediate, local error.
+   *
+   * @throws {FrameLeaseError} once released.
+   */
   readonly frame: CameraSensorFrame;
   readonly truth: SensorEvaluationTruth;
+  /** Whether the pixel buffer has gone back to the pool. */
+  readonly isReleased: boolean;
+  /** Returns the pixel buffer to the pool. Safe to call more than once. */
+  release(): void;
+  /**
+   * A copy that owns its pixels and outlives the lease.
+   *
+   * The escape hatch for anything that needs to keep a frame — a recorder, or
+   * an asynchronous perception stage. The copy costs one allocation, which is
+   * the honest price of persistence and is paid knowingly rather than
+   * discovered later as corruption.
+   */
+  toOwned(): CameraSensorFrame;
 }
 
 /** Largest value each supported format can hold. */
@@ -60,9 +82,7 @@ const FORMAT_MAX_VALUE: Record<PixelFormat, number> = { mono8: 255, mono16: 6553
 
 export interface VirtualCameraOptions {
   readonly config: SimulationConfig;
-  /** Defaults to an {@link IdealCameraMount} at the configured initial pose. */
-  readonly mount?: CameraMount;
-  /** Frames that may be in flight before a pixel buffer is reused. */
+  /** Frames that may be leased at once before the pool refuses. */
   readonly poolCapacity?: number;
 }
 
@@ -86,7 +106,6 @@ export class VirtualCameraSensor {
   public readonly config: SimulationConfig;
   public readonly clock: CameraClock;
   public readonly intrinsics: ResolvedIntrinsics;
-  public readonly mount: CameraMount;
   /** Identifies the optical configuration, carried on every frame. */
   public readonly cameraConfigId: string;
 
@@ -122,8 +141,6 @@ export class VirtualCameraSensor {
     this.backgroundValue = camera.backgroundLevel * this.maxValue;
     this.intrinsics = resolveIntrinsics(camera);
     this.clock = new CameraClock(camera.frameRate);
-    this.mount =
-      options.mount ?? new IdealCameraMount(camera.initialAzimuth, camera.initialElevation);
     this.cameraConfigId = `${options.config.id}@v${String(options.config.schemaVersion)}`;
     this.pool = new FrameBufferPool(
       this.intrinsics.width * this.intrinsics.height,
@@ -151,12 +168,18 @@ export class VirtualCameraSensor {
     return this.pool.allocated;
   }
 
-  /** Clears counters and returns the mount to its configured pose. */
+  /**
+   * Clears counters and reclaims every outstanding lease.
+   *
+   * Reclaiming matters: a run torn down mid-capture must not leave the pool
+   * permanently exhausted, and chasing down every holder is exactly the
+   * bookkeeping the lease exists to avoid.
+   */
   public reset(): void {
     this.scheduled = 0;
     this.rasterized = 0;
     this.superseded = 0;
-    this.mount.reset();
+    this.pool.releaseAll();
   }
 
   /**
@@ -179,7 +202,15 @@ export class VirtualCameraSensor {
     this.scheduled += range.count;
 
     for (let index = range.first; index <= range.last; index += 1) {
-      onCapture(this.captureFrame(sampler, index));
+      const capture = this.captureFrame(sampler, index);
+      try {
+        onCapture(capture);
+      } finally {
+        // Borrowed for the callback only. A consumer that wants to keep the
+        // frame calls toOwned(); releasing here is what keeps a long headless
+        // interval from exhausting the pool on its second frame.
+        capture.release();
+      }
     }
     return range.count;
   }
@@ -221,13 +252,16 @@ export class VirtualCameraSensor {
     sample: SensorWorldSample,
   ): SensorCapture {
     const { width, height } = this.intrinsics;
-    const data = this.pool.acquire();
+    const lease = this.pool.acquire();
+    const data = lease.pixels;
 
     const target: RasterTarget = { data, width, height, maxValue: this.maxValue };
     fillBackground(target, this.backgroundValue);
 
-    const pose = this.mount.pose();
-    const basis = cameraBasis(pose.azimuth, pose.elevation);
+    // Geometry uses the TRUE mechanical output: that is where the lens is.
+    // The frame will report the measured angle instead (ADR-0011).
+    const pose = sample.cameraPose;
+    const basis = cameraBasis(pose.trueAzimuth, pose.trueElevation);
     const projections: EmitterProjectionTruth[] = [];
 
     for (const emitter of sample.emitters) {
@@ -293,26 +327,53 @@ export class VirtualCameraSensor {
       // No sensor dropout model in Phase 2, so no frame is ever dropped by the
       // sensor. Reported as null rather than fabricated.
       droppedSince: null,
-      pose: { azimuth: pose.azimuth, elevation: pose.elevation },
+      // What the encoder reports, not where the mount really is.
+      pose: {
+        azimuth: radians(pose.measuredAzimuth),
+        elevation: radians(pose.measuredElevation),
+      },
       cameraConfigId: this.cameraConfigId,
     };
 
     const truth = brandSensorTruth({
       frameId: frameIndex,
       captureTime: seconds(captureTime),
-      cameraAzimuth: pose.azimuth,
-      cameraElevation: pose.elevation,
+      cameraAzimuth: radians(pose.trueAzimuth),
+      cameraElevation: radians(pose.trueElevation),
       cameraPositionEast: meters(sample.cameraPosition.x),
       cameraPositionNorth: meters(sample.cameraPosition.y),
       cameraPositionUp: meters(sample.cameraPosition.z),
       projections,
     });
 
-    return brandAsGroundTruth({ frame, truth });
+    return brandAsGroundTruth({
+      get frame(): CameraSensorFrame {
+        // Touching the lease is what throws once released; the frame object
+        // itself is inert, so the check has to happen on the way to it.
+        void lease.pixels;
+        return frame;
+      },
+      truth,
+      get isReleased(): boolean {
+        return lease.isReleased;
+      },
+      release(): void {
+        lease.release();
+      },
+      toOwned(): CameraSensorFrame {
+        return { ...frame, data: new Uint8Array(lease.pixels) };
+      },
+    });
   }
 }
 
-/** Copies a frame's pixels, for a consumer that needs to outlive the pool. */
+/**
+ * Copies a frame's pixels.
+ *
+ * Prefer `capture.toOwned()`, which copies the whole frame and is checked
+ * against the lease. This remains for a caller that already holds a frame and
+ * wants only the pixels.
+ */
 export function copyFramePixels(frame: CameraSensorFrame): Uint8Array {
   return new Uint8Array(frame.data as Uint8Array);
 }

@@ -31,8 +31,6 @@ function config(width: number, height: number): SimulationConfig {
     nearRange: 1,
     farRange: 50_000,
     frameRate: 60,
-    initialAzimuth: 0,
-    initialElevation: 0,
     backgroundLevel: 0,
   };
   return parseSimulationConfig(raw);
@@ -52,8 +50,14 @@ const sceneSampler = (): WorldSampler => ({
   sampleAt: (time): SensorWorldSample => ({
     time,
     cameraPosition: { x: 0, y: 0, z: 0 },
-    platformAzimuth: 0 as never,
-    platformElevation: 0 as never,
+    cameraPose: {
+      trueAzimuth: 0,
+      trueElevation: 0,
+      measuredAzimuth: 0,
+      measuredElevation: 0,
+      measuredAzimuthRate: 0,
+      measuredElevationRate: 0,
+    },
     emitters: [emitter(0, time * 20 - 60), emitter(1, time * 20), emitter(2, time * 20 + 60)],
   }),
 });
@@ -70,12 +74,12 @@ function measure(width: number, height: number, samples: number): Timing {
 
   // Warm-up, so the first measurement is not paying for the pool's lazy
   // allocation and the JIT's first pass.
-  for (let index = 0; index < 30; index += 1) sensor.captureFrame(sampler, index);
+  for (let index = 0; index < 30; index += 1) sensor.captureFrame(sampler, index).release();
 
   const durations: number[] = [];
   for (let index = 0; index < samples; index += 1) {
     const started = performance.now();
-    sensor.captureFrame(sampler, index);
+    sensor.captureFrame(sampler, index).release();
     durations.push(performance.now() - started);
   }
 
@@ -114,7 +118,7 @@ describe('frame generation cost', () => {
   it('does not allocate per frame beyond the pool', () => {
     const sensor = new VirtualCameraSensor({ config: config(640, 480), poolCapacity: 3 });
     const sampler = sceneSampler();
-    for (let index = 0; index < 600; index += 1) sensor.captureFrame(sampler, index);
+    for (let index = 0; index < 600; index += 1) sensor.captureFrame(sampler, index).release();
 
     expect(sensor.framesRasterized).toBe(600);
     expect(sensor.buffersAllocated).toBe(3);

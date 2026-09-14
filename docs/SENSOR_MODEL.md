@@ -206,9 +206,13 @@ no bearing, no range, no visibility reason, no emitter identity and no reference
 to the simulation. An adversarial test enumerates the whole surface and searches
 it for the ground-truth brand.
 
-`pose` is the mount _reporting itself_, not the truth. In Phase 2 the mount is
-ideal so the two coincide; from the phase that adds encoder quantisation, bias
-and latency they will not.
+`pose` is the mount _reporting itself_, not the truth — and since Phase 3 those
+are genuinely different numbers. The frame carries the **measured** angle, the
+encoder reading; the image is formed from the **true** mechanical output. They
+differ by up to half an encoder count at every instant, so a consumer cannot use
+the reported pose to invert its own image formation. See
+[ADR-0011](adr/0011-true-versus-measured-actuator-state.md) and
+[GIMBAL_MODEL.md](GIMBAL_MODEL.md).
 
 ## The truth boundary
 
@@ -273,19 +277,19 @@ none is warranted on this evidence.
 
 ## What Phase 2 does NOT model
 
-| Not modelled                                       | Consequence                                                                                          |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Read noise, shot noise, dark current               | The image is exactly background plus point spreads                                                   |
-| Sensor dropout                                     | `droppedSince` is always `null`                                                                      |
-| Atmospheric attenuation, scintillation, turbulence | No range or weather dependence                                                                       |
-| Link budget                                        | Beacon intensity is constant with range; `transmitPower` is declared but unused                      |
-| Occlusion                                          | Nothing ever blocks anything                                                                         |
-| Glare, bloom, blooming, smear                      | No cross-pixel artefacts beyond the point spread                                                     |
-| Lens distortion                                    | The projection is an exact pinhole                                                                   |
-| Motion blur                                        | Exposure is declared but instantaneous                                                               |
-| Gimbal dynamics                                    | `IdealCameraMount` adopts a commanded pose exactly and instantly                                     |
-| `mono16`                                           | Declared in the contract; the renderer refuses it rather than emitting 8-bit data in a 16-bit buffer |
-| Detection, estimation, control, PAT                | Nothing looks at the pixels                                                                          |
+| Not modelled                                            | Consequence                                                                                                                                     |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read noise, shot noise, dark current                    | The image is exactly background plus point spreads                                                                                              |
+| Sensor dropout                                          | `droppedSince` is always `null`                                                                                                                 |
+| Atmospheric attenuation, scintillation, turbulence      | No range or weather dependence                                                                                                                  |
+| Link budget                                             | Beacon intensity is constant with range; `transmitPower` is declared but unused                                                                 |
+| Occlusion                                               | Nothing ever blocks anything                                                                                                                    |
+| Glare, bloom, blooming, smear                           | No cross-pixel artefacts beyond the point spread                                                                                                |
+| Lens distortion                                         | The projection is an exact pinhole                                                                                                              |
+| Motion blur                                             | Exposure is declared but instantaneous                                                                                                          |
+| Actuator disturbance, friction, flexure, cross-coupling | The mount models servo dynamics, limits, deadband, backlash and encoder quantisation, but nothing else — see [GIMBAL_MODEL.md](GIMBAL_MODEL.md) |
+| `mono16`                                                | Declared in the contract; the renderer refuses it rather than emitting 8-bit data in a 16-bit buffer                                            |
+| Detection, estimation, control, PAT                     | Nothing looks at the pixels                                                                                                                     |
 
 GRAY8 — spelled `mono8` in the pixel-format contract, for continuity with
 Phase 0 — is the authoritative sensor format. The UI expands it to RGBA to draw
