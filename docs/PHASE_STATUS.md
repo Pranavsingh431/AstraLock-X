@@ -2,17 +2,32 @@
 
 What actually works, and what does not. Updated at the end of each phase.
 
-| Phase | Scope                                                              | Status       |
-| ----- | ------------------------------------------------------------------ | ------------ |
-| 0     | Project foundation: contracts, isolation, tooling, CI, shell       | **Complete** |
-| 1     | Simulation core: world, motion, seeded RNG, tick loop, 3D observer | **Complete** |
-| 2     | Virtual optical camera and sensor image pipeline                   | **Complete** |
-| 3     | Dynamic pan/tilt gimbal and actuator system                        | **Complete** |
-| 4     | First autonomous closed-loop coarse PAT                            | **Complete** |
-| 5     | Robust PAT: IMM, beacon identity, uncertainty-aware recovery       | Not started  |
-| 6     | Metrics, experiment runner, AstraBench, Replay, Reports            | Not started  |
-| 7     | Mission Control: live 3D scene, camera view, telemetry plots       | Not started  |
-| 8     | Hardware-in-the-loop: serial and USB device drivers                | Not started  |
+| Phase | Scope                                                                    | Status       |
+| ----- | ------------------------------------------------------------------------ | ------------ |
+| 0     | Project foundation: contracts, isolation, tooling, CI, shell             | **Complete** |
+| 1     | Simulation core: world, motion, seeded RNG, tick loop, 3D observer       | **Complete** |
+| 2     | Virtual optical camera and sensor image pipeline                         | **Complete** |
+| 3     | Dynamic pan/tilt gimbal and actuator system                              | **Complete** |
+| 4     | First autonomous closed-loop coarse PAT                                  | **Complete** |
+| 5     | Experiment recorder, KPI engine and performance reporting                | **Complete** |
+| 6     | Robust AstraLock-X PAT: IMM, beacon identity, uncertainty-aware recovery | Not started  |
+| 7     | AstraBench, FailureHunter, Replay, disturbances and sensor noise         | Not started  |
+| 8     | Final Mission Control UI, hardware-in-the-loop                           | Not started  |
+
+The roadmap was re-sequenced after Phase 4: experiment recording and reporting
+came before the robust tracker, so that the robust tracker is measured by the
+same recorder the baseline was.
+
+----- | ------------------------------------------------------------------ | ------------ |
+| 0 | Project foundation: contracts, isolation, tooling, CI, shell | **Complete** |
+| 1 | Simulation core: world, motion, seeded RNG, tick loop, 3D observer | **Complete** |
+| 2 | Virtual optical camera and sensor image pipeline | **Complete** |
+| 3 | Dynamic pan/tilt gimbal and actuator system | **Complete** |
+| 4 | First autonomous closed-loop coarse PAT | **Complete** |
+| 5 | Robust PAT: IMM, beacon identity, uncertainty-aware recovery | Not started |
+| 6 | Metrics, experiment runner, AstraBench, Replay, Reports | Not started |
+| 7 | Mission Control: live 3D scene, camera view, telemetry plots | Not started |
+| 8 | Hardware-in-the-loop: serial and USB device drivers | Not started |
 
 ---
 
@@ -1146,3 +1161,155 @@ SEARCH/ACQUIRE/TRACK/RECOVER/HANDOFF architecture. All belong to later phases.
 ### Next
 
 Phase 5 — the robust tracker. Do not begin it without an explicit request.
+
+---
+
+## Phase 5 — Experiment recorder, KPI engine and performance reporting
+
+**Complete.**
+
+Closed-loop runs are now records. A run writes a versioned manifest, snapshots of
+the exact scenario and algorithm configuration, an ordered event log, safe
+telemetry and privileged evaluation samples; its summary and an offline HTML
+report are computed **from those files**, and can be recomputed and verified
+from them. See [EXPERIMENTS.md](EXPERIMENTS.md), [METRICS.md](METRICS.md),
+[REPORTING.md](REPORTING.md) and ADRs
+[0014](adr/0014-evaluation-reads-truth-one-way.md),
+[0015](adr/0015-persisted-raw-data-is-the-source-of-truth.md),
+[0016](adr/0016-host-time-is-not-simulated-time.md).
+
+### Preflight: false placeholder values
+
+`TargetObservation.snr` (0 dB), `GimbalState.latency` (0 s) and
+`GimbalState.encoderHealth` (1) reported physical values for effects that are
+not simulated. All three are now `Measurement`s with status `not-modelled`, and
+Mission Control shows SNR as "Not modelled".
+
+### What was built
+
+- **`LoopObserver` seam** on `ClosedLoopRuntime`: attachable and detachable
+  without rebuilding the algorithm; per-frame host timings that partition the
+  loop iteration; actual command application instants from a bounded mount log.
+- **Write-only `StageProfiler`** in the plugin contract; the baseline reports
+  detector, bearing transform, estimator and controller time without ever
+  seeing a duration.
+- **`ExperimentRecorder`**: explicit lifecycle, change-only event log, bounded
+  batches, byte-based backpressure, immediate failure reporting, atomic
+  manifest/summary/report writes, `created`/`running` on disk until the final
+  step.
+- **`Evaluator`**: stable `atan2(|a×b|, a·b)` angular pointing error, image-space
+  error, detector centroid error, within-travel, other emitters in view — no
+  thresholds in the raw data.
+- **Streaming KPI engine** (`SummaryBuilder`, `LockAnalyser`): acquisition
+  milestones, dwell/grace coarse lock, retention with an explicit denominator,
+  censored loss episodes, false lock with an exercised flag, three sample
+  windows, frame rates, simulated control latency, host stage timings.
+- **Recompute and rescore**: one summarising path from files; cold
+  recomputation compares every field; snapshots are fingerprint-checked;
+  rescoring under another definition yields a separately fingerprinted result.
+- **Offline `report.html`** with the SIH performance log, provenance, config,
+  statistics, seven data-driven SVG plots and the metric definitions.
+- **Storage**: `MemoryStorage`, `NodeFileStorage`, and `TauriStorage` over narrow
+  Rust commands confined to `<app data>/runs/<run id>/`, with streaming chunked
+  reads, fsync'd atomic writes, open-folder and open-report.
+- **Mission Control** Record / Stop & finalise / Abort, real counters, hideable
+  EVALUATION readout, confirmations before reset, scenario change or autonomy
+  off; the emergency stop never asks.
+- **Reports screen**: every run with status (COMPLETED, ABORTED, FAILED,
+  INCOMPLETE), headline results, details, open report, open folder, recompute &
+  verify, delete with confirmation. Nothing editable.
+
+### Verification
+
+| Check                          | Result                                                    |
+| ------------------------------ | --------------------------------------------------------- |
+| `pnpm format:check` / `lint`   | clean                                                     |
+| `pnpm typecheck`               | 0 errors                                                  |
+| `pnpm test` (main pass)        | 970 tests in 53 files, including 38 type-level tests      |
+| `pnpm test` (performance pass) | 10 tests in 3 files, run sequentially after the main pass |
+| `pnpm build`                   | succeeds                                                  |
+| `cargo fmt` / `clippy` / tests | clean / clean / 5 passing                                 |
+| Desktop app                    | see below                                                 |
+
+Mandatory properties, each a test: recording on vs off identical (two scenarios,
+plus slow-disk backpressure and writer failure); cold offline recomputation with
+zero differences, plus agreement with an independent `acos` oracle and detection
+of four kinds of tampering; interrupted runs never trusted, including one that
+died after writing its summary; reproduction from saved files matches the
+recorded commands, transitions, final encoder reading and end-state hash; a
+120 s run stays bounded (peak queue = mark + one batch), loses no rows, keeps
+order, grows linearly and recomputes.
+
+**Desktop application.** Run in the real Tauri app on macOS through the real
+store, `TauriStorage` and Rust commands: stationary-outside-FOV recorded at 4×
+with live counters rising (events, frames, bytes written, queue 0, no
+backpressure) and the live readout going from not locked to LOCKED; finalised
+to COMPLETED; the Reports screen listed it with status, duration 26.3 s,
+acquisition 16.05 s, retention 100 %; the in-app Recompute & verify reported
+every field reproduced; a second run aborted to ABORTED with no summary or
+report on disk; artifacts under
+`~/Library/Application Support/dev.astralock.x/runs/` inspected and consistent.
+Recording in a plain browser tab refuses with a visible error and no console
+errors. The interrupted-run, hidden-evaluation, SNR "Not modelled" and
+confirmation flows are covered by the UI tests against the real store; they were
+not clicked by hand in the native window, because no automation reaches a
+WKWebView on macOS.
+
+### Measured results
+
+Validation records, not benchmarks: see [METRICS.md](METRICS.md#validation-results).
+Recorder overhead +3.1 % (median of three interleaved runs); writer alone
+~240 MB/s; finalisation ~120 ms for 30 s; raw record ~1.25 KB per frame.
+
+### Bugs found while building this
+
+1. **Starting or stopping a recording reset the tracker.** The store rebuilt the
+   runtime to attach a recorder, constructing a fresh algorithm.
+2. **"Recompute" was circular**: it read the metrics config, frame count and
+   target count from the summary it verified, and exempted host timings.
+3. **Recorder memory was unbounded**: every sample was retained.
+4. **"Detector" host time was a copy of total algorithm time; "orchestration"
+   timed one property read.**
+5. **First detection was tied to TRACK entry** and ignored target association.
+6. **Per-frame event noise**: a `detection-missed` on every search frame and a
+   `mechanical-limit` on every frame at a stop.
+7. **`createdAt` was rewritten on every manifest write.**
+8. **The lock threshold was baked into `evaluation.csv`**, preventing rescoring.
+9. **Effective FPS read 60.025 for a 60 fps camera** (closed-window fencepost).
+10. **Every report said INCOMPLETE**: rendered before the final manifest flip.
+11. **µrad rendered as "ΜRAD"** by CSS uppercasing, reading as milliradians.
+12. **`-0` and `0` fingerprinted differently**, the opposite of the documented intent.
+13. **A writer failure never reached the manifest or the UI** until the next
+    `advance()` — not on `stepOnce`, and never while paused.
+14. **The live readout showed the previous recording's lock** after starting a new one.
+15. **Provenance claimed a commit for uncommitted code**; now `sourceTreeModified`.
+16. **WKWebView's 1 ms timer** made sub-millisecond host stages read 0; the
+    resolution is now measured and stated in the manifest and report.
+17. **Wall-clock tests failed under contention** with the new suites; they now
+    run in a separate pass. A first attempt with Vitest projects silently stopped
+    running the type-level isolation tests, and was replaced.
+18. **An aborted run wrote `summary.json`** (found earlier in the phase).
+
+### Known limitations
+
+- Finalisation memory grows with run length (~120 B per frame of statistic
+  samples); the live recording itself is bounded.
+- Host timings in the desktop app are quantised to 1 ms.
+- Frame-rate figures are counts over a window and can exceed the configured rate
+  by up to 1/T.
+- One designated target; every bundled scenario has one emitter, so false lock
+  is reported as not exercised.
+- Closing the app mid-recording leaves an INCOMPLETE run by design; no
+  last-moment abort is attempted.
+- Rust command handlers are tested through their pure helpers; the IPC layer is
+  exercised by the desktop run, not by an automated Tauri test.
+- The Phase 0 placeholder types in `contracts/experiments.ts` and
+  `contracts/telemetry.ts` are unused and not yet reconciled with the Phase 5
+  schema.
+
+### Not started
+
+No IMM, constant-acceleration model, beacon identity, AI verifier, adaptive
+search, predictive recovery, handoff, feed-forward control, disturbances, sensor
+noise, AstraBench, FailureHunter, replay, HIL or UI redesign was added. Phase 6
+has not been started.

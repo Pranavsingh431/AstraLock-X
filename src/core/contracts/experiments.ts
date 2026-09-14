@@ -1,6 +1,13 @@
 /**
  * Experiment lifecycle: discrete events during a run, and the summary after it.
  *
+ * **Phase 0 sketch, not the Phase 5 record.** The experiment record that is
+ * actually persisted, recomputed and reported — manifest, events, telemetry,
+ * evaluation, summary — is defined, with runtime schemas, in
+ * `src/core/experiments/schema.ts` (docs/EXPERIMENTS.md). These interfaces
+ * predate it, are not used by it, and are kept only because the contract
+ * export-boundary type test proves them ground-truth-free.
+ *
  * Events form an ordered log that explains *why* a run went the way it did;
  * the summary reduces the run to comparable numbers. AstraBench compares
  * algorithms on summaries, and Replay reconstructs a run from events.

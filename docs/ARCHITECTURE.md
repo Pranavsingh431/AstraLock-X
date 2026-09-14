@@ -60,12 +60,17 @@ src/
     runtime/    The closed-loop runtime. The only place world, mount, camera and
                 algorithm meet. Owns causality: frame ordering, command issue
                 time, frame-lease lifetime. Privileged (ADR-0013)
+    experiments/Recording, the KPI engine and reporting. The recorder is a
+                LoopObserver; the evaluator reads ground truth to score a
+                tracker from outside; summaries are computed from the persisted
+                raw files. Privileged (ADR-0014, ADR-0015, ADR-0016,
+                docs/EXPERIMENTS.md, docs/METRICS.md, docs/REPORTING.md)
     perception/ Frames to detections
     estimation/ Detections to tracks
     control/    Tracks to gimbal commands
     pat/        Acquisition state machine
-    metrics/    Scoring, against ground truth, from outside
-    experiments/Run execution, event logs, seed sweeps
+    metrics/    Reserved for cross-run scoring; per-run scoring lives in
+                experiments/
     algorithms/ AlgorithmPlugin implementations and their registry. The most
                 restricted directory: it may not reach ground truth, the
                 simulator, the sensor, the mount, the runtime or the bundled
@@ -120,6 +125,26 @@ carries the **measured** encoder reading — two numbers that differ by up to ha
 a count and must not be conflated
 ([ADR-0011](adr/0011-true-versus-measured-actuator-state.md),
 [GIMBAL_MODEL.md](GIMBAL_MODEL.md)).
+
+Recording obeys it too, from the other side. The experiment recorder is a
+`LoopObserver`: the runtime tells it about each frame after the algorithm has
+produced its output and the command has been submitted, and about each command
+after the mount applied it. It cannot alter algorithm input, command timing,
+mount state or the progression of simulated time, and attaching or detaching it
+rebuilds nothing. Tests run scenarios with recording off and on — including with
+a failing and with a deliberately slow writer — and require identical
+transitions, commands, final pose and world hash. Wall-clock time may differ;
+the simulation may not. The recorder keeps no per-sample state: it writes raw
+files, and the summary is computed afterwards from those files by the same code
+an offline recomputation uses
+([ADR-0014](adr/0014-evaluation-reads-truth-one-way.md),
+[ADR-0015](adr/0015-persisted-raw-data-is-the-source-of-truth.md),
+[EXPERIMENTS.md](EXPERIMENTS.md)).
+
+Host processing time is measured around that work and handed only to observers.
+The algorithm reports its own stages through a write-only profiler that returns
+the work's result and never a duration, so a clock reading cannot influence what
+it computes ([ADR-0016](adr/0016-host-time-is-not-simulated-time.md)).
 
 So does the autonomous loop. `core/runtime` owns the meeting point of world,
 mount, camera and algorithm, and with it the two things that decide whether the

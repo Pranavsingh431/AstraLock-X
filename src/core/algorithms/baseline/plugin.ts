@@ -27,23 +27,19 @@
 import type {
   AlgorithmInit,
   AlgorithmInstance,
+  StageProfiler,
   TrackingInput,
   TrackingOutput,
 } from '@/core/contracts/algorithm-plugin';
-import { defineAlgorithm } from '@/core/contracts/algorithm-plugin';
+import { UNPROFILED, defineAlgorithm } from '@/core/contracts/algorithm-plugin';
 import type { CommandIntent } from '@/core/contracts/control';
 import type { TargetEstimate, TrackId } from '@/core/contracts/estimation';
 import type { Matrix4x4 } from '@/core/contracts/geometry';
 import type { PATState, PATTransitionReason } from '@/core/contracts/pat';
 import type { ObservationId, TargetObservation } from '@/core/contracts/perception';
-import {
-  decibels,
-  normalized,
-  pixels,
-  radians,
-  radiansPerSecond,
-  seconds,
-} from '@/core/contracts/units';
+import type { Decibels } from '@/core/contracts/units';
+import { notModelled } from '@/core/contracts/measurement';
+import { normalized, pixels, radians, radiansPerSecond, seconds } from '@/core/contracts/units';
 
 import { shortestAngle } from './angles';
 import { blobBounds, detect, type DetectionResult } from './detector';
@@ -119,6 +115,8 @@ class BaselineInstance implements AlgorithmInstance<BaselineDebug> {
   private readonly panPid: PidController;
   private readonly tiltPid: PidController;
   private readonly search: SearchPattern;
+  /** Write-only: work goes in, its result comes back, no duration ever does. */
+  private readonly profiler: StageProfiler;
 
   private state: BaselineState = 'search';
   private stateSince = 0;
@@ -136,6 +134,7 @@ class BaselineInstance implements AlgorithmInstance<BaselineDebug> {
     this.panPid = new PidController(init.config.panPid);
     this.tiltPid = new PidController(init.config.tiltPid);
     this.search = new SearchPattern(init.config.search);
+    this.profiler = init.profiler ?? UNPROFILED;
   }
 
   public reset(): void {
@@ -177,7 +176,7 @@ class BaselineInstance implements AlgorithmInstance<BaselineDebug> {
     }
 
     const detection: DetectionResult | null = isNewFrame
-      ? detect(frame, this.config.detector)
+      ? this.profiler.time('detector', () => detect(frame, this.config.detector))
       : null;
 
     const blob = detection?.selected ?? null;
@@ -185,12 +184,14 @@ class BaselineInstance implements AlgorithmInstance<BaselineDebug> {
     // Pixel -> bearing, using the pose the mount *reported* for this frame.
     let measured: { azimuth: number; elevation: number } | null = null;
     if (blob !== null && frame !== null) {
-      measured = pixelToBearing(
-        blob.centroidX + 0.5,
-        blob.centroidY + 0.5,
-        input.camera,
-        frame.pose.azimuth,
-        frame.pose.elevation,
+      measured = this.profiler.time('bearing-transform', () =>
+        pixelToBearing(
+          blob.centroidX + 0.5,
+          blob.centroidY + 0.5,
+          input.camera,
+          frame.pose.azimuth,
+          frame.pose.elevation,
+        ),
       );
     }
 
@@ -212,7 +213,10 @@ class BaselineInstance implements AlgorithmInstance<BaselineDebug> {
     switch (this.state) {
       case 'search': {
         if (measured !== null && frame !== null && this.hits >= this.config.detectionsBeforeTrack) {
-          this.filter.initialise(measured.azimuth, measured.elevation, frame.captureTime);
+          const { azimuth, elevation } = measured;
+          this.profiler.time('estimator', () => {
+            this.filter.initialise(azimuth, elevation, frame.captureTime);
+          });
           this.transition('track', 'candidate-detected', time);
           this.panPid.reset();
           this.tiltPid.reset();
@@ -226,12 +230,14 @@ class BaselineInstance implements AlgorithmInstance<BaselineDebug> {
           };
           break;
         }
-        waypoint = this.search.step(
-          time,
-          input.gimbal.azimuth,
-          input.gimbal.elevation,
-          input.gimbal.azimuthRate,
-          input.gimbal.elevationRate,
+        waypoint = this.profiler.time('controller', () =>
+          this.search.step(
+            time,
+            input.gimbal.azimuth,
+            input.gimbal.elevation,
+            input.gimbal.azimuthRate,
+            input.gimbal.elevationRate,
+          ),
         );
         intent = {
           kind: 'position',
@@ -243,10 +249,15 @@ class BaselineInstance implements AlgorithmInstance<BaselineDebug> {
 
       case 'track': {
         if (measured !== null && frame !== null) {
-          this.filter.update(measured.azimuth, measured.elevation, frame.captureTime);
+          const { azimuth, elevation } = measured;
+          this.profiler.time('estimator', () => {
+            this.filter.update(azimuth, elevation, frame.captureTime);
+          });
         } else if (isNewFrame) {
           // Coast: propagate to now so the estimate stays usable through a gap.
-          this.filter.predictTo(time);
+          this.profiler.time('estimator', () => {
+            this.filter.predictTo(time);
+          });
         }
 
         if (this.misses >= this.config.missesBeforeLost) {
@@ -265,8 +276,13 @@ class BaselineInstance implements AlgorithmInstance<BaselineDebug> {
         const tiltError = estimate.elevation - input.gimbal.elevation;
 
         if (isNewFrame) {
-          panCorrection = this.panPid.step(panError, dt).output;
-          tiltCorrection = this.tiltPid.step(tiltError, dt).output;
+          [panCorrection, tiltCorrection] = this.profiler.time(
+            'controller',
+            (): [number, number] => [
+              this.panPid.step(panError, dt).output,
+              this.tiltPid.step(tiltError, dt).output,
+            ],
+          );
 
           intent = {
             kind: 'position',
@@ -317,10 +333,10 @@ class BaselineInstance implements AlgorithmInstance<BaselineDebug> {
                 [0, 0.0625],
               ],
               peakIntensity: normalized(blob.peak / 255),
-              // No noise model exists yet, so there is no signal-to-noise
-              // ratio to compute. Zero dB is reported rather than a plausible
-              // invented figure; when a noise model arrives this becomes real.
-              snr: decibels(0),
+              // The sensor has no noise model, so there is no ratio to
+              // compute — not a small one, none. Reported as unmodelled rather
+              // than as a number a reader would take at face value.
+              snr: notModelled<Decibels>('dB'),
               confidence: normalized(detection?.score ?? 0),
               method: 'intensity-centroid',
             },

@@ -93,6 +93,15 @@ interface PointingSample {
  */
 const POINTING_HISTORY_CAPACITY = 512;
 
+/**
+ * Applied-command records retained for observers.
+ *
+ * An observer drains these after every advance, and one advance applies at most
+ * a handful of commands, so this is generous. It is bounded because a mount
+ * that nobody observes must not accumulate a history forever.
+ */
+const APPLIED_LOG_CAPACITY = 64;
+
 export class DynamicGimbal {
   public readonly config: GimbalConfig;
   public readonly pan: GimbalAxis;
@@ -101,6 +110,8 @@ export class DynamicGimbal {
   private readonly queue = new GimbalCommandQueue();
   private currentTime = 0;
   private lastAppliedCommand: GimbalCommandRecord | null = null;
+  private readonly appliedLog: GimbalCommandRecord[] = [];
+  private appliedTotal = 0;
 
   /** Ring of pointing samples at tick boundaries, for between-tick capture. */
   private readonly history: PointingSample[] = [];
@@ -125,6 +136,33 @@ export class DynamicGimbal {
 
   public get lastApplied(): GimbalCommandRecord | null {
     return this.lastAppliedCommand;
+  }
+
+  /** How many commands have been applied since construction or reset. */
+  public get appliedCommandCount(): number {
+    return this.appliedTotal;
+  }
+
+  /**
+   * Commands applied after the first `since`, oldest first.
+   *
+   * For observers that need the **actual** application instant of every
+   * command rather than only the latest one — an advance can apply more than
+   * one. Reading it changes nothing about the mount.
+   *
+   * @throws {RangeError} when records older than the retained window are asked
+   *   for. Returning a partial list would let a caller believe it had seen every
+   *   application when it had not.
+   */
+  public appliedCommandsSince(since: number): readonly GimbalCommandRecord[] {
+    const missing = this.appliedTotal - since;
+    if (missing <= 0) return [];
+    if (missing > this.appliedLog.length) {
+      throw new RangeError(
+        `Applied-command log holds ${String(this.appliedLog.length)} records; ${String(missing)} were requested`,
+      );
+    }
+    return this.appliedLog.slice(this.appliedLog.length - missing);
   }
 
   /**
@@ -258,6 +296,9 @@ export class DynamicGimbal {
       panClamped,
       tiltClamped,
     };
+    this.appliedLog.push(this.lastAppliedCommand);
+    if (this.appliedLog.length > APPLIED_LOG_CAPACITY) this.appliedLog.shift();
+    this.appliedTotal += 1;
   }
 
   /** True pointing now. Drives image formation. */
@@ -444,6 +485,8 @@ export class DynamicGimbal {
     this.queue.reset();
     this.currentTime = 0;
     this.lastAppliedCommand = null;
+    this.appliedLog.length = 0;
+    this.appliedTotal = 0;
     this.historyStart = 0;
     this.historyCount = 0;
     this.history.length = 0;

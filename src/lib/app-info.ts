@@ -27,6 +27,15 @@ export interface AppInfo {
   /** Vite mode: `development` under `pnpm dev`, `production` in a real build. */
   readonly mode: string;
   readonly host: RuntimeHost;
+  /**
+   * Commit this build came from, or `null` when git could not tell us.
+   *
+   * Recorded in every experiment manifest so a published result can be traced
+   * back to the code that produced it.
+   */
+  readonly sourceCommit: string | null;
+  /** Whether the build's working tree had uncommitted changes, or `null` if unknown. */
+  readonly sourceTreeModified: boolean | null;
 }
 
 /** Reads the current build and runtime facts. */
@@ -34,6 +43,8 @@ export function readAppInfo(): AppInfo {
   return {
     name: 'AstraLock-X',
     version: __APP_VERSION__,
+    sourceCommit: __SOURCE_COMMIT__,
+    sourceTreeModified: __SOURCE_TREE_MODIFIED__,
     mode: import.meta.env.MODE,
     host: detectRuntimeHost(),
   };

@@ -10,6 +10,7 @@
  * and the camera returns pixels rather than target positions.
  */
 
+import type { Measurement } from './measurement';
 import type { ImageRect, Quaternion, Vec3 } from './geometry';
 import type {
   Hertz,
@@ -162,10 +163,19 @@ export interface GimbalState {
   readonly azimuthSaturation: AxisSaturation;
   readonly elevationSaturation: AxisSaturation;
   /**
-   * Age of this sample relative to the frame it accompanies. Non-zero latency
-   * has to be compensated, so it is reported rather than hidden.
+   * Encoder reporting delay: how old the reading was when it was reported.
+   *
+   * A {@link Measurement} because the simulated encoder is read instantaneously
+   * at `sampleTime` and has no reporting-delay model. Phase 4 filled this in as
+   * 0 s, which is a physical claim — a perfect encoder — rather than an
+   * admission that the effect is not simulated.
    */
-  readonly latency: Seconds;
-  /** Encoder health on [0, 1]; degraded encoders report below 1. */
-  readonly encoderHealth: Normalized;
+  readonly latency: Measurement<Seconds>;
+  /**
+   * Encoder health on [0, 1], when an encoder fault model exists.
+   *
+   * No fault model exists, so this is not modelled. Phase 4 reported 1, which
+   * would read as "measured, and perfectly healthy".
+   */
+  readonly encoderHealth: Measurement<Normalized>;
 }

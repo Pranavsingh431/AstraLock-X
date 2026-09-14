@@ -8,17 +8,20 @@ and — eventually — hardware-in-the-loop validation of coarse PAT systems. It
 runs offline, produces reproducible experiments, and reports measured results
 rather than illustrative ones.
 
-> **Status: Phase 4 — first autonomous closed-loop coarse PAT.** The loop is
-> closed. A classical detector reads the camera's real GRAY8 pixels, an inverse
-> pinhole turns a sub-pixel centroid into a bearing using the _measured_ mount
-> pose, a constant-velocity Kalman filter estimates where the target is going,
-> and a PID drives the real dynamic gimbal — which changes what the camera sees
-> next. It finds a beacon it was never told about by physically scanning for it.
+> **Status: Phase 5 — experiment recorder, KPI engine and reporting.** Runs are
+> now records. Starting an experiment writes a versioned manifest, a snapshot of
+> the exact scenario and algorithm configuration, an ordered event log, safe
+> telemetry and privileged evaluation samples — then derives a summary and a
+> self-contained HTML report from them. The summary is recomputable offline from
+> the raw files, and the application will verify it for you.
 >
-> The tracker is a deliberately simple **baseline**: no beacon identity, no
-> manoeuvre model, no predictive recovery, no learned component. Its weaknesses
-> are documented rather than patched, because later algorithms have to beat
-> something real. See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
+> Recording is an observer: a test requires the same scenario to produce an
+> identical engineering result with the recorder on and off. No metric is
+> fabricated — a quantity the simulator does not model reports "Not modelled",
+> never a plausible zero.
+>
+> The tracker itself is still the deliberately simple **baseline** from Phase 4.
+> See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
 
 ## What the problem is
 
@@ -104,6 +107,9 @@ pnpm verify
 - [docs/SENSOR_MODEL.md](docs/SENSOR_MODEL.md) — pinhole projection, camera clock, point spread, the frame contract and the truth boundary
 - [docs/GIMBAL_MODEL.md](docs/GIMBAL_MODEL.md) — the actuator: servo dynamics, latency, deadband, backlash, encoder quantisation, measured accuracy and what is not modelled
 - [docs/BASELINE_PAT.md](docs/BASELINE_PAT.md) — the autonomous tracker: detector, pixel-to-bearing, Kalman filter, PID, search, control timing, measured results and known weaknesses
+- [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) — recording a run: lifecycle, artifacts, run identity, storage, recomputation and reproducibility
+- [docs/METRICS.md](docs/METRICS.md) — every KPI formula, denominator, unit and N/A rule
+- [docs/REPORTING.md](docs/REPORTING.md) — the generated offline report and the Reports screen
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — setup, commands, conventions
 - [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md) — what works, what does not
 - [docs/adr/](docs/adr/) — why things are the way they are

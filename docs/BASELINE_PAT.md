@@ -393,7 +393,9 @@ every acceptance test. It is a default, not a fitted constant.
 ## Measured results
 
 On the bundled scenarios, with the shipped default config, judged from outside
-using privileged truth that the algorithm never sees. Errors are the beacon's
+using privileged truth that the algorithm never sees. Since Phase 5 these are
+produced by the experiment recorder and are reproducible from the stored
+artifacts; see [EXPERIMENTS.md](EXPERIMENTS.md). Errors are the beacon's
 true distance from the principal point, sampled from 3 s after acquisition.
 
 | Scenario                     | Acquired | Modes                          | Beacon visible | Median error | p95     |
@@ -451,7 +453,10 @@ Stated because the robust algorithm needs a real baseline to beat.
    adapt.
 9. **No compute-time model.** Algorithm latency is zero after a frame becomes
    available.
-10. **No link budget, no SNR.** `snr` is reported as 0 dB because no noise model
-    exists to compute it from. It is not an invented figure.
+10. **No link budget, no SNR.** The sensor has no noise model, so there is no
+    ratio to compute. Since Phase 5 `snr` is a `Measurement` reported as
+    `not-modelled` rather than as 0 dB — a real physical value meaning signal
+    equal to noise, and therefore a lie about a noiseless sensor. See
+    [METRICS.md](METRICS.md#na-and-unmodelled-semantics).
 
 Items 1, 3, 4, 5 and 6 are precisely what the robust algorithm is for.

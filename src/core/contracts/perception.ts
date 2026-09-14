@@ -7,6 +7,7 @@
  */
 
 import type { Bearing, ImagePoint, ImageRect, Matrix2x2 } from './geometry';
+import type { Measurement } from './measurement';
 import type { Decibels, Normalized, Seconds } from './units';
 
 declare const observationIdBrand: unique symbol;
@@ -42,9 +43,24 @@ export interface TargetObservation {
   readonly pixelCovariance: Matrix2x2;
   /** Peak intensity, normalised against the format's full scale. */
   readonly peakIntensity: Normalized;
-  /** Estimated signal-to-noise ratio of the detection. */
-  readonly snr: Decibels;
-  /** Detector's own confidence on [0, 1]. */
+  /**
+   * Signal-to-noise ratio of the detection, when there is one to compute.
+   *
+   * A {@link Measurement} rather than a bare number because the answer is
+   * frequently "there isn't one": a noiseless sensor has no noise floor, so
+   * the ratio is undefined rather than large. Phase 4 reported 0 dB here,
+   * which is a real physical value — signal equal to noise — and therefore a
+   * lie about a sensor that has no noise at all.
+   */
+  readonly snr: Measurement<Decibels>;
+  /**
+   * The detector's own score for this candidate, on [0, 1].
+   *
+   * Named `confidence` for continuity, but read the detector's documentation
+   * before treating it as one: the baseline's value is the detection's
+   * strength relative to a saturated blob of the same size. It is not a
+   * probability and does not become one by being in this field.
+   */
   readonly confidence: Normalized;
   readonly method: DetectionMethod;
 }

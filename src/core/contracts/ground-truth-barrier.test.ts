@@ -129,6 +129,22 @@ const probes: readonly Probe[] = [
     source: `import type { ActuatorTruth } from '@/core/gimbal';\nexport type Probe = ActuatorTruth;\n`,
   },
   {
+    path: join(probeDirectory, 'experiments-import.ts'),
+    source: `import { Evaluator } from '@/core/experiments';\nexport const probe = Evaluator;\n`,
+  },
+  {
+    path: join(probeDirectory, 'evaluation-deep-import.ts'),
+    source: `import type { EvaluationFrame } from '@/core/experiments/evaluation';\nexport type Probe = EvaluationFrame;\n`,
+  },
+  {
+    path: join(probeDirectory, 'evaluation-relative-import.ts'),
+    source: `import { angleBetween } from '../../experiments/evaluation';\nexport const probe = angleBetween;\n`,
+  },
+  {
+    path: join(allowedDirectory, 'experiments-privileged-import.ts'),
+    source: `import type { EvaluationFrame } from '@/core/experiments';\nexport type Probe = EvaluationFrame;\n`,
+  },
+  {
     path: join(probeDirectory, 'runtime-import.ts'),
     source: `import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';\nexport const probe = ClosedLoopRuntime;\n`,
   },
@@ -271,6 +287,34 @@ describe('actuator barrier', () => {
 
   it('leaves evaluation free to read the actuator interior', async () => {
     const rules = await lintProbe(eslint, join(allowedDirectory, 'gimbal-privileged-import.ts'));
+    expect(rules).not.toContain(RESTRICTED_RULE);
+  });
+});
+
+describe('experiment evaluation barrier', () => {
+  it('blocks the tracking side from reaching the evaluator', async () => {
+    // The evaluator computes the true pointing error. A tracker that could
+    // call it would be minimising a quantity it is not supposed to be able to
+    // observe, and would score perfectly while learning nothing.
+    const rules = await lintProbe(eslint, join(probeDirectory, 'experiments-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('blocks a deep import of the evaluation types', async () => {
+    const rules = await lintProbe(eslint, join(probeDirectory, 'evaluation-deep-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('blocks a relative path into the evaluator', async () => {
+    const rules = await lintProbe(eslint, join(probeDirectory, 'evaluation-relative-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('leaves evaluation code free to use it, which is the whole point', async () => {
+    const rules = await lintProbe(
+      eslint,
+      join(allowedDirectory, 'experiments-privileged-import.ts'),
+    );
     expect(rules).not.toContain(RESTRICTED_RULE);
   });
 });

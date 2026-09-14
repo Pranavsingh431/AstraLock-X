@@ -15,6 +15,8 @@ import { cn } from '@/lib/utils';
 import { SCENARIO_IDS, type ScenarioId, listScenarios } from '@/scenarios';
 import { useSimulationStore } from '@/stores/simulation-store';
 
+import { confirmIfRecording } from '../recording-guard';
+
 export function SimulationControls(): React.JSX.Element {
   const status = useSimulationStore((state) => state.status);
   const speed = useSimulationStore((state) => state.speed);
@@ -63,7 +65,20 @@ export function SimulationControls(): React.JSX.Element {
 
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button size="sm" variant="outline" onClick={reset} aria-label="Reset to tick zero">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              if (
+                confirmIfRecording(
+                  'Resetting will abort it: the raw record is kept, marked ABORTED, with no result.',
+                )
+              ) {
+                reset();
+              }
+            }}
+            aria-label="Reset to tick zero"
+          >
             <RotateCcw />
             Reset
           </Button>
@@ -103,7 +118,12 @@ export function SimulationControls(): React.JSX.Element {
           aria-label="Scenario"
           onChange={(event) => {
             const value = event.target.value;
-            if ((SCENARIO_IDS as readonly string[]).includes(value)) {
+            if (
+              (SCENARIO_IDS as readonly string[]).includes(value) &&
+              confirmIfRecording(
+                'Changing scenario will abort it: the raw record is kept, marked ABORTED, with no result.',
+              )
+            ) {
               loadScenarioById(value as ScenarioId);
             }
           }}

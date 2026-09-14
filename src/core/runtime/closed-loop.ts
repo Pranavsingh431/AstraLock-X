@@ -42,18 +42,20 @@
 import type {
   AlgorithmInstance,
   AlgorithmPlugin,
+  ProfiledStage,
+  StageProfiler,
   TrackingInput,
   TrackingOutput,
 } from '@/core/contracts/algorithm-plugin';
 import { guardTrackingInput } from '@/core/contracts/algorithm-plugin';
 import type { CommandIntent, ControlCommand } from '@/core/contracts/control';
+import { notModelled } from '@/core/contracts/measurement';
 import type { CameraSensorFrame, CameraState, GimbalState } from '@/core/contracts/sensors';
 import type { SimulationConfig } from '@/core/contracts/simulation';
 import {
   hertz,
   meters,
   milliseconds,
-  normalized,
   pixels,
   radians,
   radiansPerSecond,
@@ -122,6 +124,133 @@ export interface ClosedLoopOptions {
    * way.
    */
   readonly blankPixels?: boolean;
+  /**
+   * An observer, notified after the work is done. See {@link LoopObserver}.
+   * Can also be attached and detached later with {@link ClosedLoopRuntime.observe}.
+   */
+  readonly observer?: LoopObserver;
+}
+
+/**
+ * Host wall-clock cost of one processed frame, in milliseconds.
+ *
+ * **Diagnostics of the machine, not simulated latency.** The simulation models
+ * algorithm compute as taking zero simulated time; these figures describe how
+ * long the host took to do that work and never feed back into commands,
+ * simulated time or any state hash (ADR-0016).
+ *
+ * The four top-level figures partition one iteration of the loop, excluding the
+ * observer and the display callback:
+ *
+ *   worldStep + sensorFrame + algorithm + orchestration = iteration
+ *
+ * so `orchestration` is what the runtime itself spent — building the
+ * algorithm's input, reading the encoders, stamping and submitting the command
+ * — measured as the remainder rather than asserted.
+ */
+export interface LoopTimings {
+  /** Advancing the world and the mount to the frame's availability tick. */
+  readonly worldStepMs: number;
+  /** Rasterising the frame from the world at its capture instant. */
+  readonly sensorFrameMs: number;
+  /** The algorithm's `update`, end to end. */
+  readonly algorithmMs: number;
+  /** The loop's own bookkeeping around the above. */
+  readonly orchestrationMs: number;
+  /**
+   * Stages the algorithm reported through its profiler. `null` for a stage
+   * that did not run on this frame — the Kalman filter does not run while
+   * searching — which is different from a stage that ran and took no time.
+   */
+  readonly stages: Readonly<Record<ProfiledStage, number | null>>;
+}
+
+/** The command a processed frame produced, as the runtime issued it. */
+export interface ObservedCommand {
+  readonly commandId: number;
+  readonly issuedAt: number;
+  readonly azimuth: number;
+  readonly elevation: number;
+}
+
+/** What an observer is told about one processed frame. */
+export interface LoopObservation {
+  readonly frame: CameraSensorFrame;
+  readonly output: TrackingOutput<unknown>;
+  readonly captureTime: number;
+  /** When the frame became available and its command, if any, was stamped. */
+  readonly issueTime: number;
+  /** `null` when the algorithm held or returned no intent. */
+  readonly command: ObservedCommand | null;
+  /** The measured mount state the algorithm was given for this frame. */
+  readonly gimbal: GimbalState;
+  readonly timings: LoopTimings;
+}
+
+/** A command the mount actually applied, with the instant it did so. */
+export interface AppliedCommandObservation {
+  readonly commandId: number;
+  readonly issuedAt: number;
+  /** `issuedAt` plus the configured latency: when it was scheduled. */
+  readonly dueAt: number;
+  /** When the mount actually applied it, read from the mount. */
+  readonly appliedAt: number;
+  /** Frame the command derived from, or `null` if this runtime did not issue it. */
+  readonly frameId: number | null;
+  readonly captureTime: number | null;
+}
+
+/**
+ * Something watching the loop from outside.
+ *
+ * Every callback happens **after** the work it describes, so nothing an
+ * observer does can influence the algorithm's input, the command or its timing.
+ * The observer is handed timings gathered around work that was going to happen
+ * anyway — reading a clock does not change what the loop computes.
+ *
+ * Errors thrown by an observer are **not** caught here. A recorder that throws
+ * synchronously is a bug in the recorder, and swallowing it would leave a run
+ * that looks recorded and is not.
+ */
+export interface LoopObserver {
+  onFrameProcessed(observation: LoopObservation): void;
+  /** Every frame the sensor produced for the loop, before delivery. */
+  onSensorFrame?(frameId: number, captureTime: number): void;
+  /** Every command the mount applied, in application order. */
+  onCommandApplied?(applied: AppliedCommandObservation): void;
+}
+
+/**
+ * The profiler handed to the algorithm.
+ *
+ * Accumulates per stage, because a stage can legitimately run more than once in
+ * one update, and resets before each frame. It measures on every frame whether
+ * or not anyone is observing, so attaching an observer mid-run changes nothing
+ * about what the algorithm executes.
+ */
+class HostStageProfiler implements StageProfiler {
+  public readonly totals: Record<ProfiledStage, number | null> = {
+    detector: null,
+    'bearing-transform': null,
+    estimator: null,
+    controller: null,
+  };
+
+  public time<T>(stage: ProfiledStage, work: () => T): T {
+    const started = performance.now();
+    try {
+      return work();
+    } finally {
+      this.totals[stage] = (this.totals[stage] ?? 0) + (performance.now() - started);
+    }
+  }
+
+  public clear(): void {
+    this.totals.detector = null;
+    this.totals['bearing-transform'] = null;
+    this.totals.estimator = null;
+    this.totals.controller = null;
+  }
 }
 
 const DEFAULT_HISTORY = 256;
@@ -210,8 +339,9 @@ export function gimbalStateFrom(
     // reports "this axis is against its stop" without exposing the mechanism.
     azimuthSaturation: saturation(truth.pan.flags),
     elevationSaturation: saturation(truth.tilt.flags),
-    latency: seconds(0),
-    encoderHealth: normalized(1),
+    // Neither effect is simulated, and saying 0 s or 1.0 would claim otherwise.
+    latency: notModelled('s'),
+    encoderHealth: notModelled('1'),
   };
 }
 
@@ -232,6 +362,16 @@ export class ClosedLoopRuntime {
   private framesDelivered = 0;
   private blankBuffer: Uint8Array | null = null;
   private readonly onFrame: ClosedLoopOptions['onFrame'];
+  private observer: LoopObserver | null;
+  private readonly profiler = new HostStageProfiler();
+  /** Filled by `processFrame` for the observer; overwritten every frame. */
+  private frameCommand: ObservedCommand | null = null;
+  private frameGimbal: GimbalState | null = null;
+  private frameAlgorithmMs = 0;
+  /** Mount applications already reported to the observer. */
+  private appliedSeen: number;
+  /** Frames behind commands still in flight, so an application can name its frame. */
+  private readonly inFlight = new Map<number, { frameId: number; captureTime: number }>();
 
   constructor(options: ClosedLoopOptions) {
     this.engine = options.engine;
@@ -241,6 +381,8 @@ export class ClosedLoopRuntime {
     this.historyLimit = options.historyLimit ?? DEFAULT_HISTORY;
     this.blankPixels = options.blankPixels ?? false;
     this.onFrame = options.onFrame;
+    this.observer = options.observer ?? null;
+    this.appliedSeen = options.engine.gimbal.appliedCommandCount;
 
     const parsed = options.plugin.manifest.configSchema.parse(options.config);
     this.instance = options.plugin.create({
@@ -254,7 +396,23 @@ export class ClosedLoopRuntime {
       // Math.random.
       random: options.random ?? makeSeededUniform(options.engine.config.seed),
       tickBudget: milliseconds(16),
+      // A closure exposing only `time`, not the profiler object: the algorithm
+      // must have no way to read a duration back, even by casting.
+      profiler: { time: (stage, work) => this.profiler.time(stage, work) },
     });
+  }
+
+  /**
+   * Attaches an observer, or detaches with `null`.
+   *
+   * Without rebuilding anything. The algorithm instance, its filter and its
+   * state machine are untouched, so starting or stopping a recording mid-run
+   * cannot reset the tracker it is recording.
+   */
+  public observe(observer: LoopObserver | null): void {
+    this.observer = observer;
+    this.inFlight.clear();
+    this.appliedSeen = this.engine.gimbal.appliedCommandCount;
   }
 
   public get algorithmOutput(): TrackingOutput<unknown> | null {
@@ -285,6 +443,8 @@ export class ClosedLoopRuntime {
     this.commands = [];
     this.events = [];
     this.framesDelivered = 0;
+    this.inFlight.clear();
+    this.appliedSeen = this.engine.gimbal.appliedCommandCount;
   }
 
   public dispose(): void {
@@ -338,14 +498,55 @@ export class ClosedLoopRuntime {
       );
       if (availableTick > targetTick) break;
 
+      const iterationStarted = performance.now();
       const advanced = this.engine.step(availableTick - this.engine.tick, { beyondDuration: true });
+      const worldStepMs = performance.now() - iterationStarted;
       if (advanced === 0 && availableTick !== this.engine.tick) break;
 
+      // Not timed: this is observation, and recording must not inflate the
+      // orchestration figure it is recording.
+      const observationStarted = performance.now();
+      this.reportApplied();
+      this.observer?.onSensorFrame?.(next, this.sensor.clock.captureTime(next));
+      const observationMs = performance.now() - observationStarted;
+
+      const sensorStarted = performance.now();
       const capture = this.sensor.captureFrame(this.sampler, next);
+      const sensorFrameMs = performance.now() - sensorStarted;
+
       try {
         const output = this.processFrame(capture.frame, this.engine.time);
-        // The interface is told afterwards, and never gets to influence what
+        const iterationMs = performance.now() - iterationStarted - observationMs;
+
+        // The observer is told afterwards, and never gets to influence what
         // just happened.
+        const observer = this.observer;
+        if (observer !== null) {
+          const algorithmMs = this.frameAlgorithmMs;
+          const t = this.profiler.totals;
+          observer.onFrameProcessed({
+            frame: capture.frame,
+            output,
+            captureTime: capture.frame.captureTime,
+            issueTime: Math.max(this.engine.time, capture.frame.captureTime),
+            command: this.frameCommand,
+            gimbal: this.frameGimbal!,
+            timings: {
+              worldStepMs,
+              sensorFrameMs,
+              algorithmMs,
+              orchestrationMs: Math.max(0, iterationMs - worldStepMs - sensorFrameMs - algorithmMs),
+              stages: {
+                detector: t.detector,
+                'bearing-transform': t['bearing-transform'],
+                estimator: t.estimator,
+                controller: t.controller,
+              },
+            },
+          });
+        }
+
+        // The display path, last of all and paying for its own copy.
         this.onFrame?.(capture, output);
       } finally {
         capture.release();
@@ -357,9 +558,38 @@ export class ClosedLoopRuntime {
     // Then run out the rest of the requested interval.
     if (this.engine.tick < targetTick) {
       this.engine.step(targetTick - this.engine.tick, { beyondDuration: true });
+      this.reportApplied();
     }
 
     return processed;
+  }
+
+  /**
+   * Tells the observer about every command the mount applied since last asked.
+   *
+   * Read from the mount's own record of the application instant, so the
+   * reported time is what happened rather than what the latency configuration
+   * says should have happened.
+   */
+  private reportApplied(): void {
+    const observer = this.observer;
+    if (observer?.onCommandApplied === undefined) return;
+
+    const gimbal = this.engine.gimbal;
+    for (const record of gimbal.appliedCommandsSince(this.appliedSeen)) {
+      const id = record.command.commandId as number;
+      const origin = this.inFlight.get(id);
+      this.inFlight.delete(id);
+      observer.onCommandApplied({
+        commandId: id,
+        issuedAt: record.command.issuedAt,
+        dueAt: record.dueAt,
+        appliedAt: record.appliedAt,
+        frameId: origin?.frameId ?? null,
+        captureTime: origin?.captureTime ?? null,
+      });
+    }
+    this.appliedSeen = gimbal.appliedCommandCount;
   }
 
   /** Index of the first frame captured strictly after `time`, or `null`. */
@@ -415,11 +645,33 @@ export class ClosedLoopRuntime {
       previousCommand: this.previousCommand,
     });
 
+    this.profiler.clear();
+    const algorithmStarted = performance.now();
     const output = this.instance.update(input);
+    this.frameAlgorithmMs = performance.now() - algorithmStarted;
     this.lastOutput = output;
     this.framesDelivered += 1;
 
     const issued = this.submit(output.command, issueTime, frame);
+    const newest = this.commands[this.commands.length - 1];
+    this.frameGimbal = input.gimbal;
+    this.frameCommand =
+      issued && newest !== undefined
+        ? {
+            commandId: newest.commandId,
+            issuedAt: newest.issuedAt,
+            azimuth: newest.azimuth,
+            elevation: newest.elevation,
+          }
+        : null;
+    // Only remembered for an observer that will drain it, so the map cannot
+    // grow for one that never asks.
+    if (this.frameCommand !== null && this.observer?.onCommandApplied !== undefined) {
+      this.inFlight.set(this.frameCommand.commandId, {
+        frameId: frame.frameId,
+        captureTime: frame.captureTime,
+      });
+    }
 
     this.record(this.events, {
       frameId: frame.frameId,

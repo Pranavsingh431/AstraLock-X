@@ -35,7 +35,17 @@ import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
 import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';
 import { DEFAULT_BASELINE_PAT_CONFIG, baselineKfPidPat } from '@/core/algorithms';
 import type { BaselineDebug } from '@/core/algorithms';
+import type { Measurement } from '@/core/contracts/measurement';
 import type { PATMode } from '@/core/contracts/pat';
+import {
+  DEFAULT_METRICS_CONFIG,
+  Evaluator,
+  ExperimentRecorder,
+  createStorage,
+  type RecorderStatus,
+  type TerminationReason,
+} from '@/core/experiments';
+import { readAppInfo } from '@/lib/app-info';
 import type { SensorCapture } from '@/core/sensors/virtual-camera';
 import type { SensorEvaluationTruth } from '@/core/sensors/sensor-truth';
 import { ExactWorldSampler } from '@/core/sensors/world-sampler';
@@ -67,6 +77,35 @@ interface Session {
    * switched off, so a manual session carries none of its state.
    */
   runtime: ClosedLoopRuntime | null;
+  /** The experiment recorder, or `null` when nothing is being recorded. */
+  recorder: ExperimentRecorder | null;
+  /**
+   * Privileged evaluator for the live EVALUATION panel when nothing is
+   * recording.
+   *
+   * Only ever read by the interface, never by the algorithm. The lint barrier
+   * makes `@/core/experiments` unreachable from the tracking side, so this
+   * reference cannot become a path back in.
+   */
+  evaluator: Evaluator;
+}
+
+/**
+ * The live EVALUATION readout.
+ *
+ * While recording, it comes from the recorder's own evaluation samples, with
+ * the dwell and grace of the coarse-lock definition applied. Otherwise it is
+ * an instantaneous reading, and the quantities that need a history — confirmed
+ * lock, retention, frames processed — are `null` rather than guessed.
+ */
+export interface LiveEvaluationReadout {
+  readonly source: 'recording' | 'instantaneous';
+  readonly angularPointingErrorRad: number | null;
+  readonly imagePointingErrorPx: number | null;
+  readonly lockConditionMet: boolean;
+  readonly locked: boolean | null;
+  readonly retention: number | null;
+  readonly framesProcessed: number | null;
 }
 
 /** One point of the command-versus-measured trace. */
@@ -148,6 +187,12 @@ export interface SimulationStoreState {
   readonly patMode: PATMode | null;
   /** The algorithm's own safe diagnostics, or `null` when it is not running. */
   readonly algorithmDebug: BaselineDebug | null;
+  /**
+   * Signal-to-noise ratio of the current detection, as the algorithm reported
+   * it, or `null` when there is no detection. The sensor has no noise model, so
+   * this reads "Not modelled" — never a number.
+   */
+  readonly detectionSnr: Measurement | null;
   /** Draw the algorithm's detections on the sensor feed. */
   readonly showAlgorithmOverlay: boolean;
   /**
@@ -157,6 +202,27 @@ export interface SimulationStoreState {
    * on is an explicit act and is visible on screen.
    */
   readonly manualOverride: boolean;
+
+  /**
+   * The current recording's status, or the last one's after it ended, or
+   * `null` if nothing has been recorded this session.
+   */
+  readonly recorderStatus: RecorderStatus | null;
+  /** True while a recording is being started, finalised or aborted. */
+  readonly recorderBusy: boolean;
+  /** Message from the last recording failure, or `null`. */
+  readonly recorderError: string | null;
+  /** Message from the last closed-loop runtime failure, or `null`. */
+  readonly runtimeError: string | null;
+  /**
+   * Whether the live EVALUATION readout is computed and shown.
+   *
+   * Hideable, because the autonomous system must be demonstrable with no truth
+   * assistance on screen at all. When hidden it is not computed either.
+   */
+  readonly showLiveEvaluation: boolean;
+  /** Live figures from ground truth, or `null` when hidden. Never routed to the algorithm. */
+  readonly liveEvaluation: LiveEvaluationReadout | null;
 
   loadScenarioById: (id: ScenarioId) => void;
   loadConfig: (config: SimulationConfig, scenarioId?: ScenarioId | null) => void;
@@ -185,6 +251,16 @@ export interface SimulationStoreState {
   emergencyStop: () => void;
   setAlgorithmOverlay: (visible: boolean) => void;
   setManualOverride: (enabled: boolean) => void;
+
+  /** Begins recording. Resolves once the run directory exists and recording has begun. */
+  startExperiment: () => Promise<void>;
+  /** Finalises: computes the summary and the report from the files, marks the run completed. */
+  finaliseExperiment: (reason?: TerminationReason) => Promise<void>;
+  /** Ends the recording without treating it as a result. */
+  abortExperiment: (reason?: TerminationReason) => Promise<void>;
+  setLiveEvaluation: (visible: boolean) => void;
+  /** Whether an experiment is currently recording. */
+  isRecording: () => boolean;
 }
 
 /**
@@ -206,7 +282,39 @@ let session: Session | null = null;
  */
 let pendingDisplayFrame: CameraSensorFrame | null = null;
 let pendingDisplayTruth: SensorEvaluationTruth | null = null;
-let pendingOutput: { pat: { mode: PATMode }; debug: unknown } | null = null;
+let pendingOutput: {
+  pat: { mode: PATMode };
+  debug: unknown;
+  observations: readonly { snr: Measurement }[];
+} | null = null;
+
+/**
+ * Builds the autonomous runtime for a session, observed by the recorder if one
+ * is running.
+ *
+ * Starting or stopping a recording later does **not** rebuild the runtime: it
+ * attaches or detaches the observer, so the algorithm's filter, scan and state
+ * machine carry on untouched. Rebuilding would construct a fresh algorithm
+ * instance, and ending a recording would then reset the tracker it recorded.
+ */
+function buildRuntime(active: Session): ClosedLoopRuntime {
+  return new ClosedLoopRuntime({
+    engine: active.engine,
+    sensor: active.sensor,
+    sampler: active.sampler,
+    plugin: baselineKfPidPat,
+    config: DEFAULT_BASELINE_PAT_CONFIG,
+    historyLimit: 256,
+    ...(active.recorder === null ? {} : { observer: active.recorder }),
+    // The interface's only connection to the loop: it is told what happened,
+    // after the fact, and copies the frame it wants to draw.
+    onFrame: (capture, output) => {
+      pendingDisplayFrame = capture.toOwned();
+      pendingDisplayTruth = capture.truth;
+      pendingOutput = output;
+    },
+  });
+}
 
 /**
  * Whether the operator is allowed to command the mount right now.
@@ -228,6 +336,7 @@ function drainAutonomousFrame(): Partial<SimulationStoreState> {
     sensorTruth: pendingDisplayTruth,
     patMode: pendingOutput?.pat.mode ?? null,
     algorithmDebug: (pendingOutput?.debug ?? null) as BaselineDebug | null,
+    detectionSnr: pendingOutput?.observations[0]?.snr ?? null,
   };
   pendingDisplayFrame = null;
   pendingDisplayTruth = null;
@@ -251,6 +360,8 @@ function createSession(config: SimulationConfig): Session {
     lastFrameIndex: 0,
     heldCapture: null,
     runtime: null,
+    recorder: null,
+    evaluator: new Evaluator({ engine, config }),
   };
 }
 
@@ -323,6 +434,59 @@ function snapshotState(active: Session): SessionSnapshot {
     framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
     ...actuatorState(active),
   };
+}
+
+/**
+ * The live EVALUATION readout, or nothing when it is hidden.
+ *
+ * Ground truth, shown under an EVALUATION label for the operator only. When the
+ * panel is hidden nothing is computed, so a demonstration with it hidden is a
+ * demonstration with no truth anywhere on screen.
+ */
+function liveEvaluation(
+  active: Session,
+  visible: boolean,
+  patMode: PATMode | null,
+): Pick<SimulationStoreState, 'liveEvaluation'> {
+  if (!visible) return { liveEvaluation: null };
+
+  const recorder = active.recorder;
+  if (recorder?.isRecording === true) {
+    return { liveEvaluation: { source: 'recording', ...recorder.liveEvaluation } };
+  }
+
+  const config = DEFAULT_METRICS_CONFIG;
+  const frame = active.evaluator.at(active.engine.time);
+  return {
+    liveEvaluation: {
+      source: 'instantaneous',
+      angularPointingErrorRad: frame.angularPointingError,
+      imagePointingErrorPx: frame.imagePointingError,
+      lockConditionMet:
+        frame.angularPointingError !== null &&
+        frame.angularPointingError <= config.lockErrorThresholdRad &&
+        frame.targetWithinTravel &&
+        frame.targetRange !== null &&
+        frame.targetRange <= config.maxTrackableRangeM &&
+        patMode === 'track',
+      locked: null,
+      retention: null,
+      framesProcessed: null,
+    },
+  };
+}
+
+/**
+ * Detaches the recorder from the session and the loop, in one synchronous step.
+ *
+ * Called before a recording is ended, so no frame can arrive after its end
+ * instant while finalisation is writing files.
+ */
+function detachRecorder(active: Session): ExperimentRecorder | null {
+  const recorder = active.recorder;
+  active.recorder = null;
+  active.runtime?.observe(null);
+  return recorder;
 }
 
 /** Everything the interface shows about the mount, read from the actuator. */
@@ -409,8 +573,15 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   algorithmId: baselineKfPidPat.manifest.id,
   patMode: null,
   algorithmDebug: null,
+  detectionSnr: null,
   showAlgorithmOverlay: true,
   manualOverride: false,
+  recorderStatus: null,
+  recorderBusy: false,
+  recorderError: null,
+  runtimeError: null,
+  showLiveEvaluation: true,
+  liveEvaluation: null,
   ...snapshotState(initialSession),
 
   loadScenarioById: (id) => {
@@ -419,6 +590,11 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
 
   loadConfig: (config, scenarioId = null) => {
     stopDriver();
+    // A recording belongs to the world it was recording. Replacing that world
+    // ends it, honestly, as aborted: there is no result to report.
+    if (session !== null && session.recorder !== null) {
+      void endRecording(session, 'abort', 'scenario-changed');
+    }
     const wasAutonomous = get().autonomyEnabled;
     session = createSession(config);
     set({
@@ -426,9 +602,12 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       config,
       paths: session.paths,
       importError: null,
+      runtimeError: null,
+      ...liveEvaluation(session, get().showLiveEvaluation, null),
       responseHistory: [],
       patMode: null,
       algorithmDebug: null,
+      detectionSnr: null,
       ...snapshotState(session),
     });
     // A new scenario keeps the operator's choice about who is flying, but the
@@ -444,6 +623,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   start: () => {
     const active = requireSession();
     active.scheduler.start();
+    active.recorder?.recordEvent('simulation-started');
     set({ status: active.scheduler.status });
     startDriver();
   },
@@ -452,18 +632,27 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     const active = requireSession();
     active.scheduler.pause();
     stopDriver();
+    active.recorder?.recordEvent('simulation-paused');
     set({ status: active.scheduler.status });
   },
 
   resume: () => {
     const active = requireSession();
     active.scheduler.resume();
+    active.recorder?.recordEvent('simulation-started', { resumed: true });
     set({ status: active.scheduler.status });
     startDriver();
   },
 
   reset: () => {
     const active = requireSession();
+    // A reset would rewind the world underneath an open recording, leaving a
+    // run whose samples come from two different experiments. The recording is
+    // ended honestly instead, as aborted by the reset. The interface asks the
+    // operator first; this is what happens if they go ahead.
+    if (active.recorder !== null) {
+      void endRecording(active, 'abort', 'simulation-reset');
+    }
     stopDriver();
     active.engine.reset();
     active.scheduler.reset();
@@ -478,9 +667,12 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     pendingOutput = null;
     set({
       ...snapshotState(active),
+      ...liveEvaluation(active, get().showLiveEvaluation, null),
+      runtimeError: null,
       responseHistory: [],
       patMode: null,
       algorithmDebug: null,
+      detectionSnr: null,
     });
   },
 
@@ -496,7 +688,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     let sensorUpdate: Partial<SimulationStoreState> = {};
 
     if (active.runtime !== null) {
-      active.runtime.step(1);
+      if (!stepRuntime(active, 1)) return;
       active.capturedThrough = active.engine.time;
       sensorUpdate = drainAutonomousFrame();
       if (sensorUpdate.sensorFrame != null) {
@@ -525,6 +717,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     const current = buildObserverFrame(active.engine.snapshot(), active.labels);
 
     const actuator = actuatorState(active);
+    checkRecorderHealth(active);
 
     set({
       tick: active.engine.tick,
@@ -539,6 +732,8 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
       ...sensorUpdate,
       ...actuator,
+      ...liveEvaluation(active, get().showLiveEvaluation, sensorUpdate.patMode ?? get().patMode),
+      recorderStatus: active.recorder?.status ?? get().recorderStatus,
       responseHistory: appendResponse(get().responseHistory, active, actuator),
     });
   },
@@ -589,6 +784,14 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       // Handing back to the operator. The mount keeps whatever setpoint it was
       // last given and continues under its own physics — it does not snap
       // anywhere, because nothing physical changed.
+      //
+      // A recording measures the autonomous tracker, so its measurement window
+      // ends here: it is finalised with that reason. Anything after this would
+      // be the operator's flying, not the algorithm's.
+      if (active.recorder !== null && active.runtime !== null) {
+        active.recorder.recordEvent('autonomy-disabled');
+        void endRecording(active, 'complete', 'autonomy-disabled');
+      }
       active.runtime?.dispose();
       active.runtime = null;
       set({
@@ -596,34 +799,24 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
         manualOverride: false,
         patMode: null,
         algorithmDebug: null,
+        detectionSnr: null,
       });
       return;
     }
 
-    active.runtime = new ClosedLoopRuntime({
-      engine: active.engine,
-      sensor: active.sensor,
-      sampler: active.sampler,
-      plugin: baselineKfPidPat,
-      config: DEFAULT_BASELINE_PAT_CONFIG,
-      historyLimit: 256,
-      // The interface's only connection to the loop: it is told what happened,
-      // after the fact, and copies the frame it wants to draw.
-      onFrame: (capture, output) => {
-        pendingDisplayFrame = capture.toOwned();
-        pendingDisplayTruth = capture.truth;
-        pendingOutput = output;
-      },
-    });
+    active.runtime = buildRuntime(active);
+    active.recorder?.recordEvent('autonomy-enabled');
 
     // The runtime drives the sensor from here, so the store's own capture
     // bookkeeping must not also claim frames.
     active.capturedThrough = active.engine.time;
     set({
       autonomyEnabled: true,
+      runtimeError: null,
       manualOverride: false,
       patMode: null,
       algorithmDebug: null,
+      detectionSnr: null,
     });
   },
 
@@ -640,11 +833,100 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   },
 
   setManualOverride: (enabled) => {
+    // An operator taking the mount mid-run changes what the run measures, so a
+    // recording says when it happened.
+    requireSession().recorder?.recordEvent('operator-override', { engaged: enabled });
     set({ manualOverride: enabled });
   },
 
+  startExperiment: async () => {
+    const active = requireSession();
+    if (active.recorder !== null || get().recorderBusy) return;
+
+    const info = readAppInfo();
+    const recorder = new ExperimentRecorder({
+      storage: createStorage(),
+      engine: active.engine,
+      config: active.engine.config,
+      scenarioId: get().scenarioId,
+      algorithmId: baselineKfPidPat.manifest.id,
+      algorithmVersion: baselineKfPidPat.manifest.version,
+      algorithmConfig: DEFAULT_BASELINE_PAT_CONFIG,
+      metricsConfig: DEFAULT_METRICS_CONFIG,
+      applicationVersion: info.version,
+      sourceCommit: info.sourceCommit,
+      sourceTreeModified: info.sourceTreeModified,
+      platform: typeof navigator === 'undefined' ? 'unknown' : navigator.userAgent,
+      // Surfaced at once, not on the next step: the run may be paused.
+      onFailure: () => {
+        if (session !== null && session.recorder === recorder) checkRecorderHealth(session);
+      },
+    });
+
+    set({ recorderBusy: true, recorderError: null });
+    try {
+      await recorder.prepare();
+    } catch (error) {
+      // Nothing is being recorded. Say so rather than showing a run id for a
+      // run that does not exist.
+      set({
+        recorderBusy: false,
+        recorderStatus: null,
+        recorderError: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    // The world may have been replaced while storage was working. A recording
+    // of a session that no longer exists is not started at all.
+    if (session !== active) {
+      set({ recorderBusy: false, recorderError: 'The scenario changed before recording began.' });
+      return;
+    }
+
+    // Recording begins *before* autonomy is the intended order: search and
+    // acquisition are the most interesting part of a PAT run, and a recorder
+    // started after the tracker would miss the interval the acquisition metrics
+    // measure. Begin and attach happen in one synchronous block, so no frame can
+    // fall between the start instant and the first observation.
+    recorder.begin({ autonomyActive: active.runtime !== null });
+    active.recorder = recorder;
+    active.runtime?.observe(recorder);
+    // The readout now describes this recording, which has no samples yet —
+    // not whatever the previous one last showed.
+    set({
+      recorderBusy: false,
+      recorderStatus: recorder.status,
+      ...liveEvaluation(active, get().showLiveEvaluation, get().patMode),
+    });
+  },
+
+  finaliseExperiment: async (reason = 'operator-finalised') => {
+    await endRecording(requireSession(), 'complete', reason);
+  },
+
+  abortExperiment: async (reason = 'operator-aborted') => {
+    await endRecording(requireSession(), 'abort', reason);
+  },
+
+  setLiveEvaluation: (visible) => {
+    const active = requireSession();
+    set({ showLiveEvaluation: visible, ...liveEvaluation(active, visible, get().patMode) });
+  },
+
+  isRecording: () => session?.recorder?.isRecording === true,
+
   advance: (elapsedSeconds) => {
     const active = requireSession();
+
+    // Recorder backpressure: the disk is behind. Do not advance the simulation
+    // this frame, and do not bank the wall-clock time either. The run slows
+    // down in wall-clock terms and is otherwise unchanged; no sample is dropped.
+    if (active.recorder?.backpressured === true) {
+      set({ recorderStatus: active.recorder.status });
+      return;
+    }
+
     const budget = active.scheduler.advance(elapsedSeconds);
 
     if (budget.ticks === 0) {
@@ -665,7 +947,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     let sensorUpdate: Partial<SimulationStoreState> = {};
 
     if (active.runtime !== null) {
-      active.runtime.step(budget.ticks);
+      if (!stepRuntime(active, budget.ticks)) return;
       active.capturedThrough = active.engine.time;
       sensorUpdate = drainAutonomousFrame();
       if (sensorUpdate.sensorFrame != null) {
@@ -703,16 +985,102 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
       ...sensorUpdate,
       ...actuator,
+      ...liveEvaluation(active, get().showLiveEvaluation, sensorUpdate.patMode ?? get().patMode),
+      recorderStatus: active.recorder?.status ?? get().recorderStatus,
       responseHistory: appendResponse(get().responseHistory, active, actuator),
     });
+
+    checkRecorderHealth(active);
 
     if (active.engine.isComplete) {
       active.scheduler.pause();
       stopDriver();
       set({ status: active.scheduler.status });
+      if (active.recorder !== null) {
+        active.recorder.recordEvent('simulation-completed');
+        void endRecording(active, 'complete', 'scenario-duration-reached');
+      }
     }
   },
 }));
+
+/**
+ * Steps the autonomous runtime, containing a failure.
+ *
+ * An exception from the loop stops the run where it is and is shown to the
+ * operator. A recording in progress is marked failed with the message, rather
+ * than being left running or finalised as if nothing had happened.
+ *
+ * @returns whether the step succeeded.
+ */
+function stepRuntime(active: Session, ticks: number): boolean {
+  try {
+    active.runtime!.step(ticks);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    active.scheduler.pause();
+    stopDriver();
+    useSimulationStore.setState({ status: active.scheduler.status, runtimeError: message });
+    const recorder = detachRecorder(active);
+    if (recorder !== null) {
+      void recorder.fail(message, 'runtime-error').finally(() => {
+        useSimulationStore.setState({ recorderStatus: recorder.status, recorderError: message });
+      });
+    }
+    return false;
+  }
+}
+
+/**
+ * Notices a recorder that failed mid-run.
+ *
+ * A write failure stops the recorder at once; this detaches it and surfaces the
+ * error. The control loop is not touched.
+ */
+function checkRecorderHealth(active: Session): void {
+  const recorder = active.recorder;
+  if (recorder === null || recorder.status.state !== 'failed') return;
+  detachRecorder(active);
+  useSimulationStore.setState({
+    recorderStatus: recorder.status,
+    recorderError: recorder.status.writerError,
+  });
+}
+
+/**
+ * Ends the active recording, however it is ending.
+ *
+ * The recorder is detached synchronously first, so its end instant is exactly
+ * now; the files are then finished asynchronously while the interface shows the
+ * recording as busy.
+ */
+async function endRecording(
+  active: Session,
+  kind: 'complete' | 'abort',
+  reason: TerminationReason,
+): Promise<void> {
+  const recorder = detachRecorder(active);
+  if (recorder === null) return;
+  const store = useSimulationStore;
+  store.setState({ recorderBusy: true, recorderStatus: recorder.status });
+  try {
+    if (kind === 'complete') await recorder.complete(reason);
+    else await recorder.abort(reason);
+    store.setState({ recorderError: null });
+  } catch (error) {
+    store.setState({ recorderError: error instanceof Error ? error.message : String(error) });
+  } finally {
+    const state = store.getState();
+    store.setState({
+      recorderBusy: false,
+      recorderStatus: recorder.status,
+      ...(session === active
+        ? liveEvaluation(active, state.showLiveEvaluation, state.patMode)
+        : {}),
+    });
+  }
+}
 
 // --- Driver loop ------------------------------------------------------------
 

@@ -96,6 +96,36 @@ export interface TrackingOutput<TDebug = unknown> {
   readonly debug: TDebug | null;
 }
 
+/**
+ * Named stages an algorithm may report host compute time for.
+ *
+ * A closed set, so a report can say "detector" and mean the same thing for
+ * every algorithm that fills it in, and so a stage an algorithm does not have
+ * reads as absent rather than as a stage called something else.
+ */
+export type ProfiledStage = 'detector' | 'bearing-transform' | 'estimator' | 'controller';
+
+/**
+ * A write-only sink for host wall-clock compute time.
+ *
+ * The algorithm hands the profiler a piece of work and gets the work's own
+ * result back — never a duration and never a timestamp. That is the whole
+ * design: a clock reading is nondeterministic, and an algorithm that could see
+ * one could make its output depend on how fast the host happened to be, which
+ * would make a run irreproducible. Here the timing flows one way, out to the
+ * experiment record, and cannot flow back in.
+ *
+ * These are **performance diagnostics of the host machine**. They are not
+ * simulated latency and never influence commands or simulated time
+ * (docs/METRICS.md, host processing time).
+ */
+export interface StageProfiler {
+  time<T>(stage: ProfiledStage, work: () => T): T;
+}
+
+/** A profiler that measures nothing, for harnesses that do not record. */
+export const UNPROFILED: StageProfiler = { time: (_stage, work) => work() };
+
 /** What an algorithm is given once, at construction. */
 export interface AlgorithmInit<TConfig = unknown> {
   /** Validated instance of the plugin's own config type. */
@@ -122,6 +152,11 @@ export interface AlgorithmInit<TConfig = unknown> {
    * target hardware is a finding worth reporting.
    */
   readonly tickBudget: Milliseconds;
+  /**
+   * Where to report per-stage host compute time. Optional: an algorithm built
+   * outside a harness gets {@link UNPROFILED}.
+   */
+  readonly profiler?: StageProfiler;
 }
 
 /** A configured, running algorithm. */

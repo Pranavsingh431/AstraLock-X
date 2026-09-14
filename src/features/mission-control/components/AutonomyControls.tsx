@@ -12,6 +12,7 @@
  * operator's console would have.
  */
 
+import { formatMeasurement } from '@/core/contracts/measurement';
 import { Bot, CircleStop, Crosshair } from 'lucide-react';
 
 import { radiansToDegrees } from '@/core/contracts/units';
@@ -20,6 +21,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useSimulationStore } from '@/stores/simulation-store';
+
+import { confirmIfRecording } from '../recording-guard';
 
 /** How the baseline's three states are presented. */
 const STATE_STYLE: Partial<Record<PATMode, string>> = {
@@ -50,6 +53,8 @@ export function AutonomyControls(): React.JSX.Element {
   const debug = useSimulationStore((state) => state.algorithmDebug);
   const overlay = useSimulationStore((state) => state.showAlgorithmOverlay);
   const override = useSimulationStore((state) => state.manualOverride);
+  const runtimeError = useSimulationStore((state) => state.runtimeError);
+  const snr = useSimulationStore((state) => state.detectionSnr);
 
   const setAutonomy = useSimulationStore((state) => state.setAutonomy);
   const emergencyStop = useSimulationStore((state) => state.emergencyStop);
@@ -90,6 +95,14 @@ export function AutonomyControls(): React.JSX.Element {
           aria-label={enabled ? 'Disable autonomous PAT' : 'Enable autonomous PAT'}
           aria-pressed={enabled}
           onClick={() => {
+            if (
+              enabled &&
+              !confirmIfRecording(
+                'Switching autonomy off ends the measurement window, so the recording will be finalised.',
+              )
+            ) {
+              return;
+            }
             setAutonomy(!enabled);
           }}
         >
@@ -112,6 +125,15 @@ export function AutonomyControls(): React.JSX.Element {
         <span className="tabular text-[10px] text-muted-foreground">{algorithmId}</span>
       </div>
 
+      {runtimeError !== null && (
+        <p
+          role="alert"
+          className="rounded-sm border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[10px] leading-snug text-red-300"
+        >
+          Control loop stopped: {runtimeError}
+        </p>
+      )}
+
       {enabled ? (
         <>
           <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
@@ -124,6 +146,7 @@ export function AutonomyControls(): React.JSX.Element {
               label="Score"
               value={debug?.candidateScore == null ? '—' : debug.candidateScore.toFixed(3)}
             />
+            <Field label="SNR" value={snr === null ? '—' : formatMeasurement(snr, 1)} />
             <Field
               label="Centroid"
               value={

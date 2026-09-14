@@ -45,11 +45,19 @@ describe('labelling', () => {
     expect(screen.getByText(/Virtual camera — sensor feed/i)).toBeInTheDocument();
   });
 
-  it('claims nothing about tracking, because nothing tracks yet', () => {
+  it('shows no tracking claims until a tracker is actually running', () => {
+    // This assertion used to be "nothing tracks yet", which was true through
+    // Phase 3 and stopped being true in Phase 4. What it checks now is the
+    // property that still matters: with autonomy off, the interface makes no
+    // claim about a lock, a candidate or an acquisition, because there is
+    // nothing producing one.
     renderView();
-    for (const forbidden of [/LOCKED/i, /acquisition/i, /confidence/i, /centroid/i]) {
-      expect(screen.queryByText(forbidden)).not.toBeInTheDocument();
-    }
+    expect(useSimulationStore.getState().autonomyEnabled).toBe(false);
+    expect(screen.getByText(/Not running/i)).toBeInTheDocument();
+    expect(screen.queryByText('TRACK')).not.toBeInTheDocument();
+    expect(screen.queryByText('SEARCH')).not.toBeInTheDocument();
+    expect(useSimulationStore.getState().patMode).toBeNull();
+    expect(useSimulationStore.getState().algorithmDebug).toBeNull();
   });
 });
 

@@ -124,6 +124,23 @@ const GROUND_TRUTH_PATTERNS = [
       'The sensor subsystem consumes world state and produces the evaluation truth for each frame. A tracker receives a CameraSensorFrame from the harness; it never builds one (ADR-0003, ADR-0009).',
   },
   {
+    group: [
+      '@/core/experiments',
+      '@/core/experiments/**',
+      '**/core/experiments',
+      '**/core/experiments/**',
+      '**/experiments/*',
+      '../experiments',
+      '../../experiments',
+      '../../../experiments',
+    ],
+    allowTypeImports: false,
+    message:
+      'Experiment evaluation reads ground truth to score a tracker from the outside. An algorithm ' +
+      'that could reach it could read its own score, or the true pointing error it is supposed to ' +
+      'be minimising without knowing it (ADR-0014).',
+  },
+  {
     group: ['@/scenarios', '@/scenarios/**', '**/scenarios', '**/scenarios/**'],
     allowTypeImports: false,
     message:

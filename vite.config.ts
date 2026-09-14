@@ -3,6 +3,8 @@ import { fileURLToPath, URL } from 'node:url';
 
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { execSync } from 'node:child_process';
+
 import { defineConfig } from 'vitest/config';
 
 const env = process.env;
@@ -19,6 +21,29 @@ const packageManifest = JSON.parse(
 const devHost = env['TAURI_DEV_HOST'];
 const isTauriDebug = Boolean(env['TAURI_ENV_DEBUG']);
 const tauriPlatform = env['TAURI_ENV_PLATFORM'];
+
+/** Runs a git command, or returns `null` if git cannot answer. */
+function git(command: string): string | null {
+  try {
+    return execSync(`git ${command}`, { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
+}
+
+/** The commit HEAD points at, or `null` if it cannot be determined. */
+const sourceCommit = git('rev-parse HEAD');
+
+/**
+ * Whether the working tree differs from that commit, or `null` if unknown.
+ *
+ * A build from a modified tree is not the commit it names, and a result that
+ * cited the commit alone would be attributed to code that never contained it.
+ */
+const sourceTreeModified =
+  sourceCommit === null ? null : (git('status --porcelain --untracked-files=no') ?? '') !== '';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -50,6 +75,16 @@ export default defineConfig({
 
   define: {
     __APP_VERSION__: JSON.stringify(packageManifest.version),
+    /**
+     * Commit this build came from, or `null`.
+     *
+     * Experiment manifests record it so a result can be traced to the exact
+     * code that produced it. `null` when git is unavailable — a tarball, a
+     * detached checkout, a build machine without git — because "main" or
+     * "latest" would be a provenance claim nobody verified.
+     */
+    __SOURCE_COMMIT__: JSON.stringify(sourceCommit),
+    __SOURCE_TREE_MODIFIED__: JSON.stringify(sourceTreeModified),
   },
 
   build: {

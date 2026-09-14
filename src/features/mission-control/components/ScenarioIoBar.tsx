@@ -15,6 +15,8 @@ import { useSimulationStore } from '@/stores/simulation-store';
 
 import { deserializeScenario, scenarioFilename, serializeScenario } from '../scenario-io';
 
+import { confirmIfRecording } from '../recording-guard';
+
 export function ScenarioIoBar(): React.JSX.Element {
   const fileInput = useRef<HTMLInputElement | null>(null);
   const config = useSimulationStore((state) => state.config);
@@ -34,8 +36,17 @@ export function ScenarioIoBar(): React.JSX.Element {
 
   const importScenario = async (file: File): Promise<void> => {
     const result = deserializeScenario(await file.text());
-    if (result.ok) loadConfig(result.config, null);
-    else setImportError(result.message);
+    if (!result.ok) {
+      setImportError(result.message);
+      return;
+    }
+    if (
+      confirmIfRecording(
+        'Importing a scenario will abort it: the raw record is kept, marked ABORTED, with no result.',
+      )
+    ) {
+      loadConfig(result.config, null);
+    }
   };
 
   return (

@@ -67,23 +67,24 @@ pnpm install --frozen-lockfile
 
 ## Commands
 
-| Command              | What it does                                      |
-| -------------------- | ------------------------------------------------- |
-| `pnpm dev`           | Vite dev server on port 1420, frontend only       |
-| `pnpm tauri:dev`     | Full desktop app with hot reload                  |
-| `pnpm build`         | Typecheck, then production frontend build         |
-| `pnpm tauri:build`   | Production desktop bundle for the current OS      |
-| `pnpm typecheck`     | `tsc -b` across app, test and node projects       |
-| `pnpm lint`          | ESLint, including the ground-truth import barrier |
-| `pnpm lint:fix`      | ESLint with autofix                               |
-| `pnpm format`        | Prettier write                                    |
-| `pnpm format:check`  | Prettier check, as CI runs it                     |
-| `pnpm test`          | Runtime tests and type tests                      |
-| `pnpm test:unit`     | Runtime tests only                                |
-| `pnpm test:types`    | Type tests only                                   |
-| `pnpm test:watch`    | Watch mode                                        |
-| `pnpm test:coverage` | Coverage report                                   |
-| `pnpm verify`        | Everything CI runs, in order                      |
+| Command                 | What it does                                      |
+| ----------------------- | ------------------------------------------------- |
+| `pnpm dev`              | Vite dev server on port 1420, frontend only       |
+| `pnpm tauri:dev`        | Full desktop app with hot reload                  |
+| `pnpm build`            | Typecheck, then production frontend build         |
+| `pnpm tauri:build`      | Production desktop bundle for the current OS      |
+| `pnpm typecheck`        | `tsc -b` across app, test and node projects       |
+| `pnpm lint`             | ESLint, including the ground-truth import barrier |
+| `pnpm lint:fix`         | ESLint with autofix                               |
+| `pnpm format`           | Prettier write                                    |
+| `pnpm format:check`     | Prettier check, as CI runs it                     |
+| `pnpm test`             | Runtime and type tests, then the performance pass |
+| `pnpm test:unit`        | Runtime tests only, all in parallel               |
+| `pnpm test:types`       | Type tests only                                   |
+| `pnpm test:performance` | Wall-clock `performance.test.ts` files only       |
+| `pnpm test:watch`       | Watch mode                                        |
+| `pnpm test:coverage`    | Coverage report                                   |
+| `pnpm verify`           | Everything CI runs, in order                      |
 
 Run `pnpm verify` before pushing.
 
@@ -123,6 +124,19 @@ Three kinds of test:
 
 When you add a barrier, add a test that fails if the barrier is removed. A test
 that only confirms the current behaviour will not notice a weakened guarantee.
+
+**Wall-clock tests run on their own.** Any file named `performance.test.ts`
+asserts budgets in milliseconds. `pnpm test` excludes them from the main,
+parallel run and then runs them in a second invocation, so they measure the code
+rather than contention with the CPU-heavy closed-loop and recorder suites. Keep
+timing assertions in files with that name, and keep their ceilings generous: they
+exist to catch something accidentally quadratic, not to benchmark a shared CI
+runner.
+
+**Experiment tests** build headless closed loops with `buildRig` from
+`src/core/experiments/rig.node.ts`, which constructs a run identically with and
+without a recorder. Use `driveRespectingBackpressure` when the storage is
+asynchronous and you care about the write queue.
 
 ## Conventions
 
