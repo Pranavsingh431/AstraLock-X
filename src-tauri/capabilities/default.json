@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Baseline capabilities for the main window. Deliberately minimal: AstraLock-X runs offline, so no network, shell or filesystem permission is granted until a phase actually needs one.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

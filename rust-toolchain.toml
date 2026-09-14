@@ -1,0 +1,13 @@
+# Pins the Rust toolchain for every contributor and CI runner.
+#
+# rustup reads this file automatically for any cargo invocation inside the
+# repository and installs the toolchain on first use, so a new machine needs
+# rustup and nothing else. Without it the build depends on whatever happens to
+# be the local default, which is how "works on my machine" starts.
+[toolchain]
+channel = "1.98.1"
+# minimal omits docs and the extra targets we do not build; the two components
+# below are what `cargo fmt --check` and `cargo clippy` need, and a minimal
+# profile does not include them by default.
+profile = "minimal"
+components = ["rustfmt", "clippy"]

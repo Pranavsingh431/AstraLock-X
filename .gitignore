@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Test / coverage output
+coverage/
+.vitest-cache/
+# Probe files written by ground-truth-barrier.test.ts; removed on a clean run.
+__lint_probe__/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Secrets and local environment. Nothing in this project needs them today, and
+# an ignore rule is cheaper than a leaked key.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.keystore
+*.mobileprovision
+secrets.json
+
+# Signing material. Unsigned development artifacts are the norm here; if signing
+# is added later the credentials still must not be committed.
+*.cer
+*.certSigningRequest
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+.history/
+
+# OS
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Logs and local run artifacts
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log
+*.tsbuildinfo
+.eslintcache

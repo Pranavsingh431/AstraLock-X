@@ -1,0 +1,34 @@
+[package]
+name = "astralock-x"
+version = "0.0.0"
+description = "Engineering workbench for coarse Pointing, Acquisition and Tracking of mobile Free Space Optical Communication links."
+edition = "2021"
+# Matches the pinned toolchain in ../rust-toolchain.toml. This is an
+# application, not a library, so there is no older toolchain to support and
+# declaring an MSRV we never build against would be fiction.
+rust-version = "1.98.1"
+license = "MIT"
+publish = false
+
+[lib]
+# Tauri builds the same crate as a library on desktop and mobile; the extra
+# crate types are what the mobile toolchains link against.
+name = "astralock_x_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+# Long simulation runs will eventually live behind this boundary, so the
+# release profile is tuned for throughput rather than build time.
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

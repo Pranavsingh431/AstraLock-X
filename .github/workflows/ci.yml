@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Corepack otherwise stops and asks before fetching the pinned pnpm.
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    # Every check runs on every target platform. Compiling the frontend on one
+    # OS and assuming the rest follow is exactly the gap this matrix exists to
+    # close: the Rust half is where the platforms actually differ.
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux
+          - os: macos-latest
+            name: macOS
+          - os: windows-latest
+            name: Windows
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Tauri 2 prerequisites. Note webkit2gtk 4.1 and libsoup3: Tauri 1 used
+      # 4.0, and installing that here would fail to link.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          # Single source of truth, shared with local development.
+          node-version-file: .nvmrc
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Report toolchain versions
+        shell: bash
+        run: |
+          echo "node:  $(node --version)"
+          echo "pnpm:  $(pnpm --version)"
+
+      - name: Locate pnpm store
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Reads rust-toolchain.toml, so the pinned channel and its components are
+      # installed without repeating the version here.
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          cache-workspaces: src-tauri
+
+      - name: Report Rust version
+        shell: bash
+        run: |
+          echo "rustc: $(rustc --version)"
+          echo "cargo: $(cargo --version)"
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      # Unsigned on purpose. Code signing and notarisation are release
+      # concerns; what matters here is that the native application compiles and
+      # bundles on this platform.
+      - name: Build desktop application
+        run: pnpm tauri build
+
+      - name: Upload desktop bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: astralock-x-${{ matrix.name }}
+          path: |
+            src-tauri/target/release/bundle/
+          if-no-files-found: error
+          retention-days: 7
