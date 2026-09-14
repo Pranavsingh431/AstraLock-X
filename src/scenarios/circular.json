@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 2,
+  "id": "circular-orbit",
+  "name": "Circular loiter orbit",
+  "seed": 1003,
+  "duration": 120.0,
+  "tickRate": 200,
+  "platform": {
+    "initialPosition": {
+      "x": 0,
+      "y": 0,
+      "z": 12
+    },
+    "initialVelocity": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "boresight": {
+      "azimuth": 0.0,
+      "elevation": 0.09
+    },
+    "baseDisturbanceRms": 0.0015,
+    "baseDisturbanceBandwidth": 25
+  },
+  "targets": [
+    {
+      "label": "Loitering platform",
+      "trajectory": {
+        "kind": "circular",
+        "center": {
+          "x": 0,
+          "y": 1400,
+          "z": 130
+        },
+        "radius": 400.0,
+        "angularRate": 0.06,
+        "planeNormal": {
+          "x": 0.0,
+          "y": 0.26,
+          "z": 0.97
+        },
+        "initialPhase": 0.0
+      },
+      "radius": 1.0,
+      "beaconPower": 0.2
+    }
+  ],
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "focalLength": 1800,
+    "frameRate": 100,
+    "exposure": 0.002,
+    "gain": 1,
+    "format": "mono8",
+    "readNoiseElectrons": 3.2,
+    "fullWellElectrons": 10000,
+    "dropoutProbability": 0.002
+  },
+  "gimbal": {
+    "azimuthLimits": {
+      "minAngle": -3.14159,
+      "maxAngle": 3.14159,
+      "maxRate": 2.0,
+      "maxAcceleration": 10.0
+    },
+    "elevationLimits": {
+      "minAngle": -0.35,
+      "maxAngle": 1.4,
+      "maxRate": 2.0,
+      "maxAcceleration": 10.0
+    },
+    "encoderResolution": 5e-5,
+    "encoderBias": 0.0001,
+    "reportingLatency": 0.001,
+    "servoBandwidth": 30
+  },
+  "atmosphere": {
+    "refractiveIndexStructure": 1e-14,
+    "visibility": 20000
+  }
+}

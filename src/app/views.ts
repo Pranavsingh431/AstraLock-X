@@ -27,6 +27,8 @@ export interface ViewDefinition {
   readonly id: ViewId;
   readonly label: string;
   readonly icon: LucideIcon;
+  /** Whether the view does something today. */
+  readonly status: 'implemented' | 'not-implemented';
   /** One line describing what this view is for. */
   readonly summary: string;
   /** Phase that will make this view functional. */
@@ -40,31 +42,32 @@ export interface ViewDefinition {
 /**
  * Registry of views.
  *
- * None of these are implemented yet, and each says so. The descriptions are
- * plans rather than claims: nothing here renders data, because at Phase 0 there
- * is no simulator to produce any, and a placeholder chart of invented numbers
- * would be worse than an empty view.
+ * Mission Control became real in Phase 1: it observes the simulation. The rest
+ * are still placeholders and each says so. The descriptions of the unbuilt ones
+ * are plans rather than claims — a view with nothing measured to show stays
+ * empty, because a placeholder full of invented numbers is worse than a blank
+ * panel and has a way of surviving into a release.
  */
 export const VIEWS: readonly ViewDefinition[] = [
   {
     id: 'mission-control',
     label: 'Mission Control',
     icon: Gauge,
-    summary: 'Live view of a running experiment.',
+    status: 'implemented',
+    summary: 'Observer view of a running simulation.',
     plannedPhase: 'Phase 6',
     plannedCapabilities: [
-      'Three-dimensional scene showing platform, gimbal boresight and targets',
       'Camera feed with the detections the tracker actually produced',
       'Pointing-error and gimbal-rate traces updating as the run advances',
       'PAT mode indicator with the reason for each transition',
-      'Ground-truth overlay, off by default and explicitly labelled as debug',
     ],
-    blockedBy: ['Simulation core', 'Sensor models', 'A tracking algorithm'],
+    blockedBy: ['Sensor models', 'A tracking algorithm'],
   },
   {
     id: 'scenario-lab',
     label: 'Scenario Lab',
     icon: FlaskConical,
+    status: 'not-implemented',
     summary: 'Author, validate and store experiment configurations.',
     plannedPhase: 'Phase 2',
     plannedCapabilities: [
@@ -79,6 +82,7 @@ export const VIEWS: readonly ViewDefinition[] = [
     id: 'astrabench',
     label: 'AstraBench',
     icon: ChartNoAxesColumn,
+    status: 'not-implemented',
     summary: 'Compare tracking algorithms across scenarios and seeds.',
     plannedPhase: 'Phase 5',
     plannedCapabilities: [
@@ -93,6 +97,7 @@ export const VIEWS: readonly ViewDefinition[] = [
     id: 'replay',
     label: 'Replay',
     icon: History,
+    status: 'not-implemented',
     summary: 'Step through a completed run and inspect why it behaved as it did.',
     plannedPhase: 'Phase 5',
     plannedCapabilities: [
@@ -107,6 +112,7 @@ export const VIEWS: readonly ViewDefinition[] = [
     id: 'calibration',
     label: 'Calibration',
     icon: Crosshair,
+    status: 'not-implemented',
     summary: 'Estimate camera intrinsics and camera-to-gimbal alignment.',
     plannedPhase: 'Phase 4',
     plannedCapabilities: [
@@ -121,6 +127,7 @@ export const VIEWS: readonly ViewDefinition[] = [
     id: 'reports',
     label: 'Reports',
     icon: FileText,
+    status: 'not-implemented',
     summary: 'Export experiment summaries for use outside the application.',
     plannedPhase: 'Phase 5',
     plannedCapabilities: [

@@ -3,13 +3,14 @@
  *
  * These are inputs for validation tests, deliberately kept as plain untyped
  * objects so they exercise the same parsing path an on-disk scenario file
- * would. They are not scenario content and are not used by the application.
+ * would. They are not scenario content and are not used by the application;
+ * the lint barrier stops application code importing them.
  */
 
 /** A raw config object that satisfies every rule in the schema. */
 export function makeValidRawConfig(): Record<string, unknown> {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: 'fixture-001',
     name: 'Fixture scenario',
     seed: 12345,
@@ -18,14 +19,18 @@ export function makeValidRawConfig(): Record<string, unknown> {
     platform: {
       initialPosition: { x: 0, y: 0, z: 30 },
       initialVelocity: { x: 0, y: 0, z: 0 },
+      boresight: { azimuth: 0, elevation: 0.1 },
       baseDisturbanceRms: 0.002,
       baseDisturbanceBandwidth: 20,
     },
     targets: [
       {
         label: 'Target A',
-        initialPosition: { x: 1200, y: 0, z: 60 },
-        initialVelocity: { x: 0, y: 14, z: 0 },
+        trajectory: {
+          kind: 'linear',
+          position: { x: 1200, y: 0, z: 60 },
+          velocity: { x: 0, y: 14, z: 0 },
+        },
         radius: 0.5,
         beaconPower: 0.05,
       },

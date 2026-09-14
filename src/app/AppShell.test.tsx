@@ -1,6 +1,27 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * The shell tests are about navigation, not about WebGL.
+ *
+ * jsdom has no drawing context, so the 3D canvas is replaced with a plain
+ * element. Everything around it — the transport controls, the readouts, the
+ * ground-truth inspector — is real, and the rendered scene is verified by
+ * running the application.
+ */
+vi.mock('@react-three/fiber', () => ({
+  Canvas: ({ children }: { children?: React.ReactNode }) => (
+    <div data-testid="observer-canvas">{children}</div>
+  ),
+  useFrame: () => undefined,
+}));
+
+// drei's helpers call R3F hooks, which throw outside a real Canvas, so the
+// scene contents are stubbed as well.
+vi.mock('@/features/mission-control/components/ObserverScene', () => ({
+  ObserverScene: () => <div data-testid="observer-scene" />,
+}));
 
 import { useNavigationStore } from '@/stores/navigation-store';
 
@@ -10,6 +31,14 @@ import { DEFAULT_VIEW, VIEWS, getView } from './views';
 beforeEach(() => {
   useNavigationStore.setState({ activeView: DEFAULT_VIEW, previousView: null });
 });
+
+/**
+ * A view that is still a placeholder.
+ *
+ * Mission Control became real in Phase 1, so the placeholder assertions moved
+ * to a view that is genuinely still unbuilt rather than being deleted.
+ */
+const PLACEHOLDER_VIEW = 'scenario-lab' as const;
 
 describe('AppShell', () => {
   it('opens on the default view', () => {
@@ -72,15 +101,18 @@ describe('AppShell', () => {
 });
 
 describe('placeholder views', () => {
+  beforeEach(() => {
+    useNavigationStore.setState({ activeView: PLACEHOLDER_VIEW, previousView: null });
+  });
+
   it('states plainly that the view is not implemented', () => {
     render(<AppShell />);
-
     expect(screen.getAllByText('NOT IMPLEMENTED').length).toBeGreaterThan(0);
   });
 
   it('lists what the view will do and what it needs first', () => {
     render(<AppShell />);
-    const view = getView(DEFAULT_VIEW);
+    const view = getView(PLACEHOLDER_VIEW);
 
     for (const capability of view.plannedCapabilities) {
       expect(screen.getByText(capability)).toBeInTheDocument();
@@ -92,7 +124,13 @@ describe('placeholder views', () => {
 
   it('names the phase that will deliver the view', () => {
     render(<AppShell />);
-    expect(screen.getByText(getView(DEFAULT_VIEW).plannedPhase)).toBeInTheDocument();
+    expect(screen.getByText(getView(PLACEHOLDER_VIEW).plannedPhase)).toBeInTheDocument();
+  });
+
+  it('does not label an implemented view as unimplemented', () => {
+    useNavigationStore.setState({ activeView: 'mission-control', previousView: null });
+    render(<AppShell />);
+    expect(screen.queryByText('NOT IMPLEMENTED')).not.toBeInTheDocument();
   });
 });
 

@@ -19,6 +19,41 @@ const TRACKING_SIDE = [
 ];
 
 /**
+ * The simulation core must stay runnable without a browser.
+ *
+ * The authoritative world lives in plain TypeScript so it can be driven from a
+ * test, from a worker, and eventually from a headless AstraBench runner. If
+ * `core/` could import React or Three.js, world state would drift into
+ * component state and scene-graph transforms, and "the simulation" would become
+ * whatever the renderer happened to be showing. See ADR-0006.
+ */
+const CORE_PURITY_PATTERN = {
+  group: [
+    'react',
+    'react-dom',
+    'react/**',
+    'react-dom/**',
+    'three',
+    'three/**',
+    '@react-three/*',
+    '@react-three/**',
+    'zustand',
+    'zustand/**',
+    '@/components',
+    '@/components/**',
+    '@/features',
+    '@/features/**',
+    '@/stores',
+    '@/stores/**',
+    '@/app',
+    '@/app/**',
+  ],
+  allowTypeImports: false,
+  message:
+    'The simulation core must run without React, Three.js or the DOM. Rendering reads the core, never the other way round (ADR-0006).',
+};
+
+/**
  * Files that are neither tests nor test helpers. Used to keep fixture exports
  * out of code that ships.
  */
@@ -93,7 +128,7 @@ const GROUND_TRUTH_PATTERNS = [
  */
 const GROUND_TRUTH_IMPORT_BARRIER = [
   'error',
-  { patterns: [...GROUND_TRUTH_PATTERNS, TEST_HELPER_PATTERN] },
+  { patterns: [...GROUND_TRUTH_PATTERNS, CORE_PURITY_PATTERN, TEST_HELPER_PATTERN] },
 ];
 
 export default tseslint.config(
@@ -187,6 +222,18 @@ export default tseslint.config(
     ignores: PRODUCTION_SOURCE_IGNORES,
     rules: {
       '@typescript-eslint/no-restricted-imports': ['error', { patterns: [TEST_HELPER_PATTERN] }],
+    },
+  },
+
+  // The simulation core is headless by construction.
+  {
+    files: ['src/core/**/*.ts'],
+    ignores: ['src/core/**/*.test.ts', 'src/core/**/*.test-d.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        { patterns: [CORE_PURITY_PATTERN, TEST_HELPER_PATTERN] },
+      ],
     },
   },
 

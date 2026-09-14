@@ -12,9 +12,16 @@
 import { z } from 'zod';
 
 import type { Vec3 } from './geometry';
+import {
+  nonNegativeNumber,
+  positiveNumber,
+  tagged,
+  unitIntervalNumber,
+  vec3Schema,
+} from './schema';
 import type { GimbalAxisLimits, PixelFormat } from './sensors';
+import { type TrajectoryConfig, trajectoryConfigSchema } from './trajectory';
 import type {
-  AnyQuantity,
   Hertz,
   Meters,
   MetersPerSecond,
@@ -42,6 +49,16 @@ export type SimulationSeed = number & { readonly [seedBrand]: 'SimulationSeed' }
 export const MAX_SIMULATION_SEED = 0xffff_ffff;
 
 /**
+ * Current scenario schema version.
+ *
+ * Bumped from 1 in Phase 1: targets now declare a trajectory instead of a start
+ * position and velocity, and the platform declares a boresight. A version 1
+ * document is rejected rather than migrated, because guessing a trajectory for
+ * a config that never specified one would be inventing the experiment.
+ */
+export const SIMULATION_CONFIG_SCHEMA_VERSION = 2;
+
+/**
  * Validates and tags a root seed.
  *
  * @throws {RangeError} when the value is not an integer in [0, 2^32).
@@ -55,13 +72,32 @@ export function simulationSeed(value: number): SimulationSeed {
   return value as SimulationSeed;
 }
 
+/**
+ * Fixed pointing direction of the observer platform.
+ *
+ * A static reference direction, not a servo: Phase 1 models no gimbal control
+ * loop, so this is where the mount is aimed and it stays there. Azimuth is
+ * clockwise from North, elevation is positive upward.
+ */
+export interface BoresightConfig {
+  readonly azimuth: Radians;
+  readonly elevation: Radians;
+}
+
 /** Motion and disturbance of the platform carrying the gimbal. */
 export interface PlatformConfig {
   readonly initialPosition: Vec3<Meters>;
   readonly initialVelocity: Vec3<MetersPerSecond>;
-  /** RMS angular disturbance injected at the gimbal base, per axis. */
+  /** Where the mount points. See {@link BoresightConfig}. */
+  readonly boresight: BoresightConfig;
+  /**
+   * RMS angular disturbance injected at the gimbal base, per axis.
+   *
+   * Declared here but **not modelled in Phase 1**: base motion belongs with the
+   * gimbal and sensor models. See docs/SIMULATION.md.
+   */
   readonly baseDisturbanceRms: RadiansPerSecond;
-  /** Corner frequency of the disturbance spectrum. */
+  /** Corner frequency of the disturbance spectrum. Not modelled in Phase 1. */
   readonly baseDisturbanceBandwidth: Hertz;
 }
 
@@ -69,11 +105,20 @@ export interface PlatformConfig {
 export interface TargetConfig {
   /** Human-readable label for the UI. Not visible to a tracker. */
   readonly label: string;
-  readonly initialPosition: Vec3<Meters>;
-  readonly initialVelocity: Vec3<MetersPerSecond>;
+  /**
+   * How the target moves. Replaces the start position and velocity a Phase 0
+   * config carried: with a trajectory those are part of the motion definition,
+   * and keeping both would leave two sources of truth that could disagree.
+   */
+  readonly trajectory: TrajectoryConfig;
   /** Physical radius, which sets the target's apparent size against range. */
   readonly radius: Meters;
-  /** Optical beacon power, or `null` for a passive target. */
+  /**
+   * Beacon transmit power, or `null` for a passive target.
+   *
+   * Declared here, but Phase 1 computes no link budget, so no received power is
+   * reported anywhere. See docs/SIMULATION.md.
+   */
   readonly beaconPower: Watts | null;
 }
 
@@ -124,13 +169,18 @@ export interface AtmosphereConfig {
 /** Complete, self-contained description of one experiment. */
 export interface SimulationConfig {
   /** Bumped whenever this shape changes, so stored scenarios stay readable. */
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly id: string;
   readonly name: string;
   readonly seed: SimulationSeed;
   /** Simulated duration of the run. */
   readonly duration: Seconds;
-  /** Physics tick rate. Usually a multiple of the camera frame rate. */
+  /**
+   * Physics tick rate. Usually a multiple of the camera frame rate.
+   *
+   * The fixed timestep is `1 / tickRate`; simulated time is `tick / tickRate`
+   * rather than an accumulated sum. See ADR-0008.
+   */
   readonly tickRate: Hertz;
   readonly platform: PlatformConfig;
   readonly targets: readonly TargetConfig[];
@@ -144,29 +194,16 @@ export interface SimulationConfig {
 // Configs arrive from disk and from the Scenario Lab, so they are parsed rather
 // than trusted. `z.number()` already rejects NaN and Infinity in Zod 4.
 
-const tagged = <Q extends AnyQuantity>(base: z.ZodNumber) => base.transform((value) => value as Q);
-
-const positive = z.number().positive();
-const nonNegative = z.number().nonnegative();
-const unitInterval = z.number().min(0).max(1);
-
-const vec3 = <Q extends AnyQuantity>(): z.ZodType<Vec3<Q>> =>
-  z.strictObject({
-    x: tagged<Q>(z.number()),
-    y: tagged<Q>(z.number()),
-    z: tagged<Q>(z.number()),
-  });
-
 const axisLimitsSchema = z.strictObject({
   minAngle: tagged<Radians>(z.number()),
   maxAngle: tagged<Radians>(z.number()),
-  maxRate: tagged<RadiansPerSecond>(positive),
-  maxAcceleration: positive,
+  maxRate: tagged<RadiansPerSecond>(positiveNumber),
+  maxAcceleration: positiveNumber,
 });
 
 /** Runtime schema for {@link SimulationConfig}. */
 export const simulationConfigSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(SIMULATION_CONFIG_SCHEMA_VERSION),
   id: z.string().min(1),
   name: z.string().min(1),
   seed: z
@@ -175,24 +212,27 @@ export const simulationConfigSchema = z.strictObject({
     .min(0)
     .max(MAX_SIMULATION_SEED)
     .transform((v) => v as SimulationSeed),
-  duration: tagged<Seconds>(positive),
-  tickRate: tagged<Hertz>(positive),
+  duration: tagged<Seconds>(positiveNumber),
+  tickRate: tagged<Hertz>(positiveNumber),
 
   platform: z.strictObject({
-    initialPosition: vec3<Meters>(),
-    initialVelocity: vec3<MetersPerSecond>(),
-    baseDisturbanceRms: tagged<RadiansPerSecond>(nonNegative),
-    baseDisturbanceBandwidth: tagged<Hertz>(positive),
+    initialPosition: vec3Schema<Meters>(),
+    initialVelocity: vec3Schema<MetersPerSecond>(),
+    boresight: z.strictObject({
+      azimuth: tagged<Radians>(z.number()),
+      elevation: tagged<Radians>(z.number()),
+    }),
+    baseDisturbanceRms: tagged<RadiansPerSecond>(nonNegativeNumber),
+    baseDisturbanceBandwidth: tagged<Hertz>(positiveNumber),
   }),
 
   targets: z
     .array(
       z.strictObject({
         label: z.string().min(1),
-        initialPosition: vec3<Meters>(),
-        initialVelocity: vec3<MetersPerSecond>(),
-        radius: tagged<Meters>(positive),
-        beaconPower: tagged<Watts>(positive).nullable(),
+        trajectory: trajectoryConfigSchema,
+        radius: tagged<Meters>(positiveNumber),
+        beaconPower: tagged<Watts>(positiveNumber).nullable(),
       }),
     )
     .min(1),
@@ -200,28 +240,28 @@ export const simulationConfigSchema = z.strictObject({
   camera: z.strictObject({
     width: tagged<Pixels>(z.number().int().positive()),
     height: tagged<Pixels>(z.number().int().positive()),
-    focalLength: tagged<Pixels>(positive),
-    frameRate: tagged<Hertz>(positive),
-    exposure: tagged<Seconds>(positive),
-    gain: positive,
+    focalLength: tagged<Pixels>(positiveNumber),
+    frameRate: tagged<Hertz>(positiveNumber),
+    exposure: tagged<Seconds>(positiveNumber),
+    gain: positiveNumber,
     format: z.enum(['mono8', 'mono16']),
-    readNoiseElectrons: nonNegative,
-    fullWellElectrons: positive,
-    dropoutProbability: tagged<Normalized>(unitInterval),
+    readNoiseElectrons: nonNegativeNumber,
+    fullWellElectrons: positiveNumber,
+    dropoutProbability: tagged<Normalized>(unitIntervalNumber),
   }),
 
   gimbal: z.strictObject({
     azimuthLimits: axisLimitsSchema,
     elevationLimits: axisLimitsSchema,
-    encoderResolution: tagged<Radians>(positive),
+    encoderResolution: tagged<Radians>(positiveNumber),
     encoderBias: tagged<Radians>(z.number()),
-    reportingLatency: tagged<Seconds>(nonNegative),
-    servoBandwidth: tagged<Hertz>(positive),
+    reportingLatency: tagged<Seconds>(nonNegativeNumber),
+    servoBandwidth: tagged<Hertz>(positiveNumber),
   }),
 
   atmosphere: z.strictObject({
-    refractiveIndexStructure: nonNegative,
-    visibility: tagged<Meters>(positive),
+    refractiveIndexStructure: nonNegativeNumber,
+    visibility: tagged<Meters>(positiveNumber),
   }),
 });
 

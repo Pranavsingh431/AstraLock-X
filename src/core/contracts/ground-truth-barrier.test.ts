@@ -16,14 +16,23 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ESLint } from 'eslint';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const probeDirectory = join(projectRoot, 'src', 'core', 'algorithms', '__lint_probe__');
 const allowedDirectory = join(projectRoot, 'src', 'core', 'metrics', '__lint_probe__');
 const uiDirectory = join(projectRoot, 'src', 'features', '__lint_probe__');
+const coreDirectory = join(projectRoot, 'src', 'core', 'simulation', '__lint_probe__');
 
 const RESTRICTED_RULE = '@typescript-eslint/no-restricted-imports';
+
+/**
+ * These tests run the project's real ESLint configuration, including the
+ * type-aware project service, so the first lint pays for building a TypeScript
+ * program over the whole repository. That is the cost of testing the actual
+ * barrier rather than a copy of it, and it grows with the codebase.
+ */
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 interface Probe {
   readonly path: string;
@@ -71,6 +80,34 @@ const probes: readonly Probe[] = [
     path: join(uiDirectory, 'fixture-import.ts'),
     source: `import { makeValidRawConfig } from '@/test/fixtures';\nexport const probe = makeValidRawConfig;\n`,
   },
+  {
+    path: join(probeDirectory, 'simulation-import.ts'),
+    source: `import { SimulationEngine } from '@/core/simulation';\nexport const probe = SimulationEngine;\n`,
+  },
+  {
+    path: join(probeDirectory, 'observer-view-import.ts'),
+    source: `import { buildObserverFrame } from '@/core/simulation/observer-view';\nexport const probe = buildObserverFrame;\n`,
+  },
+  {
+    path: join(coreDirectory, 'three-import.ts'),
+    source: `import * as three from 'three';\nexport const probe = three;\n`,
+  },
+  {
+    path: join(coreDirectory, 'react-import.ts'),
+    source: `import { useState } from 'react';\nexport const probe = useState;\n`,
+  },
+  {
+    path: join(coreDirectory, 'fiber-import.ts'),
+    source: `import { Canvas } from '@react-three/fiber';\nexport const probe = Canvas;\n`,
+  },
+  {
+    path: join(coreDirectory, 'store-import.ts'),
+    source: `import { useNavigationStore } from '@/stores/navigation-store';\nexport const probe = useNavigationStore;\n`,
+  },
+  {
+    path: join(coreDirectory, 'contracts-import.ts'),
+    source: `import type { SimulationConfig } from '@/core/contracts/simulation';\nexport type Probe = SimulationConfig;\n`,
+  },
 ];
 
 /** Ids of rules that fired on a probe file. */
@@ -86,16 +123,24 @@ beforeAll(() => {
   mkdirSync(probeDirectory, { recursive: true });
   mkdirSync(allowedDirectory, { recursive: true });
   mkdirSync(uiDirectory, { recursive: true });
+  mkdirSync(coreDirectory, { recursive: true });
   for (const probe of probes) {
     writeFileSync(probe.path, probe.source, 'utf8');
   }
   eslint = new ESLint({ cwd: projectRoot });
 });
 
+beforeAll(async () => {
+  // Warm the project service once, so the build cost lands here rather than
+  // being charged to whichever test happens to run first.
+  await lintProbe(eslint, join(probeDirectory, 'safe-import.ts'));
+});
+
 afterAll(() => {
   rmSync(probeDirectory, { recursive: true, force: true });
   rmSync(allowedDirectory, { recursive: true, force: true });
   rmSync(uiDirectory, { recursive: true, force: true });
+  rmSync(coreDirectory, { recursive: true, force: true });
 });
 
 describe('ground-truth import barrier', () => {
@@ -138,6 +183,40 @@ describe('ground-truth import barrier', () => {
 
   it('leaves privileged consumers such as metrics free to read truth', async () => {
     const rules = await lintProbe(eslint, join(allowedDirectory, 'privileged-import.ts'));
+    expect(rules).not.toContain(RESTRICTED_RULE);
+  });
+});
+
+describe('simulation-core barrier', () => {
+  it('blocks the tracking side from importing the simulation core', async () => {
+    const rules = await lintProbe(eslint, join(probeDirectory, 'simulation-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('blocks the tracking side from importing the ground-truth observer view', async () => {
+    // The observer view renders the answer key. It is a debug view, not
+    // something an algorithm may consult.
+    const rules = await lintProbe(eslint, join(probeDirectory, 'observer-view-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+});
+
+describe('core purity barrier', () => {
+  // The simulation core has to run in a test, a worker and eventually a
+  // headless benchmark runner. If it could import the renderer, world state
+  // would drift into scene-graph transforms and component state.
+  it.each([
+    ['three', 'three-import.ts'],
+    ['react', 'react-import.ts'],
+    ['@react-three/fiber', 'fiber-import.ts'],
+    ['a Zustand store', 'store-import.ts'],
+  ])('blocks the core from importing %s', async (_label, file) => {
+    const rules = await lintProbe(eslint, join(coreDirectory, file));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('still lets the core import its own contracts', async () => {
+    const rules = await lintProbe(eslint, join(coreDirectory, 'contracts-import.ts'));
     expect(rules).not.toContain(RESTRICTED_RULE);
   });
 });

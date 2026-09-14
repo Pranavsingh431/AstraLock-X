@@ -21,6 +21,7 @@ export * from './estimation';
 export * from './control';
 export * from './pat';
 export * from './telemetry';
+export * from './trajectory';
 export * from './simulation';
 export * from './experiments';
 export * from './algorithm-plugin';

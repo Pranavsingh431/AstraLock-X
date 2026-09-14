@@ -5,7 +5,7 @@ What actually works, and what does not. Updated at the end of each phase.
 | Phase | Scope                                                                | Status       |
 | ----- | -------------------------------------------------------------------- | ------------ |
 | 0     | Project foundation: contracts, isolation, tooling, CI, shell         | **Complete** |
-| 1     | Simulation core: world, motion, seeded RNG, tick loop                | Not started  |
+| 1     | Simulation core: world, motion, seeded RNG, tick loop, 3D observer   | **Complete** |
 | 2     | Sensor models: camera frame formation, gimbal encoders; Scenario Lab | Not started  |
 | 3     | Perception and estimation; first algorithm plugins                   | Not started  |
 | 4     | Control and PAT state machine; Calibration                           | Not started  |
@@ -352,6 +352,196 @@ Non-blocking, and unchanged in substance from Phase 0 except where noted.
     Retention is capped at seven days; if this becomes a nuisance, narrow the
     uploaded bundle targets.
 
+---
+
+## Phase 1 — Deterministic simulation core
+
+**Complete.**
+
+A real authoritative simulator, and a 3D observer of it. No sensor model, no
+detector, no filter, no control loop, and no tracking of any kind.
+
+### The architectural line
+
+The authoritative world is `SimulationEngine`, plain TypeScript in
+`src/core/simulation`. It runs with no React, no Three.js, no WebGL and no DOM:
+the headless and long-run suites execute in the plain Node environment, and a
+lint rule refuses any import of React, Three.js, `@react-three/*` or a store
+from `src/core`. That rule is itself tested, by running the project's real
+ESLint configuration over probe files.
+
+Rendering reads snapshots and never writes back. Entity transforms are applied
+imperatively inside `useFrame`, so a moving target does not re-render the scene
+graph; the HUD subscribes to low-frequency fields only.
+
+### Coordinate convention
+
+`world-enu`: **X = East, Y = North, Z = Up**, metres, right-handed
+(`East × North = Up`). **Azimuth clockwise from North** about +Up, wrapped to
+(−π, π]; **elevation positive upward**. Radians throughout the core.
+
+Renderer mapping, in one function and one direction:
+`renderer = (east, up, −north)`. Determinant +1, so handedness is preserved —
+tested via a preserved cross product, because a mirrored mapping would pass a
+naive axis check while flipping every azimuth drawn. Scene units are metres with
+no scale factor. See [ADR-0006](adr/0006-engineering-coordinate-convention.md).
+
+### PRNG and stream derivation
+
+**xoshiro128\*\*** (Blackman & Vigna): 128-bit state, period 2^128 − 1, inner
+loop entirely 32-bit operations, which JavaScript expresses exactly via
+`Math.imul` and `>>>`. State expanded from a 32-bit stream seed with SplitMix32;
+an all-zero state is checked for rather than assumed away.
+
+```
+streamSeed(root, name) = splitMix32( splitMix32(root) XOR fnv1a32(name) )
+```
+
+Streams: `trajectory`, `environment`, `platform`, `sensor`, `disturbance` — the
+last two reserved for Phase 2 and declared now, since each name derives
+independently. Gaussians take two draws and discard one so that no state lives
+outside the generator. `Math.random` is blocked by lint. See
+[ADR-0007](adr/0007-deterministic-prng-and-stream-derivation.md).
+
+### Fixed timestep
+
+Authoritative quantity is an **integer tick index**; time is derived, never
+accumulated:
+
+```
+time = tick / tickRate
+```
+
+Bundled scenarios run at **200 Hz**, so the fixed timestep is **5 ms**. Wall
+clock decides how many ticks to run and nothing else; catch-up is bounded and
+drops the backlog rather than carrying an unpayable debt. See
+[ADR-0008](adr/0008-fixed-timestep-simulation.md).
+
+### Trajectory families
+
+All six implemented with analytic derivatives — velocity and acceleration are
+differentiated from the position expression, not differenced across ticks. Every
+family is checked against a central finite difference as well as against known
+values.
+
+| Family           | Model                                                   |
+| ---------------- | ------------------------------------------------------- |
+| Stationary       | Fixed point                                             |
+| Linear           | `p = p0 + v0 t`                                         |
+| Circular         | Arbitrary plane; `a = −ω²(p − c)`, verified centripetal |
+| Sinusoidal       | Base motion plus N sinusoids; `a = −ω²` × displacement  |
+| Waypoint         | Piecewise linear in time, optional looping              |
+| Seeded manoeuvre | Bounded constant-acceleration legs from the seed        |
+
+The seeded family generates its whole schedule at construction — exactly four
+draws per leg regardless of the path taken — so `sampleAt` stays pure and the
+schedule is inspectable in the debug panel.
+
+### Bug found by the long-run test
+
+The seeded manoeuvre originally extrapolated the final leg's acceleration past
+the end of its schedule. Over a 500 s run against a 120 s schedule that is
+unbounded: speed reached **1491 m/s** against a configured ceiling of 45. It now
+coasts at constant velocity past the schedule, which is continuous in position
+and velocity and stays inside the speed ceiling.
+
+A second defect in the same test was mine, not the code's: the bounds envelope
+assumed one segment of overshoot, but the homeward override is only evaluated at
+segment boundaries, so two segments is the correct bound.
+
+### Configuration
+
+`SimulationConfig` extended to **schema version 2**: targets declare a
+`trajectory` instead of a start position and velocity, and the platform declares
+a `boresight`. A version 1 document is rejected rather than migrated — guessing
+a trajectory for a config that never specified one would be inventing the
+experiment.
+
+Six bundled scenarios in `src/scenarios`, one per family, each parsed _and
+executed_ by the test suite. Export writes the validated config and nothing
+else: no camera pose, no playback speed, no view toggles.
+
+### Observer view
+
+Mission Control now shows the simulation, labelled **OBSERVER / GROUND-TRUTH
+VIEW** with a second line stating it is not the tracking sensor feed. It draws
+the grid, world origin, axes, observer platform, fixed boresight ray, target and
+beacon markers, and the full trajectory path, with orbit/pan/zoom for the
+operator.
+
+A separate panel headed **GROUND TRUTH — DEBUG ONLY** reads the restricted
+simulation API directly — legitimate under ADR-0003, which names debug views as
+a permitted consumer — and shows positions, velocity, acceleration, entity ids,
+the manoeuvre schedule, stream draw counts and the state hash. It widens nothing:
+`AlgorithmPlugin`'s surface is untouched, and a test confirms the tracking side
+still cannot import either the simulation core or the observer adapter.
+
+### Tests
+
+**324 tests across 22 files**, up from 114 across 11.
+
+| File                           | Tests |
+| ------------------------------ | ----- |
+| `scenarios.test.ts`            | 38    |
+| `trajectory.test.ts`           | 36    |
+| `isolation.test.ts`            | 26    |
+| `engine.test.ts`               | 22    |
+| `rng.test.ts`                  | 20    |
+| `isolation.test-d.ts`          | 20    |
+| `clock.test.ts`                | 18    |
+| `coordinates.test.ts`          | 17    |
+| `ground-truth-barrier.test.ts` | 17    |
+| `mission-control.test.tsx`     | 15    |
+| `observer-view.test.ts`        | 13    |
+| `scenario-io.test.ts`          | 13    |
+| `units.test.ts`                | 12    |
+| `simulation.test.ts`           | 11    |
+| `AppShell.test.tsx`            | 11    |
+| `views.test.ts`                | 7     |
+| `navigation-store.test.ts`     | 6     |
+| `headless.test.ts`             | 5     |
+| `long-run.test.ts`             | 5     |
+| `export-boundary.test-d.ts`    | 5     |
+| `export-boundary.test.ts`      | 4     |
+| `app-info.test.ts`             | 3     |
+
+The long-run suite executes **100,000 ticks** (500 s of simulated flight) and
+checks for NaN and Infinity, that state stays inside an envelope _derived from
+the configuration_, that a repeat run hashes identically, that one jump equals
+many steps, and that an analytic trajectory still sits exactly on its closed
+form afterwards.
+
+Headless-versus-interactive equivalence is asserted directly: 5,000 ticks driven
+by irregular frame times through the scheduler reach the same state hash as
+`step(5000)` with no renderer present.
+
+### Limitations
+
+Phase 1 additions; earlier entries still apply.
+
+1. **No sensor model, detector, filter or control loop.** Nothing tracks
+   anything. This is the specified scope.
+2. **Quantities not modelled report zero or null, never a guess.** Received
+   beacon power is `null` regardless of configured transmit power; occlusion,
+   base-motion disturbance, platform attitude and the gimbal servo are all
+   zero. [docs/SIMULATION.md](SIMULATION.md) lists them in full.
+3. **Waypoint interpolation is piecewise linear**, so velocity steps at nodes
+   and the impulsive acceleration there is reported as zero. A C¹ model can be
+   added later as a second option.
+4. **The platform translates but does not rotate**, and its boresight is a fixed
+   reference direction rather than a servo.
+5. **Targets are points** with identity orientation; no attitude model.
+6. **WebGL is not covered by automated tests.** jsdom has no drawing context, so
+   the canvas is stubbed in UI tests and the rendered scene is verified by
+   running the application. A future end-to-end harness could close this.
+7. **No performance work has been done, deliberately.** The engine has not been
+   profiled, so no bottleneck is claimed and none has been optimised. 100,000
+   ticks run in well under a second in the test suite, which is the only
+   measurement taken.
+8. **The simulation can fall behind real time** on a slow machine or a
+   backgrounded tab; the tick counter advancing slowly is the only signal.
+
 ### Next
 
-Phase 1 — the simulation core. Do not begin it without an explicit request.
+Phase 2 — sensor models and the Scenario Lab. Do not begin it without an
+explicit request.

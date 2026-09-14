@@ -44,7 +44,8 @@ src/
   features/     One directory per view
   core/
     contracts/  All shared types. The only module every layer may depend on
-    simulation/ The world. Sole producer of ground truth
+    simulation/ The world. Sole producer of ground truth. Plain TypeScript:
+                no React, no Three.js, no DOM — enforced by lint
     sensors/    Truth to observable. The boundary
     perception/ Frames to detections
     estimation/ Detections to tracks
@@ -67,6 +68,33 @@ The dependency rule is that `core` never imports from `app`, `components`,
 `features` or `stores`. The UI depends on the core; the core does not know the
 UI exists. This keeps the core runnable in a worker, in a test, or from a
 command line.
+
+## The simulation core is not the renderer
+
+The authoritative world lives in `core/simulation`, in plain TypeScript. It is
+driven from tests, and will be driven from a headless benchmark runner, using
+the same code path the interactive UI uses.
+
+```
+  SimulationEngine  ──►  WorldState (frozen, branded)
+         │                      │
+         │                      ├──►  evaluation / metrics
+         │                      │
+         └──────────────────────┴──►  observer-view adapter  ──►  React Three Fiber
+```
+
+Rendering reads the core. Nothing writes back. If world truth lived in
+`Object3D.position`, in React state, or in `useFrame` timing, then "the
+simulation" would be whatever the renderer happened to be showing, and a run
+could not be reproduced without a GPU. A lint rule stops `src/core` importing
+React, Three.js, `@react-three/*` or any store, and a test runs the real ESLint
+configuration over probe files to confirm the rule still fires.
+
+Interactive rendering runs at the display's rate; the physics runs at a fixed
+tick. The renderer blends the previous and current snapshots across the sub-tick
+remainder for smooth motion, and that blend never re-enters the world — tested
+by running the same scenario under different interpolation rates and comparing
+the authoritative state hash. See ADR-0006 and ADR-0008, and docs/SIMULATION.md.
 
 ## Contracts
 
@@ -109,11 +137,19 @@ a barrier is weakened rather than only confirming it currently works.
 ## Determinism
 
 A run is a pure function of `SimulationConfig` and `SimulationSeed`. Simulated
-time advances by tick count, never by a clock. Each stochastic subsystem draws
-from its own stream derived from the root seed, so a change in one subsystem
-cannot shift another's draws. Algorithms receive a seeded generator of their own.
-`Math.random` is blocked by a lint rule. See
-[ADR-0004](adr/0004-deterministic-seeded-experiments.md).
+time is derived from an integer tick index — `time = tick / tickRate` — never
+accumulated, so `step(1)` a thousand times and `step(1000)` once are identical
+by construction.
+
+Each stochastic subsystem draws from its own xoshiro128\*\* stream derived from
+the root seed, so adding a draw in one cannot shift another's sequence.
+Algorithms receive a seeded generator of their own. `Math.random` is blocked by
+a lint rule.
+
+Wall-clock time may decide how many ticks to run; it never decides how large a
+tick is. See [ADR-0004](adr/0004-deterministic-seeded-experiments.md),
+[ADR-0007](adr/0007-deterministic-prng-and-stream-derivation.md) and
+[ADR-0008](adr/0008-fixed-timestep-simulation.md).
 
 ## Plugins
 

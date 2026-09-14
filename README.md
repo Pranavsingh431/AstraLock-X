@@ -8,11 +8,13 @@ and — eventually — hardware-in-the-loop validation of coarse PAT systems. It
 runs offline, produces reproducible experiments, and reports measured results
 rather than illustrative ones.
 
-> **Status: Phase 0.5 — foundation, proved cross-platform.** Data contracts,
-> ground-truth isolation, pinned toolchains, tests, CI and the application
-> shell are in place, with CI green on Linux, macOS and Windows. There is no
-> simulator and no tracking algorithm yet, and every view in the application
-> says so. See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
+> **Status: Phase 1 — deterministic simulation core.** There is a real
+> simulator: a fixed-step engine with seeded randomness and six trajectory
+> families, driven from plain TypeScript with no dependency on React or WebGL,
+> plus a 3D observer view of it. There is still **no sensor model and no
+> tracking algorithm** — no camera frames, no detection, no filtering, no
+> control loop — and the views that would show those say so.
+> See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
 
 ## What the problem is
 
@@ -47,7 +49,14 @@ does not silently change results everywhere else
 
 **Nothing is fabricated.** Every number displayed comes from a computation that
 actually ran. Views that have no data to show are empty and labelled, rather
-than filled with plausible-looking placeholders.
+than filled with plausible-looking placeholders, and quantities the current
+phase does not model report null rather than a plausible guess —
+[docs/SIMULATION.md](docs/SIMULATION.md) lists them explicitly.
+
+**The renderer is a view, not the simulation.** The authoritative world is plain
+TypeScript that runs without React, Three.js or a browser, so the same code path
+serves a test, the interactive UI and a future headless benchmark runner
+([ADR-0006](docs/adr/0006-engineering-coordinate-convention.md)).
 
 ## Views
 
@@ -87,6 +96,7 @@ pnpm verify
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the system is put together
+- [docs/SIMULATION.md](docs/SIMULATION.md) — coordinates, clock, PRNG, trajectory equations, and what is not modelled
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — setup, commands, conventions
 - [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md) — what works, what does not
 - [docs/adr/](docs/adr/) — why things are the way they are

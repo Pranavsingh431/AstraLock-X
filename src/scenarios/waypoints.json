@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 2,
+  "id": "waypoint-route",
+  "name": "Waypoint route",
+  "seed": 1005,
+  "duration": 80.0,
+  "tickRate": 200,
+  "platform": {
+    "initialPosition": {
+      "x": 0,
+      "y": 0,
+      "z": 12
+    },
+    "initialVelocity": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "boresight": {
+      "azimuth": 0.0,
+      "elevation": 0.07
+    },
+    "baseDisturbanceRms": 0.0015,
+    "baseDisturbanceBandwidth": 25
+  },
+  "targets": [
+    {
+      "label": "Routed vehicle",
+      "trajectory": {
+        "kind": "waypoint",
+        "loop": true,
+        "waypoints": [
+          {
+            "position": {
+              "x": -800,
+              "y": 1000,
+              "z": 70
+            },
+            "arrivalTime": 0.0
+          },
+          {
+            "position": {
+              "x": -200,
+              "y": 1600,
+              "z": 110
+            },
+            "arrivalTime": 20.0
+          },
+          {
+            "position": {
+              "x": 600,
+              "y": 1500,
+              "z": 95
+            },
+            "arrivalTime": 45.0
+          },
+          {
+            "position": {
+              "x": 900,
+              "y": 900,
+              "z": 60
+            },
+            "arrivalTime": 70.0
+          }
+        ]
+      },
+      "radius": 0.8,
+      "beaconPower": 0.1
+    }
+  ],
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "focalLength": 1800,
+    "frameRate": 100,
+    "exposure": 0.002,
+    "gain": 1,
+    "format": "mono8",
+    "readNoiseElectrons": 3.2,
+    "fullWellElectrons": 10000,
+    "dropoutProbability": 0.002
+  },
+  "gimbal": {
+    "azimuthLimits": {
+      "minAngle": -3.14159,
+      "maxAngle": 3.14159,
+      "maxRate": 2.0,
+      "maxAcceleration": 10.0
+    },
+    "elevationLimits": {
+      "minAngle": -0.35,
+      "maxAngle": 1.4,
+      "maxRate": 2.0,
+      "maxAcceleration": 10.0
+    },
+    "encoderResolution": 5e-5,
+    "encoderBias": 0.0001,
+    "reportingLatency": 0.001,
+    "servoBandwidth": 30
+  },
+  "atmosphere": {
+    "refractiveIndexStructure": 1e-14,
+    "visibility": 20000
+  }
+}
