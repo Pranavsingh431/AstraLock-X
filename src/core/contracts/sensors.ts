@@ -59,6 +59,29 @@ export interface CameraSensorFrame {
    * assume a uniform cadence.
    */
   readonly droppedSince: number | null;
+  /**
+   * Where the mount reports it was pointing when this frame was taken.
+   *
+   * Legitimately observable: a real system reads its own encoders. It is the
+   * mount's *report*, not the truth — in Phase 2 the mount is ideal so the two
+   * coincide, and from the phase that adds encoder quantisation, bias and
+   * latency they will not.
+   */
+  readonly pose: CameraPose;
+  /**
+   * Identifies the optical configuration this frame was taken with, so a
+   * consumer can tell that the camera changed under it without being handed the
+   * scenario.
+   */
+  readonly cameraConfigId: string;
+}
+
+/** Pointing angles reported by the mount. */
+export interface CameraPose {
+  /** Clockwise from North, wrapped to (-pi, pi]. */
+  readonly azimuth: Radians;
+  /** Positive upward. */
+  readonly elevation: Radians;
 }
 
 /**

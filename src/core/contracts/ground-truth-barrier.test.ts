@@ -89,6 +89,22 @@ const probes: readonly Probe[] = [
     source: `import { buildObserverFrame } from '@/core/simulation/observer-view';\nexport const probe = buildObserverFrame;\n`,
   },
   {
+    path: join(probeDirectory, 'sensor-import.ts'),
+    source: `import { VirtualCameraSensor } from '@/core/sensors';\nexport const probe = VirtualCameraSensor;\n`,
+  },
+  {
+    path: join(probeDirectory, 'sensor-truth-import.ts'),
+    source: `import type { SensorEvaluationTruth } from '@/core/sensors/sensor-truth';\nexport type Probe = SensorEvaluationTruth;\n`,
+  },
+  {
+    path: join(probeDirectory, 'emitter-import.ts'),
+    source: `import type { EmitterId } from '@/core/sensors/emitters';\nexport type Probe = EmitterId;\n`,
+  },
+  {
+    path: join(probeDirectory, 'camera-frame-import.ts'),
+    source: `import type { CameraSensorFrame } from '@/core/contracts';\nexport type Probe = CameraSensorFrame;\n`,
+  },
+  {
     path: join(coreDirectory, 'three-import.ts'),
     source: `import * as three from 'three';\nexport const probe = three;\n`,
   },
@@ -198,6 +214,31 @@ describe('simulation-core barrier', () => {
     // something an algorithm may consult.
     const rules = await lintProbe(eslint, join(probeDirectory, 'observer-view-import.ts'));
     expect(rules).toContain(RESTRICTED_RULE);
+  });
+});
+
+describe('sensor barrier', () => {
+  it('blocks the tracking side from building its own camera', async () => {
+    // A tracker that could run the sensor could also read the evaluation truth
+    // the sensor produces alongside every frame.
+    const rules = await lintProbe(eslint, join(probeDirectory, 'sensor-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('blocks the per-frame evaluation truth', async () => {
+    const rules = await lintProbe(eslint, join(probeDirectory, 'sensor-truth-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('blocks emitter identity', async () => {
+    // Handed emitter ids, a tracker would not need to solve association at all.
+    const rules = await lintProbe(eslint, join(probeDirectory, 'emitter-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('still allows the camera frame contract, which carries no truth', async () => {
+    const rules = await lintProbe(eslint, join(probeDirectory, 'camera-frame-import.ts'));
+    expect(rules).not.toContain(RESTRICTED_RULE);
   });
 });
 

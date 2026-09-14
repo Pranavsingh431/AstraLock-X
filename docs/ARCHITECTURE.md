@@ -46,7 +46,9 @@ src/
     contracts/  All shared types. The only module every layer may depend on
     simulation/ The world. Sole producer of ground truth. Plain TypeScript:
                 no React, no Three.js, no DOM — enforced by lint
-    sensors/    Truth to observable. The boundary
+    sensors/    Truth to observable. The boundary. The virtual camera lives
+                here: pinhole projection, point-spread rasterisation, its own
+                frame clock. Plain TypeScript, no WebGL (ADR-0009)
     perception/ Frames to detections
     estimation/ Detections to tracks
     control/    Tracks to gimbal commands
@@ -86,7 +88,15 @@ the same code path the interactive UI uses.
 Rendering reads the core. Nothing writes back. If world truth lived in
 `Object3D.position`, in React state, or in `useFrame` timing, then "the
 simulation" would be whatever the renderer happened to be showing, and a run
-could not be reproduced without a GPU. A lint rule stops `src/core` importing
+could not be reproduced without a GPU.
+
+The same rule governs the sensor, for the same reason. The virtual camera
+computes pixels on the CPU from an explicit pinhole model; the canvas in Mission
+Control displays that buffer and plays no part in creating it
+([ADR-0009](adr/0009-cpu-sensor-not-webgl-readback.md)). Three clocks run
+independently — physics at a fixed tick, the camera at its own frame rate, the
+display at whatever the machine manages — and only the first two affect what is
+recorded ([ADR-0010](adr/0010-independent-sensor-clock.md)). A lint rule stops `src/core` importing
 React, Three.js, `@react-three/*` or any store, and a test runs the real ESLint
 configuration over probe files to confirm the rule still fires.
 

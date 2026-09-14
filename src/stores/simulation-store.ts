@@ -29,14 +29,24 @@ import {
   buildTrajectoryPaths,
   interpolateObserverFrame,
 } from '@/core/simulation';
+import type { CameraSensorFrame } from '@/core/contracts/sensors';
+import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
+import type { SensorEvaluationTruth } from '@/core/sensors/sensor-truth';
+import { ExactWorldSampler } from '@/core/sensors/world-sampler';
 import { DEFAULT_SCENARIO_ID, type ScenarioId, loadScenario } from '@/scenarios';
 
 /** Everything one loaded scenario needs at runtime. */
 interface Session {
   readonly engine: SimulationEngine;
   readonly scheduler: PlaybackScheduler;
+  readonly sensor: VirtualCameraSensor;
+  readonly sampler: ExactWorldSampler;
   readonly labels: readonly string[];
   readonly paths: readonly (readonly RenderVec3[])[];
+  /** Simulated time the sensor has already been asked for frames up to. */
+  capturedThrough: number;
+  /** Newest frame index rasterized, so the viewfinder can re-render it. */
+  lastFrameIndex: number;
 }
 
 export interface SimulationStoreState {
@@ -57,6 +67,24 @@ export interface SimulationStoreState {
   /** Message from the last failed scenario import, or `null`. */
   readonly importError: string | null;
 
+  /** Newest camera frame, or `null` before the first capture. */
+  readonly sensorFrame: CameraSensorFrame | null;
+  /**
+   * Privileged per-frame evaluation record.
+   *
+   * Held here only so the debug overlay can draw it. It is a separate object
+   * from the frame and is never passed anywhere a tracking algorithm could
+   * reach; the lint barrier stops tracking-side code importing its type at all.
+   */
+  readonly sensorTruth: SensorEvaluationTruth | null;
+  readonly cameraAzimuth: number;
+  readonly cameraElevation: number;
+  /** Privileged truth overlay. Off by default. */
+  readonly showTruthOverlay: boolean;
+  readonly framesScheduled: number;
+  readonly framesRasterized: number;
+  readonly framesSupersededForDisplay: number;
+
   loadScenarioById: (id: ScenarioId) => void;
   loadConfig: (config: SimulationConfig, scenarioId?: ScenarioId | null) => void;
   setImportError: (message: string | null) => void;
@@ -68,6 +96,14 @@ export interface SimulationStoreState {
   setSpeed: (speed: PlaybackSpeed) => void;
   /** Advances by one wall-clock frame. Called by the driver loop. */
   advance: (elapsedSeconds: number) => void;
+
+  /** Commands the mount to an absolute pose, in radians. */
+  setCameraPose: (azimuth: number, elevation: number) => void;
+  /** Adjusts the mount relative to where it is now. */
+  nudgeCamera: (deltaAzimuth: number, deltaElevation: number) => void;
+  /** Returns the mount to the scenario's configured pointing. */
+  resetCamera: () => void;
+  setTruthOverlay: (visible: boolean) => void;
 }
 
 /**
@@ -84,8 +120,15 @@ function createSession(config: SimulationConfig): Session {
   return {
     engine,
     scheduler: new PlaybackScheduler({ tickRate: config.tickRate }),
+    sensor: new VirtualCameraSensor({ config }),
+    // Exact sampling: capture times fall between physics ticks, and the world
+    // is a pure function of time, so there is nothing to approximate.
+    sampler: new ExactWorldSampler(engine),
     labels: config.targets.map((target) => target.label),
     paths: buildTrajectoryPaths(engine),
+    // Before -1 so the frame at t = 0 is due on the first advance.
+    capturedThrough: -1,
+    lastFrameIndex: 0,
   };
 }
 
@@ -99,13 +142,31 @@ export function activeEngine(): SimulationEngine {
   return requireSession().engine;
 }
 
-function snapshotState(
-  active: Session,
-): Pick<
+type SessionSnapshot = Pick<
   SimulationStoreState,
-  'tick' | 'time' | 'currentFrame' | 'previousFrame' | 'alpha' | 'status' | 'speed'
-> {
+  | 'tick'
+  | 'time'
+  | 'currentFrame'
+  | 'previousFrame'
+  | 'alpha'
+  | 'status'
+  | 'speed'
+  | 'sensorFrame'
+  | 'sensorTruth'
+  | 'cameraAzimuth'
+  | 'cameraElevation'
+  | 'framesScheduled'
+  | 'framesRasterized'
+  | 'framesSupersededForDisplay'
+>;
+
+function snapshotState(active: Session): SessionSnapshot {
   const frame = buildObserverFrame(active.engine.snapshot(), active.labels);
+
+  // A capture at the current instant, so the viewfinder shows the scene before
+  // the run starts rather than an empty rectangle.
+  const capture = active.sensor.captureFrame(active.sampler, active.lastFrameIndex);
+
   return {
     tick: active.engine.tick,
     time: active.engine.time,
@@ -114,6 +175,33 @@ function snapshotState(
     alpha: 0,
     status: active.scheduler.status,
     speed: active.scheduler.speed,
+    sensorFrame: capture.frame,
+    sensorTruth: capture.truth,
+    cameraAzimuth: active.sensor.mount.azimuth,
+    cameraElevation: active.sensor.mount.elevation,
+    framesScheduled: active.sensor.framesScheduled,
+    framesRasterized: active.sensor.framesRasterized,
+    framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
+  };
+}
+
+/**
+ * Re-renders the current frame after the mount moves.
+ *
+ * The camera does not stop existing because the world is paused: pointing it
+ * somewhere else must change what it sees. The capture time is unchanged — this
+ * is the same instant viewed from a new attitude — so the frame keeps its index
+ * and nothing new is counted as produced.
+ */
+function refreshViewfinder(
+  active: Session,
+): Pick<SimulationStoreState, 'sensorFrame' | 'sensorTruth' | 'cameraAzimuth' | 'cameraElevation'> {
+  const capture = active.sensor.captureFrame(active.sampler, active.lastFrameIndex);
+  return {
+    sensorFrame: capture.frame,
+    sensorTruth: capture.truth,
+    cameraAzimuth: active.sensor.mount.azimuth,
+    cameraElevation: active.sensor.mount.elevation,
   };
 }
 
@@ -126,6 +214,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   config: initialConfig,
   paths: initialSession.paths,
   importError: null,
+  showTruthOverlay: false,
   ...snapshotState(initialSession),
 
   loadScenarioById: (id) => {
@@ -174,6 +263,9 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     stopDriver();
     active.engine.reset();
     active.scheduler.reset();
+    active.sensor.reset();
+    active.capturedThrough = -1;
+    active.lastFrameIndex = 0;
     set(snapshotState(active));
   },
 
@@ -187,6 +279,11 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     const previous = buildObserverFrame(active.engine.snapshot(), active.labels);
     active.engine.step(1);
 
+    const capturedTo = active.engine.time;
+    const result = active.sensor.captureLatest(active.sampler, active.capturedThrough, capturedTo);
+    active.capturedThrough = capturedTo;
+    if (result.capture !== null) active.lastFrameIndex = result.capture.frame.frameId;
+
     set({
       ...snapshotState(active),
       previousFrame: previous,
@@ -198,6 +295,28 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     const active = requireSession();
     active.scheduler.setSpeed(speed);
     set({ speed });
+  },
+
+  setCameraPose: (azimuth, elevation) => {
+    const active = requireSession();
+    active.sensor.mount.commandTo(azimuth, elevation);
+    set(refreshViewfinder(active));
+  },
+
+  nudgeCamera: (deltaAzimuth, deltaElevation) => {
+    const active = requireSession();
+    active.sensor.mount.nudge(deltaAzimuth, deltaElevation);
+    set(refreshViewfinder(active));
+  },
+
+  resetCamera: () => {
+    const active = requireSession();
+    active.sensor.mount.reset();
+    set(refreshViewfinder(active));
+  },
+
+  setTruthOverlay: (visible) => {
+    set({ showTruthOverlay: visible });
   },
 
   advance: (elapsedSeconds) => {
@@ -213,12 +332,35 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     active.engine.step(budget.ticks);
     const current = buildObserverFrame(active.engine.snapshot(), active.labels);
 
+    // The camera runs on its own clock. Only the newest frame due in the
+    // interval is rasterized: a viewer can look at one image, so building the
+    // ones behind it would cost time and memory to produce something discarded
+    // immediately, and would let a slow display accumulate a backlog.
+    const capturedTo = active.engine.time;
+    const result = active.sensor.captureLatest(active.sampler, active.capturedThrough, capturedTo);
+    active.capturedThrough = capturedTo;
+
+    const sensorUpdate =
+      result.capture === null
+        ? {}
+        : {
+            sensorFrame: result.capture.frame,
+            sensorTruth: result.capture.truth,
+            lastFrameIndexTracker: (active.lastFrameIndex = result.capture.frame.frameId),
+          };
+
     set({
       tick: active.engine.tick,
       time: active.engine.time,
       previousFrame: previous,
       currentFrame: current,
       alpha: budget.alpha,
+      framesScheduled: active.sensor.framesScheduled,
+      framesRasterized: active.sensor.framesRasterized,
+      framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
+      ...('sensorFrame' in sensorUpdate
+        ? { sensorFrame: sensorUpdate.sensorFrame, sensorTruth: sensorUpdate.sensorTruth }
+        : {}),
     });
 
     if (active.engine.isComplete) {

@@ -12,6 +12,8 @@
 
 import { type SimulationConfig, parseSimulationConfig } from '@/core/contracts/simulation';
 
+import cameraBoresight from './camera-boresight.json';
+import cameraOutsideFov from './camera-target-outside-fov.json';
 import circular from './circular.json';
 import linearPass from './linear-pass.json';
 import seededManeuver from './seeded-maneuver.json';
@@ -26,6 +28,8 @@ export const SCENARIO_IDS = [
   'sinusoidal',
   'waypoints',
   'seeded-maneuver',
+  'camera-boresight',
+  'camera-target-outside-fov',
 ] as const;
 
 export type ScenarioId = (typeof SCENARIO_IDS)[number];
@@ -37,6 +41,8 @@ const RAW_SCENARIOS: Record<ScenarioId, unknown> = {
   sinusoidal,
   waypoints,
   'seeded-maneuver': seededManeuver,
+  'camera-boresight': cameraBoresight,
+  'camera-target-outside-fov': cameraOutsideFov,
 };
 
 const cache = new Map<ScenarioId, SimulationConfig>();

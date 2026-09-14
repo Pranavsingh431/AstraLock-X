@@ -10,7 +10,7 @@
 /** A raw config object that satisfies every rule in the schema. */
 export function makeValidRawConfig(): Record<string, unknown> {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: 'fixture-001',
     name: 'Fixture scenario',
     seed: 12345,
@@ -32,14 +32,21 @@ export function makeValidRawConfig(): Record<string, unknown> {
           velocity: { x: 0, y: 14, z: 0 },
         },
         radius: 0.5,
-        beaconPower: 0.05,
+        beacon: { transmitPower: 0.05, intensity: 0.9, psfSigma: 2 },
       },
     ],
     camera: {
       width: 640,
       height: 480,
-      focalLength: 1800,
+      horizontalFov: 0.2,
+      verticalFovPolicy: 'square-pixels',
+      principalPoint: null,
+      nearRange: 1,
+      farRange: 50000,
       frameRate: 100,
+      initialAzimuth: 0,
+      initialElevation: 0.04,
+      backgroundLevel: 0,
       exposure: 0.002,
       gain: 1,
       format: 'mono8',

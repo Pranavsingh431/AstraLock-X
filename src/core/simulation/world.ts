@@ -26,6 +26,8 @@ import {
   seconds,
 } from '@/core/contracts/units';
 
+import { resolveIntrinsics } from '@/core/sensors/pinhole';
+
 import { WORLD_FRAME, bearingRateTo, bearingTo, directionFromBearing } from './coordinates';
 import { targetIdAt } from './entities';
 import type { Trajectory, TrajectorySample } from './trajectory';
@@ -40,11 +42,18 @@ export interface FieldOfViewHalfAngles {
   readonly vertical: number;
 }
 
-/** Field of view implied by the sensor size and focal length. */
+/**
+ * Field of view implied by the camera configuration.
+ *
+ * Delegates to the sensor module's intrinsics resolution so the world's idea of
+ * what is in view and the sensor's idea cannot drift apart — they are the same
+ * numbers, derived once.
+ */
 export function fieldOfViewHalfAngles(camera: CameraConfig): FieldOfViewHalfAngles {
+  const intrinsics = resolveIntrinsics(camera);
   return {
-    horizontal: Math.atan(camera.width / (2 * camera.focalLength)),
-    vertical: Math.atan(camera.height / (2 * camera.focalLength)),
+    horizontal: intrinsics.horizontalFov / 2,
+    vertical: intrinsics.verticalFov / 2,
   };
 }
 

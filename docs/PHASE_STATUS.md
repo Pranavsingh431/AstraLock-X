@@ -2,16 +2,16 @@
 
 What actually works, and what does not. Updated at the end of each phase.
 
-| Phase | Scope                                                                | Status       |
-| ----- | -------------------------------------------------------------------- | ------------ |
-| 0     | Project foundation: contracts, isolation, tooling, CI, shell         | **Complete** |
-| 1     | Simulation core: world, motion, seeded RNG, tick loop, 3D observer   | **Complete** |
-| 2     | Sensor models: camera frame formation, gimbal encoders; Scenario Lab | Not started  |
-| 3     | Perception and estimation; first algorithm plugins                   | Not started  |
-| 4     | Control and PAT state machine; Calibration                           | Not started  |
-| 5     | Metrics, experiment runner, AstraBench, Replay, Reports              | Not started  |
-| 6     | Mission Control: live 3D scene, camera view, telemetry plots         | Not started  |
-| 7     | Hardware-in-the-loop: serial and USB device drivers                  | Not started  |
+| Phase | Scope                                                              | Status       |
+| ----- | ------------------------------------------------------------------ | ------------ |
+| 0     | Project foundation: contracts, isolation, tooling, CI, shell       | **Complete** |
+| 1     | Simulation core: world, motion, seeded RNG, tick loop, 3D observer | **Complete** |
+| 2     | Virtual optical camera and sensor image pipeline                   | **Complete** |
+| 3     | Perception and estimation; first algorithm plugins; Scenario Lab   | Not started  |
+| 4     | Control and PAT state machine; Calibration                         | Not started  |
+| 5     | Metrics, experiment runner, AstraBench, Replay, Reports            | Not started  |
+| 6     | Mission Control: live 3D scene, camera view, telemetry plots       | Not started  |
+| 7     | Hardware-in-the-loop: serial and USB device drivers                | Not started  |
 
 ---
 
@@ -541,7 +541,286 @@ Phase 1 additions; earlier entries still apply.
 8. **The simulation can fall behind real time** on a slow machine or a
    backgrounded tab; the tick counter advancing slowly is the only signal.
 
+---
+
+## Phase 2 — Virtual optical camera and sensor image pipeline
+
+**Complete.**
+
+A real virtual camera that turns the authoritative world into timestamped pixel
+buffers, and a sensor monitor that shows them. **No detector, no Kalman filter,
+no PID, no PAT state machine, no autonomous tracking, no noise model.** Nothing
+looks at the pixels yet.
+
+### Preflight: run bounds
+
+Phase 1's engine would step indefinitely; an interactive session left running
+walked past the end of its scenario one frame at a time, and for a seeded
+manoeuvre that meant running past the generated schedule into the coast regime.
+A run now stops at `floor(duration * tickRate)`, `step` returns how many ticks
+it actually took, and deliberate overrun requires
+`step(n, { beyondDuration: true })`. Seeded-manoeuvre mathematics is unchanged,
+which is asserted directly.
+
+Two long-run tests were quietly clamping to a quarter of the ticks they claimed
+after this change; they now extend the scenario duration so they really run
+100,000 ticks.
+
+### Camera model
+
+Self-contained in `core/sensors`, with no dependency on the simulator's vector
+module, Three.js, WebGL or the DOM.
+
+**Basis**, for a no-roll mount in East-North-Up:
+
+```
+forward = ( sin(az) cos(el),  cos(az) cos(el),  sin(el) )
+right   = ( cos(az),         -sin(az),          0       )
+up      = right x forward
+```
+
+`right` is horizontal by construction, so the image horizon stays level at every
+elevation and the construction does not degenerate pointing straight up.
+`(right, up, forward)` is left-handed — the usual computer-vision arrangement —
+which is why the vertical projection term carries a minus sign.
+
+**Projection:**
+
+```
+x_cam = r . right     y_cam = r . up     z_cam = r . forward
+u = cx + fx * x_cam / z_cam
+v = cy - fy * y_cam / z_cam
+fx = width / (2 tan(hfov / 2))      fy = fx   (square-pixels policy)
+```
+
+**Pixel convention:** continuous coordinates with pixel centres at
+half-integers. Pixel `(i, j)` covers `[i, i+1) x [j, j+1)`, the image spans
+`[0, width] x [0, height]`, and the principal point defaults to
+`(width / 2, height / 2)`. A consequence worth recording: an even-width image
+has no centre _pixel_, so an on-axis beacon lands on the boundary between two
+columns and they receive equal light. The boresight test asserts symmetry, not
+a single brightest pixel.
+
+**Format:** GRAY8 — spelled `mono8` in the pixel-format contract, for continuity
+with Phase 0. `mono16` is declared and explicitly refused rather than emitting
+8-bit data in a 16-bit buffer. The UI expands to RGBA only to draw.
+
+### Sensor clock
+
+```
+captureTime(frameIndex) = frameIndex / frameRate
+```
+
+One division, never an accumulation. Frames due in an interval are queried
+half-open so repeated stepping captures each exactly once, and the index bounds
+are corrected against actual capture times because `frameIndex / rate` and
+`time * rate` are not exact inverses in binary floating point.
+
+**The frame rate is not required to divide the tick rate.** `round(200/60) = 3`
+would be 66.7 FPS — an 11% error in every timestamp. 30, 50, 60, 90 and 120 FPS
+are each tested over 200 Hz physics, producing exactly `rate * seconds + 1`
+frames, and a ten-minute 60 FPS schedule lands on `captureTime(36000) = 600`
+exactly.
+
+### Sampling between ticks
+
+Capture times fall between physics ticks — at 200 Hz and 60 FPS, two frames in
+three do. The default policy is **exact**: the world is evaluated at the capture
+time itself, with no timing error, which is possible because Phase 1 made
+trajectories pure functions of time.
+
+An **interpolating** sampler is also provided for the case exact sampling cannot
+cover, once a control loop makes the world depend on its own previous state.
+Positions interpolate linearly, angles along the shortest path. Its error is
+bounded by `a h^2 / 8` — under 19 micrometres at 5 ms and 6 m/s^2 — and the test
+suite measures the two policies against each other to confirm it.
+
+### Image formation
+
+A circular Gaussian point spread, evaluated at pixel centres about the exact
+sub-pixel projected centre, bounded at three sigma, and evaluated **separably**
+so a kernel of half-width `k` costs `2k` exponentials rather than `k^2`.
+Contributions **add, then clip** — adding is what light does, clipping is what a
+full well does, and taking the maximum would make two coincident beacons look
+like one. Writes outside the image are clipped, never wrapped.
+
+Multiple emitters are supported architecturally: the sensor takes an emitter
+list, built from each target's beacon declaration, and never reaches for
+`world.targets[0]`.
+
+### The truth boundary
+
+`CameraSensorFrame` carries pixels, timing, format, the mount's own reported
+pose, and a configuration id. Nothing else — an adversarial test enumerates the
+entire surface, searches it for the ground-truth brand, and confirms the true
+projected centre does not appear in a serialisation of the frame.
+
+`SensorEvaluationTruth` is a separate, branded object holding the answer key.
+Each per-emitter projection is branded **individually**, which was a real gap
+found by the type tests: nested-only branding would have let a projection be
+lifted out as a clean-looking object holding the true centre and range.
+
+`SensorCapture` — the pair — is branded too, so the type system refuses to hand
+it to a plugin. The lint barrier blocks tracking-side code from importing
+`core/sensors` at all.
+
+### Buffer ownership and backpressure
+
+Frames come from a bounded ring of reused buffers: 600 frames at 640x480
+allocate 3 buffers, not 600. A frame does not own its pixels, which is stated,
+tested, and given `copyFramePixels` as the escape.
+
+Four distinct terms, kept distinct: **scheduled** (the clock called for it),
+**rasterized** (pixels built), **superseded for display** (a newer frame was
+already due, so the live view skipped it), and **dropped** (the sensor failed —
+not modelled, always `null`). A superseded frame is a display decision and is
+never reported as a sensor dropout.
+
+### Performance, measured
+
+Apple silicon, Node 24, three emitters in frame, 1000 samples after warm-up:
+
+| Resolution | Mean      | P95       | Max       | Sustainable |
+| ---------- | --------- | --------- | --------- | ----------- |
+| 320x240    | 0.0150 ms | 0.0203 ms | 0.1442 ms | ~66,000 FPS |
+| 640x480    | 0.0160 ms | 0.0185 ms | 1.0548 ms | ~62,000 FPS |
+
+A 60 FPS budget is 16.67 ms, so frame generation uses roughly a thousandth of
+it. Cost is dominated by clearing the background, which is linear in area; the
+point spread is independent of image size, which is why the two resolutions are
+so close. **No optimisation was attempted and none is warranted on this
+evidence.**
+
+### Tests
+
+**502 tests across 32 files**, up from 324 across 22.
+
+| File                           | Tests |
+| ------------------------------ | ----- |
+| `scenarios.test.ts`            | 63    |
+| `trajectory.test.ts`           | 36    |
+| `golden.test.ts`               | 34    |
+| `isolation.test.ts`            | 26    |
+| `camera-clock.test.ts`         | 25    |
+| `engine.test.ts`               | 22    |
+| `ground-truth-barrier.test.ts` | 21    |
+| `image-formation.test.ts`      | 21    |
+| `pipeline.test.ts`             | 20    |
+| `rng.test.ts`                  | 20    |
+| `isolation.test-d.ts`          | 20    |
+| `clock.test.ts`                | 18    |
+| `coordinates.test.ts`          | 17    |
+| `scenario-io.test.ts`          | 15    |
+| `mission-control.test.tsx`     | 14    |
+| `observer-view.test.ts`        | 13    |
+| `sensor-panel.test.tsx`        | 12    |
+| `units.test.ts`                | 12    |
+| `AppShell.test.tsx`            | 11    |
+| `simulation.test.ts`           | 11    |
+| `run-duration.test.ts`         | 10    |
+| `sensor-isolation.test.ts`     | 9     |
+| `headless.test.ts` (sensor)    | 7     |
+| `views.test.ts`                | 7     |
+| `navigation-store.test.ts`     | 6     |
+| `sensor-isolation.test-d.ts`   | 6     |
+| `export-boundary.test-d.ts`    | 5     |
+| `headless.test.ts` (sim)       | 5     |
+| `long-run.test.ts`             | 5     |
+| `export-boundary.test.ts`      | 4     |
+| `performance.test.ts`          | 4     |
+| `app-info.test.ts`             | 3     |
+
+The golden geometry suite covers all twelve required cases: boresight, east,
+up, behind, both field-of-view edges, near and far range, manual pan, manual
+tilt, sub-pixel placement, edge clipping and reproducibility.
+
+### Scenarios
+
+All six Phase 1 scenarios upgraded to schema version 3, plus two new ones:
+
+- **`camera-boresight`** — a fixed beacon exactly on the boresight, the
+  reference case for on-axis projection.
+- **`camera-target-outside-fov`** — the beacon starts about 25 degrees off a
+  12-degree field of view. Phase 4 will search for it autonomously; in Phase 2
+  the operator pans until it appears.
+
+Schema version 3 gives the camera a real optical description and replaces a
+target's bare `beaconPower` with a beacon that has apparent optical properties.
+Versions 1 and 2 are rejected rather than migrated — guessing a field of view
+would be inventing the instrument.
+
+### Manual validation
+
+Run in the application, against `camera-target-outside-fov`:
+
+| Check                                      | Result                                                                                         |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Beacon initially outside the field of view | 0 lit pixels                                                                                   |
+| Pan sweep 21° → 29°                        | Beacon traverses 533 → 320 → 108 px                                                            |
+| Measured scale                             | 53.1 px/degree, matching `fx tan(1°)` exactly                                                  |
+| Entry and exit                             | Absent below 19°, present 20°–31°, absent from 32°, for a 12° field of view on a 25.0° bearing |
+| Partial clipping at the edge               | 135 lit pixels at 31° against 223 centred                                                      |
+| Elevation limits                           | Absent at −2° and 9°, present 0°–6°, for a 9.0° vertical field of view on a 2.87° bearing      |
+| Pause                                      | Tick and image frozen over 2.5 s                                                               |
+| Pointing while paused                      | Image moved 53.2 px for 1°, tick unchanged                                                     |
+| Reset                                      | Tick 0, camera back to the configured pointing, beacon out of view again                       |
+| Truth overlay on                           | Marker at 320.31 against a rendered centroid of 320.39                                         |
+| Truth overlay off                          | Zero overlay pixels remaining                                                                  |
+| Observer orbit                             | **0 sensor pixels changed**                                                                    |
+| Capture timing                             | `frameId = floor(simTime × 60)` at every sample                                                |
+
+The last one is the important one: frame identity tracks simulated time, not the
+display. The superseded counter rose while the pane was throttled, which is the
+backpressure policy working and is counted as a display decision rather than a
+sensor fault.
+
+### Bugs found during implementation
+
+1. **`EmitterProjectionTruth` was not branded.** Only the parent record was, so
+   a projection lifted out of `projections` would have been a clean-looking
+   object carrying the true image centre and range — and the type-level check
+   would not have objected. Found by the compile-time isolation tests; each
+   projection is now branded individually.
+
+2. **A golden test asserted the wrong thing.** An on-axis beacon projects to
+   `u = 400.0` exactly, which is the boundary between columns 399 and 400, so
+   the two tie. The test expected a single brightest pixel; the correct property
+   is symmetry, and it now asserts that.
+
+3. **Two Phase 1 long-run tests silently weakened** once runs became bounded by
+   duration, clamping to 24,000 of the 100,000 ticks they claimed. Both now
+   extend the scenario duration.
+
+### Limitations
+
+Phase 2 additions; earlier entries still apply.
+
+1. **No detector, filter, controller or tracking of any kind.** Nothing reads
+   the pixels. This is the specified scope.
+2. **The sensor is ideal and noiseless.** No read noise, shot noise, dark
+   current, dropout, blur, glare, bloom or lens distortion.
+3. **No link budget.** Beacon intensity is constant with range;
+   `transmitPower` is declared but unused. A real beacon dims as `1/r^2` and is
+   attenuated by the atmosphere.
+4. **No occlusion.** Nothing ever blocks anything.
+5. **The mount is kinematically ideal.** `IdealCameraMount` adopts a commanded
+   pose exactly and instantly — no rate limit, no settling, no encoder error.
+   The name is the warning; the actuator model replaces it behind the same
+   interface.
+6. **`mono16` is unsupported.** Declared in the contract and refused by the
+   renderer.
+7. **Canvas drawing is not covered by automated tests.** jsdom has no 2D
+   context, so the monitor's `getContext` returns null there and the draw path
+   is exercised by running the application. The pixel _content_ is tested
+   directly against the buffer.
+8. **A frame does not own its pixels.** The ring reuses buffers after
+   `capacity` frames; a consumer that retains one must copy it.
+9. **`Math.exp` is not bit-specified across engines.** Cross-platform results
+   could differ in the last ulp of a Gaussian weight, which is immaterial after
+   quantisation to 8 bits but is worth recording alongside ADR-0004's existing
+   per-architecture caveat.
+
 ### Next
 
-Phase 2 — sensor models and the Scenario Lab. Do not begin it without an
-explicit request.
+Phase 3 — perception and estimation. Do not begin it without an explicit
+request.

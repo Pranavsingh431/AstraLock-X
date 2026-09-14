@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "waypoint-route",
   "name": "Waypoint route",
   "seed": 1005,
@@ -18,7 +18,7 @@
     },
     "boresight": {
       "azimuth": 0.0,
-      "elevation": 0.07
+      "elevation": 0.057935094
     },
     "baseDisturbanceRms": 0.0015,
     "baseDisturbanceBandwidth": 25
@@ -65,20 +65,31 @@
         ]
       },
       "radius": 0.8,
-      "beaconPower": 0.1
+      "beacon": {
+        "transmitPower": 0.1,
+        "intensity": 0.92,
+        "psfSigma": 2.0
+      }
     }
   ],
   "camera": {
     "width": 640,
     "height": 480,
-    "focalLength": 1800,
-    "frameRate": 100,
+    "horizontalFov": 0.523598776,
+    "verticalFovPolicy": "square-pixels",
+    "principalPoint": null,
+    "nearRange": 1.0,
+    "farRange": 50000.0,
+    "frameRate": 60,
+    "initialAzimuth": 0.0,
+    "initialElevation": 0.057935094,
+    "backgroundLevel": 0.0,
     "exposure": 0.002,
     "gain": 1,
     "format": "mono8",
     "readNoiseElectrons": 3.2,
     "fullWellElectrons": 10000,
-    "dropoutProbability": 0.002
+    "dropoutProbability": 0.0
   },
   "gimbal": {
     "azimuthLimits": {

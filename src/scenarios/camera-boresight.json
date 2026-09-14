@@ -1,9 +1,9 @@
 {
   "schemaVersion": 3,
-  "id": "sinusoidal-weave",
-  "name": "Weaving approach",
-  "seed": 1004,
-  "duration": 60.0,
+  "id": "camera-boresight",
+  "name": "Camera boresight reference",
+  "seed": 2001,
+  "duration": 30.0,
   "tickRate": 200,
   "platform": {
     "initialPosition": {
@@ -18,68 +18,41 @@
     },
     "boresight": {
       "azimuth": 0.0,
-      "elevation": 0.035439701
+      "elevation": 0.039978687
     },
     "baseDisturbanceRms": 0.0015,
     "baseDisturbanceBandwidth": 25
   },
   "targets": [
     {
-      "label": "Weaving target",
+      "label": "Boresight beacon",
       "trajectory": {
-        "kind": "sinusoidal",
+        "kind": "stationary",
         "position": {
           "x": 0,
-          "y": 2200,
-          "z": 90
-        },
-        "velocity": {
-          "x": 0,
-          "y": -25,
-          "z": 0
-        },
-        "components": [
-          {
-            "axis": {
-              "x": 1,
-              "y": 0,
-              "z": 0
-            },
-            "amplitude": 120.0,
-            "frequency": 0.05,
-            "phase": 0.0
-          },
-          {
-            "axis": {
-              "x": 0,
-              "y": 0,
-              "z": 1
-            },
-            "amplitude": 25.0,
-            "frequency": 0.11,
-            "phase": 1.57
-          }
-        ]
+          "y": 1200,
+          "z": 60
+        }
       },
-      "radius": 1.0,
+      "radius": 0.5,
       "beacon": {
-        "transmitPower": 0.15,
-        "intensity": 0.92,
-        "psfSigma": 2.0
+        "transmitPower": 0.05,
+        "intensity": 0.95,
+        "psfSigma": 2.2
       }
     }
   ],
   "camera": {
     "width": 640,
     "height": 480,
-    "horizontalFov": 0.244346095,
+    "horizontalFov": 0.13962634,
     "verticalFovPolicy": "square-pixels",
     "principalPoint": null,
     "nearRange": 1.0,
     "farRange": 50000.0,
     "frameRate": 60,
     "initialAzimuth": 0.0,
-    "initialElevation": 0.035439701,
+    "initialElevation": 0.039978687,
     "backgroundLevel": 0.0,
     "exposure": 0.002,
     "gain": 1,

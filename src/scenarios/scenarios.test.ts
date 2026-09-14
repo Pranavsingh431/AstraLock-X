@@ -8,7 +8,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { SimulationEngine } from '@/core/simulation/engine';
-import { safeParseSimulationConfig } from '@/core/contracts/simulation';
+import {
+  SIMULATION_CONFIG_SCHEMA_VERSION,
+  safeParseSimulationConfig,
+} from '@/core/contracts/simulation';
 import { makeValidRawConfig } from '@/test/fixtures';
 
 import { DEFAULT_SCENARIO_ID, SCENARIO_IDS, listScenarios, loadScenario } from './index';
@@ -16,7 +19,7 @@ import { DEFAULT_SCENARIO_ID, SCENARIO_IDS, listScenarios, loadScenario } from '
 describe('bundled scenarios', () => {
   it.each(SCENARIO_IDS)('%s parses against the schema', (id) => {
     const config = loadScenario(id);
-    expect(config.schemaVersion).toBe(2);
+    expect(config.schemaVersion).toBe(SIMULATION_CONFIG_SCHEMA_VERSION);
     expect(config.name.length).toBeGreaterThan(0);
   });
 
@@ -174,17 +177,59 @@ describe('invalid scenarios are refused', () => {
     expect(result.success).toBe(false);
   });
 
+  const withCamera = (patch: Record<string, unknown>): Record<string, unknown> => {
+    const raw = makeValidRawConfig();
+    raw['camera'] = { ...(raw['camera'] as Record<string, unknown>), ...patch };
+    return raw;
+  };
+
+  it.each([
+    ['a zero field of view', { horizontalFov: 0 }],
+    ['a field of view of pi', { horizontalFov: Math.PI }],
+    ['a negative field of view', { horizontalFov: -0.5 }],
+    ['a zero width', { width: 0 }],
+    ['a non-integer width', { width: 640.5 }],
+    ['an absurd width', { width: 100_000 }],
+    ['a non-positive frame rate', { frameRate: 0 }],
+    ['a non-positive near range', { nearRange: 0 }],
+    ['a near range beyond the far range', { nearRange: 9000, farRange: 100 }],
+    ['an elevation past the zenith', { initialElevation: 2 }],
+    ['a principal point outside the image', { principalPoint: { x: 5000, y: 10 } }],
+    ['an unsupported pixel format', { format: 'rgba8' }],
+    ['a background level above full scale', { backgroundLevel: 1.5 }],
+  ])('rejects %s', (_label, patch) => {
+    expect(safeParseSimulationConfig(withCamera(patch)).success).toBe(false);
+  });
+
+  it('accepts an explicit principal point inside the image', () => {
+    expect(
+      safeParseSimulationConfig(withCamera({ principalPoint: { x: 320, y: 240 } })).success,
+    ).toBe(true);
+  });
+
+  it('rejects a beacon with a non-positive point spread', () => {
+    const raw = makeValidRawConfig();
+    (raw['targets'] as Record<string, unknown>[])[0]!['beacon'] = {
+      transmitPower: 0.05,
+      intensity: 0.9,
+      psfSigma: 0,
+    };
+    expect(safeParseSimulationConfig(raw).success).toBe(false);
+  });
+
   it('rejects a non-positive tick rate', () => {
     const raw = makeValidRawConfig();
     raw['tickRate'] = 0;
     expect(safeParseSimulationConfig(raw).success).toBe(false);
   });
 
-  it('rejects a superseded schema version rather than guessing a migration', () => {
-    // A version 1 document declared a start position, not a trajectory.
-    // Inventing one would be inventing the experiment.
+  it.each([1, 2, 4])('rejects schema version %i rather than guessing a migration', (version) => {
+    // Version 1 declared a start position rather than a trajectory; version 2
+    // declared a focal length rather than a field of view. Inventing the
+    // missing half would be inventing the experiment or the instrument, and a
+    // future version cannot be understood at all.
     const raw = makeValidRawConfig();
-    raw['schemaVersion'] = 1;
+    raw['schemaVersion'] = version;
     expect(safeParseSimulationConfig(raw).success).toBe(false);
   });
 

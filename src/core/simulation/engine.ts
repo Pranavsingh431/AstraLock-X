@@ -91,6 +91,19 @@ export function hashGroundTruth(truth: GroundTruthState): string {
   return hasher.digest();
 }
 
+/** Options for {@link SimulationEngine.step}. */
+export interface StepOptions {
+  /**
+   * Run past the configured duration.
+   *
+   * Off by default. A finite experiment that quietly kept going would no longer
+   * be the experiment that was configured, so exceeding it is an explicit act —
+   * useful for stress tests and headless exploration, never something the UI
+   * does by accident.
+   */
+  readonly beyondDuration?: boolean;
+}
+
 export class SimulationEngine {
   public readonly config: SimulationConfig;
   public readonly clock: SimulationClock;
@@ -144,24 +157,59 @@ export class SimulationEngine {
     return this.config.duration;
   }
 
-  /** True once the run has reached the configured duration. */
+  /**
+   * Last tick belonging to the run.
+   *
+   * A scenario declares a duration, so a run is finite and its last tick is
+   * `floor(duration * tickRate)`. Deriving it from the integer tick index
+   * rather than comparing accumulated time keeps the boundary exact.
+   */
+  public get finalTick(): number {
+    return Math.floor(this.config.duration * this.config.tickRate);
+  }
+
+  /** True once the run has reached its final tick. */
   public get isComplete(): boolean {
-    return this.clock.time >= this.config.duration;
+    return this.clock.tick >= this.finalTick;
   }
 
   /**
-   * Advances the world by whole ticks.
+   * Advances the world by whole ticks, stopping at the end of the run.
    *
    * `step(1)` a thousand times and `step(1000)` once leave the world in
    * identical states, because the world is a function of the tick index rather
    * than an accumulation of increments. The test suite asserts that rather than
    * assuming it.
    *
+   * **The run is bounded by its configured duration.** Without that, an
+   * interactive session left running would keep producing ticks past the end of
+   * the experiment — the scenario would still be "playing" but would no longer
+   * be the experiment anyone configured, and for a seeded manoeuvre it would
+   * run past the end of the generated schedule into the coast regime. Ticks
+   * beyond the final tick are therefore not taken, and the return value says
+   * how many actually were.
+   *
+   * Deliberate overrun is still possible for tests and headless exploration,
+   * but it has to be asked for.
+   *
+   * @returns the number of ticks actually advanced.
    * @throws {RangeError} when `ticks` is not a non-negative integer.
    */
-  public step(ticks = 1): void {
-    this.clock.advance(ticks);
-    if (ticks > 0) this.cachedSnapshot = null;
+  public step(ticks = 1, options: StepOptions = {}): number {
+    if (!Number.isInteger(ticks) || ticks < 0) {
+      throw new RangeError(`Tick count must be a non-negative integer, received ${String(ticks)}`);
+    }
+
+    const allowed =
+      options.beyondDuration === true
+        ? ticks
+        : Math.min(ticks, Math.max(0, this.finalTick - this.clock.tick));
+
+    if (allowed > 0) {
+      this.clock.advance(allowed);
+      this.cachedSnapshot = null;
+    }
+    return allowed;
   }
 
   /** Returns to tick zero, replaying every random stream from its start. */
@@ -211,11 +259,27 @@ export class SimulationEngine {
    * the state the engine would report had it stepped there.
    */
   public sampleAtTick(tick: number): GroundTruthState {
+    return this.sampleAtTime(this.clock.timeAt(tick), tick);
+  }
+
+  /**
+   * The world at an arbitrary simulated time, without moving the engine.
+   *
+   * Available because trajectories are pure functions of time, which means a
+   * consumer that needs state between two ticks — the camera, whose capture
+   * times do not align with the physics tick — can have the exact state rather
+   * than an interpolation of the two nearest ticks.
+   *
+   * @param tick the tick index to label the state with; defaults to the tick
+   *   containing `timeSeconds`. It is a label only: the state itself comes from
+   *   the time.
+   */
+  public sampleAtTime(timeSeconds: number, tick?: number): GroundTruthState {
     return sampleGroundTruth({
       config: this.config,
       trajectories: this.trajectories,
-      tick,
-      timeSeconds: this.clock.timeAt(tick),
+      tick: tick ?? Math.floor(timeSeconds * this.config.tickRate),
+      timeSeconds,
     });
   }
 

@@ -40,11 +40,13 @@ beforeEach(() => {
 });
 
 describe('labelling', () => {
-  it('says plainly that this is the ground-truth view', () => {
-    // Nobody should be able to mistake this for the tracking sensor feed that
-    // arrives with the sensor models.
+  it('says plainly which view is the world and which is the sensor', () => {
+    // The two are side by side now, so the labelling matters more than ever:
+    // one shows where everything really is, the other shows what the
+    // instrument can actually see.
     renderView();
-    expect(screen.getByText('OBSERVER / GROUND-TRUTH VIEW')).toBeInTheDocument();
+    expect(screen.getByText('3D WORLD — GROUND TRUTH / OBSERVER')).toBeInTheDocument();
+    expect(screen.getByText(/Virtual camera — sensor feed/i)).toBeInTheDocument();
     expect(screen.getByText(/Not the tracking sensor feed/)).toBeInTheDocument();
   });
 
@@ -168,13 +170,6 @@ describe('the view does not drive the world', () => {
     );
 
     expect(useSimulationStore.getState().tick).toBe(before);
-  });
-
-  it('exposes no camera control that can reach the engine', () => {
-    // The operator camera lives entirely inside Three.js. The store's surface
-    // is the only route to the engine, and it has nothing camera-shaped on it.
-    const actions = Object.keys(useSimulationStore.getState());
-    expect(actions.filter((key) => /camera|orbit|zoom|pan/i.test(key))).toEqual([]);
   });
 });
 

@@ -58,6 +58,18 @@ degrees appear only at configuration and display boundaries.
 | Angle        | radians                              |
 | Angular rate | radians per second                   |
 
+## Run bounds
+
+A scenario declares a duration, and the run ends there: the final tick is
+`floor(duration * tickRate)`, and `step` will not go past it. Without that, an
+interactive session left running would keep producing ticks past the end of the
+experiment — still "playing", but no longer the experiment anyone configured,
+and for a seeded manoeuvre already past the end of its generated schedule into
+the coast regime.
+
+Deliberate overrun is still possible for tests and headless exploration, through
+`step(n, { beyondDuration: true })`. It has to be asked for.
+
 ## Clock
 
 The authoritative quantity is an **integer tick index**. Simulated time is

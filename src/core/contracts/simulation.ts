@@ -51,12 +51,25 @@ export const MAX_SIMULATION_SEED = 0xffff_ffff;
 /**
  * Current scenario schema version.
  *
- * Bumped from 1 in Phase 1: targets now declare a trajectory instead of a start
- * position and velocity, and the platform declares a boresight. A version 1
- * document is rejected rather than migrated, because guessing a trajectory for
- * a config that never specified one would be inventing the experiment.
+ * Version 2 (Phase 1) replaced a target's start position and velocity with a
+ * trajectory, and gave the platform a boresight. Version 3 (Phase 2) gives the
+ * camera a real optical description — field of view, ranges, initial pointing —
+ * and replaces a target's bare `beaconPower` with a beacon that has apparent
+ * optical properties.
+ *
+ * Older documents are rejected rather than migrated. Guessing a field of view
+ * for a config that never specified one would be inventing the instrument, in
+ * the same way that guessing a trajectory would be inventing the experiment.
  */
-export const SIMULATION_CONFIG_SCHEMA_VERSION = 2;
+export const SIMULATION_CONFIG_SCHEMA_VERSION = 3;
+
+/**
+ * Largest image dimension a scenario may ask for.
+ *
+ * 8192 is far beyond any sensor this project models and still bounds a single
+ * frame to 64 MB, which keeps a typo from turning into an allocation failure.
+ */
+export const MAX_IMAGE_DIMENSION = 8192;
 
 /**
  * Validates and tags a root seed.
@@ -113,30 +126,97 @@ export interface TargetConfig {
   readonly trajectory: TrajectoryConfig;
   /** Physical radius, which sets the target's apparent size against range. */
   readonly radius: Meters;
+  /** Optical beacon carried by this target, or `null` for a passive target. */
+  readonly beacon: BeaconConfig | null;
+}
+
+/**
+ * An ideal optical emitter carried by a target.
+ *
+ * Phase 2 models emission as ideal: a fixed apparent intensity and a fixed
+ * point-spread width, with no range falloff, no atmospheric attenuation and no
+ * modulation. A real link budget would make `intensity` a function of
+ * `transmitPower`, range and atmosphere; that arrives with the propagation
+ * model, and until it does `transmitPower` is declared but unused.
+ */
+export interface BeaconConfig {
+  /** Emitted optical power. Declared; no link budget is computed yet. */
+  readonly transmitPower: Watts;
   /**
-   * Beacon transmit power, or `null` for a passive target.
-   *
-   * Declared here, but Phase 1 computes no link budget, so no received power is
-   * reported anywhere. See docs/SIMULATION.md.
+   * Peak apparent intensity in a clean image, on [0, 1] of the format's full
+   * range. Constant with range in Phase 2, by design.
    */
-  readonly beaconPower: Watts | null;
+  readonly intensity: Normalized;
+  /** Standard deviation of the point-spread function, in pixels. */
+  readonly psfSigma: Pixels;
+}
+
+/**
+ * How the vertical field of view follows from the horizontal one.
+ *
+ * `square-pixels` sets `fy = fx`, so the vertical field of view is
+ * `2 atan(height / (2 fx))` — the right model for a sensor whose photosites are
+ * square, which covers every machine-vision camera this project will meet. It
+ * is a named policy rather than an implicit assumption so that a non-square
+ * pixel model can be added later without anyone having to guess what the old
+ * scenarios meant.
+ */
+export type VerticalFovPolicy = 'square-pixels';
+
+/** Principal point, in continuous image coordinates. */
+export interface PrincipalPointConfig {
+  readonly x: Pixels;
+  readonly y: Pixels;
 }
 
 /** Imaging sensor and optics. */
 export interface CameraConfig {
   readonly width: Pixels;
   readonly height: Pixels;
-  /** Focal length in pixels; with sensor size this fixes the field of view. */
-  readonly focalLength: Pixels;
+  /**
+   * Horizontal field of view. Focal length follows:
+   * `fx = width / (2 tan(hfov / 2))`.
+   *
+   * Declared as an angle rather than a focal length because an angle is what a
+   * lens datasheet quotes and what an operator reasons about; a focal length in
+   * pixels is meaningless without also knowing the sensor width.
+   */
+  readonly horizontalFov: Radians;
+  readonly verticalFovPolicy: VerticalFovPolicy;
+  /**
+   * Principal point, or `null` for the image centre.
+   *
+   * Image coordinates are continuous with pixel centres at half-integers, so
+   * the centre of a `width x height` image is `(width / 2, height / 2)`. See
+   * docs/SENSOR_MODEL.md.
+   */
+  readonly principalPoint: PrincipalPointConfig | null;
+  /** Nothing closer than this projects. */
+  readonly nearRange: Meters;
+  /** Nothing further than this projects. */
+  readonly farRange: Meters;
   readonly frameRate: Hertz;
+  /** Where the mount points at the start of a run. */
+  readonly initialAzimuth: Radians;
+  readonly initialElevation: Radians;
+  /**
+   * Uniform background level on [0, 1], scaled to the format's full range.
+   *
+   * Phase 2 models an ideal noiseless sensor, so this is a flat pedestal rather
+   * than a dark current. Usually zero.
+   */
+  readonly backgroundLevel: Normalized;
   readonly exposure: Seconds;
   readonly gain: number;
   readonly format: PixelFormat;
-  /** RMS read noise in electrons. */
+  /**
+   * RMS read noise in electrons. Declared, **not modelled in Phase 2** — the
+   * sensor is ideal and noiseless. See docs/SENSOR_MODEL.md.
+   */
   readonly readNoiseElectrons: number;
-  /** Full-well capacity in electrons, which sets where the sensor saturates. */
+  /** Full-well capacity in electrons. Declared, not modelled in Phase 2. */
   readonly fullWellElectrons: number;
-  /** Per-frame probability that the sensor drops a frame entirely. */
+  /** Per-frame dropout probability. Declared, not modelled in Phase 2. */
   readonly dropoutProbability: Normalized;
 }
 
@@ -169,7 +249,7 @@ export interface AtmosphereConfig {
 /** Complete, self-contained description of one experiment. */
 export interface SimulationConfig {
   /** Bumped whenever this shape changes, so stored scenarios stay readable. */
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly id: string;
   readonly name: string;
   readonly seed: SimulationSeed;
@@ -232,23 +312,66 @@ export const simulationConfigSchema = z.strictObject({
         label: z.string().min(1),
         trajectory: trajectoryConfigSchema,
         radius: tagged<Meters>(positiveNumber),
-        beaconPower: tagged<Watts>(positiveNumber).nullable(),
+        beacon: z
+          .strictObject({
+            transmitPower: tagged<Watts>(positiveNumber),
+            intensity: tagged<Normalized>(unitIntervalNumber),
+            psfSigma: tagged<Pixels>(positiveNumber.max(64)),
+          })
+          .nullable(),
       }),
     )
     .min(1),
 
-  camera: z.strictObject({
-    width: tagged<Pixels>(z.number().int().positive()),
-    height: tagged<Pixels>(z.number().int().positive()),
-    focalLength: tagged<Pixels>(positiveNumber),
-    frameRate: tagged<Hertz>(positiveNumber),
-    exposure: tagged<Seconds>(positiveNumber),
-    gain: positiveNumber,
-    format: z.enum(['mono8', 'mono16']),
-    readNoiseElectrons: nonNegativeNumber,
-    fullWellElectrons: positiveNumber,
-    dropoutProbability: tagged<Normalized>(unitIntervalNumber),
-  }),
+  camera: z
+    .strictObject({
+      // Bounded above as well as below: a scenario asking for a 100,000-pixel
+      // image is a typo, and finding that out as an allocation failure is worse
+      // than finding it out as a validation error.
+      width: tagged<Pixels>(z.number().int().positive().max(MAX_IMAGE_DIMENSION)),
+      height: tagged<Pixels>(z.number().int().positive().max(MAX_IMAGE_DIMENSION)),
+      horizontalFov: tagged<Radians>(z.number().positive().lt(Math.PI)),
+      verticalFovPolicy: z.enum(['square-pixels']),
+      principalPoint: z
+        .strictObject({
+          x: tagged<Pixels>(z.number()),
+          y: tagged<Pixels>(z.number()),
+        })
+        .nullable(),
+      nearRange: tagged<Meters>(positiveNumber),
+      farRange: tagged<Meters>(positiveNumber),
+      frameRate: tagged<Hertz>(positiveNumber),
+      initialAzimuth: tagged<Radians>(z.number()),
+      initialElevation: tagged<Radians>(
+        z
+          .number()
+          .min(-Math.PI / 2)
+          .max(Math.PI / 2),
+      ),
+      backgroundLevel: tagged<Normalized>(unitIntervalNumber),
+      exposure: tagged<Seconds>(positiveNumber),
+      gain: positiveNumber,
+      format: z.enum(['mono8', 'mono16']),
+      readNoiseElectrons: nonNegativeNumber,
+      fullWellElectrons: positiveNumber,
+      dropoutProbability: tagged<Normalized>(unitIntervalNumber),
+    })
+    .refine((camera) => camera.nearRange < camera.farRange, {
+      error: 'Camera nearRange must be strictly less than farRange.',
+      path: ['nearRange'],
+    })
+    .refine(
+      (camera) =>
+        camera.principalPoint === null ||
+        (camera.principalPoint.x >= 0 &&
+          camera.principalPoint.x <= camera.width &&
+          camera.principalPoint.y >= 0 &&
+          camera.principalPoint.y <= camera.height),
+      {
+        error: 'Principal point must lie within the image bounds.',
+        path: ['principalPoint'],
+      },
+    ),
 
   gimbal: z.strictObject({
     azimuthLimits: axisLimitsSchema,

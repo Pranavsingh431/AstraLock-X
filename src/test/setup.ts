@@ -30,3 +30,16 @@ if (!('ResizeObserver' in globalThis)) {
   }
   globalThis.ResizeObserver = ResizeObserverStub;
 }
+
+/**
+ * Quiet jsdom's 2D canvas.
+ *
+ * jsdom does not implement `getContext` and logs a "not implemented" error for
+ * every call, which buries real output. The sensor monitor already handles a
+ * null context by drawing nothing, so returning null here exercises that path
+ * rather than papering over it. Actual pixel output is verified by the sensor's
+ * own tests, which read the buffer directly, and by running the application.
+ */
+if (typeof HTMLCanvasElement !== 'undefined') {
+  HTMLCanvasElement.prototype.getContext = (): null => null;
+}

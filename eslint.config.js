@@ -117,6 +117,12 @@ const GROUND_TRUTH_PATTERNS = [
     message:
       'Evaluation code scores a tracker from the outside and reads ground truth. A tracker importing it would create a leak path (ADR-0003).',
   },
+  {
+    group: ['@/core/sensors', '@/core/sensors/**', '**/core/sensors', '**/core/sensors/**'],
+    allowTypeImports: false,
+    message:
+      'The sensor subsystem consumes world state and produces the evaluation truth for each frame. A tracker receives a CameraSensorFrame from the harness; it never builds one (ADR-0003, ADR-0009).',
+  },
 ];
 
 /**

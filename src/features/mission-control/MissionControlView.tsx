@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { useSimulationStore } from '@/stores/simulation-store';
 
 import { ObserverScene } from './components/ObserverScene';
+import { SensorPanel } from './components/SensorPanel';
 import { OBSERVER_COLORS } from './components/observer-colors';
 import { GroundTruthInspector } from './components/GroundTruthInspector';
 import { ScenarioIoBar } from './components/ScenarioIoBar';
@@ -90,7 +91,7 @@ export function MissionControlView(): React.JSX.Element {
               variant="outline"
               className="pointer-events-auto border-amber-500/40 bg-background/80 font-mono text-[10px] tracking-wider text-amber-400 backdrop-blur"
             >
-              OBSERVER / GROUND-TRUTH VIEW
+              3D WORLD — GROUND TRUTH / OBSERVER
             </Badge>
             <span className="pointer-events-auto rounded bg-background/70 px-2 py-1 text-[10px] text-muted-foreground backdrop-blur">
               Not the tracking sensor feed. Markers are not to scale.
@@ -136,6 +137,7 @@ export function MissionControlView(): React.JSX.Element {
         </div>
       </div>
 
+      <SensorPanel />
       <GroundTruthInspector />
     </div>
   );

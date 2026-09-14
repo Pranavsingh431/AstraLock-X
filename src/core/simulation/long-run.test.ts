@@ -36,6 +36,17 @@ function longManeuverConfig(): SimulationConfig {
   return { ...loadScenario('seeded-maneuver'), duration: seconds(LONG_RUN_SECONDS) };
 }
 
+/**
+ * The circular scenario, likewise extended to cover the run.
+ *
+ * A run stops at its configured duration, so stepping 100,000 ticks against a
+ * 120 s scenario would quietly stop at 24,000 and the test would still pass
+ * while exercising a quarter of what it claims to.
+ */
+function longCircularConfig(): SimulationConfig {
+  return { ...loadScenario('circular'), duration: seconds(LONG_RUN_SECONDS) };
+}
+
 describe('long run', () => {
   it('stays numerically healthy over 100,000 ticks', () => {
     const engine = new SimulationEngine(longManeuverConfig());
@@ -62,6 +73,7 @@ describe('long run', () => {
     }
 
     expect(engine.tick).toBe(LONG_RUN_TICKS);
+    expect(engine.isComplete).toBe(true);
 
     // The envelope is derived from the configuration, not fitted to the run.
     //
@@ -101,10 +113,10 @@ describe('long run', () => {
   });
 
   it('reaches the same state in one jump as in many steps', () => {
-    const jumped = new SimulationEngine(loadScenario('circular'));
+    const jumped = new SimulationEngine(longCircularConfig());
     jumped.step(LONG_RUN_TICKS);
 
-    const stepped = new SimulationEngine(loadScenario('circular'));
+    const stepped = new SimulationEngine(longCircularConfig());
     for (let block = 0; block < LONG_RUN_TICKS / 500; block += 1) stepped.step(500);
 
     expect(stepped.stateHash()).toBe(jumped.stateHash());
@@ -127,7 +139,7 @@ describe('long run', () => {
   it('keeps an analytic trajectory exactly on its closed form after a long run', () => {
     // Drift would show here as a departure from the circle, which is the classic
     // symptom of integrating instead of evaluating.
-    const engine = new SimulationEngine(loadScenario('circular'));
+    const engine = new SimulationEngine(longCircularConfig());
     engine.step(LONG_RUN_TICKS);
 
     const config = loadScenario('circular').targets[0]!.trajectory;
