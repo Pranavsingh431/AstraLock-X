@@ -8,10 +8,11 @@ and — eventually — hardware-in-the-loop validation of coarse PAT systems. It
 runs offline, produces reproducible experiments, and reports measured results
 rather than illustrative ones.
 
-> **Status: Phase 0 — foundation.** The engineering foundation is in place:
-> data contracts, ground-truth isolation, tooling, tests, CI and the application
-> shell. There is no simulator and no tracking algorithm yet, and every view in
-> the application says so. See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
+> **Status: Phase 0.5 — foundation, proved cross-platform.** Data contracts,
+> ground-truth isolation, pinned toolchains, tests, CI and the application
+> shell are in place, with CI green on Linux, macOS and Windows. There is no
+> simulator and no tracking algorithm yet, and every view in the application
+> says so. See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
 
 ## What the problem is
 
@@ -33,9 +34,10 @@ about what the tracker can see, and only if a run that fails can be reproduced.
 **The tracker cannot see the answer.** The simulator knows where every target is.
 A tracking algorithm never does. It receives camera frames and measured gimbal
 encoder readings, and nothing else. This is enforced by the type system, by a
-registration-time check, by a lint barrier, and by a runtime guard —
-[ADR-0003](docs/adr/0003-ground-truth-isolation.md) explains why four mechanisms
-rather than one.
+registration-time check, by a lint barrier, and by a runtime guard, and it fails
+closed: a type the compiler cannot prove ground-truth-free is rejected rather
+than admitted. [ADR-0003](docs/adr/0003-ground-truth-isolation.md) explains why
+four mechanisms rather than one.
 
 **Every run is reproducible.** A run is fully determined by its configuration
 and seed. There is no wall-clock input, no unseeded randomness, and each
@@ -60,11 +62,13 @@ than filled with plausible-looking placeholders.
 
 ## Getting started
 
-Prerequisites: Node.js 20.19+, pnpm 10+, and a stable Rust toolchain. See
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full setup.
+Prerequisites: Node.js 24 LTS, Corepack, and [rustup](https://rustup.rs). The
+exact pnpm and Rust versions are pinned by the repository, so nothing else needs
+choosing. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full setup.
 
 ```bash
-pnpm install
+corepack enable
+pnpm install --frozen-lockfile
 pnpm tauri:dev
 ```
 
