@@ -32,6 +32,10 @@ import {
 import type { CameraSensorFrame } from '@/core/contracts/sensors';
 import type { ActuatorTruth } from '@/core/gimbal/actuator-truth';
 import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
+import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';
+import { DEFAULT_BASELINE_PAT_CONFIG, baselineKfPidPat } from '@/core/algorithms';
+import type { BaselineDebug } from '@/core/algorithms';
+import type { PATMode } from '@/core/contracts/pat';
 import type { SensorCapture } from '@/core/sensors/virtual-camera';
 import type { SensorEvaluationTruth } from '@/core/sensors/sensor-truth';
 import { ExactWorldSampler } from '@/core/sensors/world-sampler';
@@ -56,6 +60,13 @@ interface Session {
    * keeps the pool from filling up during a long session.
    */
   heldCapture: SensorCapture | null;
+  /**
+   * The autonomous loop, or `null` while the operator is flying the mount.
+   *
+   * Built lazily when autonomy is first switched on and torn down when it is
+   * switched off, so a manual session carries none of its state.
+   */
+  runtime: ClosedLoopRuntime | null;
 }
 
 /** One point of the command-versus-measured trace. */
@@ -129,6 +140,24 @@ export interface SimulationStoreState {
   readonly showActuatorTruth: boolean;
   readonly responseHistory: readonly ResponseSample[];
 
+  /** Whether the tracking algorithm is flying the mount. */
+  readonly autonomyEnabled: boolean;
+  /** Identifier of the algorithm in command. */
+  readonly algorithmId: string;
+  /** PAT mode, read from the algorithm itself. Never a decoration. */
+  readonly patMode: PATMode | null;
+  /** The algorithm's own safe diagnostics, or `null` when it is not running. */
+  readonly algorithmDebug: BaselineDebug | null;
+  /** Draw the algorithm's detections on the sensor feed. */
+  readonly showAlgorithmOverlay: boolean;
+  /**
+   * Operator override: manual pointing while autonomy is engaged.
+   *
+   * Off by default, so a human cannot silently fight the controller. Turning it
+   * on is an explicit act and is visible on screen.
+   */
+  readonly manualOverride: boolean;
+
   loadScenarioById: (id: ScenarioId) => void;
   loadConfig: (config: SimulationConfig, scenarioId?: ScenarioId | null) => void;
   setImportError: (message: string | null) => void;
@@ -149,6 +178,13 @@ export interface SimulationStoreState {
   resetCamera: () => void;
   setTruthOverlay: (visible: boolean) => void;
   setActuatorTruthVisible: (visible: boolean) => void;
+
+  /** Hands the mount to the algorithm, or takes it back. */
+  setAutonomy: (enabled: boolean) => void;
+  /** Immediately disengages autonomy and pauses the run. */
+  emergencyStop: () => void;
+  setAlgorithmOverlay: (visible: boolean) => void;
+  setManualOverride: (enabled: boolean) => void;
 }
 
 /**
@@ -159,6 +195,45 @@ export interface SimulationStoreState {
  * to be replaced rather than a service to be called.
  */
 let session: Session | null = null;
+
+/**
+ * What the autonomous loop last produced, waiting to be drawn.
+ *
+ * The runtime calls back synchronously while it holds a borrowed frame lease,
+ * and a Zustand `set` from inside that callback would re-render React in the
+ * middle of the control loop. So the result is parked here and picked up by
+ * whichever store action is driving, after the loop has finished with it.
+ */
+let pendingDisplayFrame: CameraSensorFrame | null = null;
+let pendingDisplayTruth: SensorEvaluationTruth | null = null;
+let pendingOutput: { pat: { mode: PATMode }; debug: unknown } | null = null;
+
+/**
+ * Whether the operator is allowed to command the mount right now.
+ *
+ * While the algorithm is flying, manual commands are refused unless the
+ * operator has explicitly taken override. Two controllers issuing setpoints to
+ * one servo is not shared control, it is a fight, and the mount would sit
+ * wherever the last command landed with neither party understanding why.
+ */
+function canCommandManually(state: SimulationStoreState): boolean {
+  return !state.autonomyEnabled || state.manualOverride;
+}
+
+/** Drains the parked result into the shape the store stores. */
+function drainAutonomousFrame(): Partial<SimulationStoreState> {
+  if (pendingDisplayFrame === null) return {};
+  const update: Partial<SimulationStoreState> = {
+    sensorFrame: pendingDisplayFrame,
+    sensorTruth: pendingDisplayTruth,
+    patMode: pendingOutput?.pat.mode ?? null,
+    algorithmDebug: (pendingOutput?.debug ?? null) as BaselineDebug | null,
+  };
+  pendingDisplayFrame = null;
+  pendingDisplayTruth = null;
+  pendingOutput = null;
+  return update;
+}
 
 function createSession(config: SimulationConfig): Session {
   const engine = new SimulationEngine(config);
@@ -175,6 +250,7 @@ function createSession(config: SimulationConfig): Session {
     capturedThrough: -1,
     lastFrameIndex: 0,
     heldCapture: null,
+    runtime: null,
   };
 }
 
@@ -329,6 +405,12 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   showTruthOverlay: false,
   showActuatorTruth: false,
   responseHistory: [],
+  autonomyEnabled: false,
+  algorithmId: baselineKfPidPat.manifest.id,
+  patMode: null,
+  algorithmDebug: null,
+  showAlgorithmOverlay: true,
+  manualOverride: false,
   ...snapshotState(initialSession),
 
   loadScenarioById: (id) => {
@@ -337,6 +419,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
 
   loadConfig: (config, scenarioId = null) => {
     stopDriver();
+    const wasAutonomous = get().autonomyEnabled;
     session = createSession(config);
     set({
       scenarioId,
@@ -344,8 +427,14 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       paths: session.paths,
       importError: null,
       responseHistory: [],
+      patMode: null,
+      algorithmDebug: null,
       ...snapshotState(session),
     });
+    // A new scenario keeps the operator's choice about who is flying, but the
+    // algorithm starts from nothing: its filter, its scan and its state machine
+    // belong to the run that just ended.
+    if (wasAutonomous) get().setAutonomy(true);
   },
 
   setImportError: (message) => {
@@ -378,12 +467,21 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     stopDriver();
     active.engine.reset();
     active.scheduler.reset();
+    active.runtime?.reset();
     active.heldCapture?.release();
     active.heldCapture = null;
     active.sensor.reset();
     active.capturedThrough = -1;
     active.lastFrameIndex = 0;
-    set({ ...snapshotState(active), responseHistory: [] });
+    pendingDisplayFrame = null;
+    pendingDisplayTruth = null;
+    pendingOutput = null;
+    set({
+      ...snapshotState(active),
+      responseHistory: [],
+      patMode: null,
+      algorithmDebug: null,
+    });
   },
 
   stepOnce: () => {
@@ -394,22 +492,37 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     stopDriver();
 
     const previous = buildObserverFrame(active.engine.snapshot(), active.labels);
-    active.engine.step(1);
-    const current = buildObserverFrame(active.engine.snapshot(), active.labels);
-
-    // The frame captured here is the one that gets shown. Calling the snapshot
-    // helper instead would rasterize the same instant a second time, inflate the
-    // frame counters, and leak this lease.
-    const capturedTo = active.engine.time;
-    const result = active.sensor.captureLatest(active.sampler, active.capturedThrough, capturedTo);
-    active.capturedThrough = capturedTo;
 
     let sensorUpdate: Partial<SimulationStoreState> = {};
-    if (result.capture !== null) {
-      holdCapture(active, result.capture);
-      active.lastFrameIndex = result.capture.frame.frameId;
-      sensorUpdate = { sensorFrame: result.capture.frame, sensorTruth: result.capture.truth };
+
+    if (active.runtime !== null) {
+      active.runtime.step(1);
+      active.capturedThrough = active.engine.time;
+      sensorUpdate = drainAutonomousFrame();
+      if (sensorUpdate.sensorFrame != null) {
+        active.lastFrameIndex = sensorUpdate.sensorFrame.frameId;
+      }
+    } else {
+      active.engine.step(1);
+      // The frame captured here is the one that gets shown. Calling the
+      // snapshot helper instead would rasterize the same instant a second time,
+      // inflate the frame counters, and leak this lease.
+      const capturedTo = active.engine.time;
+      const result = active.sensor.captureLatest(
+        active.sampler,
+        active.capturedThrough,
+        capturedTo,
+      );
+      active.capturedThrough = capturedTo;
+
+      if (result.capture !== null) {
+        holdCapture(active, result.capture);
+        active.lastFrameIndex = result.capture.frame.frameId;
+        sensorUpdate = { sensorFrame: result.capture.frame, sensorTruth: result.capture.truth };
+      }
     }
+
+    const current = buildObserverFrame(active.engine.snapshot(), active.labels);
 
     const actuator = actuatorState(active);
 
@@ -441,18 +554,21 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     // simulated time, and while the run is paused nothing mechanical changes at
     // all. That is the whole difference from the ideal mount this replaced.
     const active = requireSession();
+    if (!canCommandManually(get())) return;
     active.engine.gimbal.commandPosition(azimuth, elevation);
     set(actuatorState(active));
   },
 
   nudgeCamera: (deltaAzimuth, deltaElevation) => {
     const active = requireSession();
+    if (!canCommandManually(get())) return;
     active.engine.gimbal.nudge(deltaAzimuth, deltaElevation);
     set(actuatorState(active));
   },
 
   resetCamera: () => {
     const active = requireSession();
+    if (!canCommandManually(get())) return;
     const gimbal = active.engine.config.gimbal;
     active.engine.gimbal.commandPosition(gimbal.pan.initialAngle, gimbal.tilt.initialAngle);
     set(actuatorState(active));
@@ -466,6 +582,67 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     set({ showActuatorTruth: visible });
   },
 
+  setAutonomy: (enabled) => {
+    const active = requireSession();
+
+    if (!enabled) {
+      // Handing back to the operator. The mount keeps whatever setpoint it was
+      // last given and continues under its own physics — it does not snap
+      // anywhere, because nothing physical changed.
+      active.runtime?.dispose();
+      active.runtime = null;
+      set({
+        autonomyEnabled: false,
+        manualOverride: false,
+        patMode: null,
+        algorithmDebug: null,
+      });
+      return;
+    }
+
+    active.runtime = new ClosedLoopRuntime({
+      engine: active.engine,
+      sensor: active.sensor,
+      sampler: active.sampler,
+      plugin: baselineKfPidPat,
+      config: DEFAULT_BASELINE_PAT_CONFIG,
+      historyLimit: 256,
+      // The interface's only connection to the loop: it is told what happened,
+      // after the fact, and copies the frame it wants to draw.
+      onFrame: (capture, output) => {
+        pendingDisplayFrame = capture.toOwned();
+        pendingDisplayTruth = capture.truth;
+        pendingOutput = output;
+      },
+    });
+
+    // The runtime drives the sensor from here, so the store's own capture
+    // bookkeeping must not also claim frames.
+    active.capturedThrough = active.engine.time;
+    set({
+      autonomyEnabled: true,
+      manualOverride: false,
+      patMode: null,
+      algorithmDebug: null,
+    });
+  },
+
+  emergencyStop: () => {
+    const active = requireSession();
+    active.scheduler.pause();
+    stopDriver();
+    get().setAutonomy(false);
+    set({ status: active.scheduler.status });
+  },
+
+  setAlgorithmOverlay: (visible) => {
+    set({ showAlgorithmOverlay: visible });
+  },
+
+  setManualOverride: (enabled) => {
+    set({ manualOverride: enabled });
+  },
+
   advance: (elapsedSeconds) => {
     const active = requireSession();
     const budget = active.scheduler.advance(elapsedSeconds);
@@ -476,23 +653,42 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     }
 
     const previous = get().currentFrame;
-    active.engine.step(budget.ticks);
-    const current = buildObserverFrame(active.engine.snapshot(), active.labels);
 
-    // The camera runs on its own clock. Only the newest frame due in the
-    // interval is rasterized: a viewer can look at one image, so building the
-    // ones behind it would cost time and memory to produce something discarded
-    // immediately, and would let a slow display accumulate a backlog.
-    const capturedTo = active.engine.time;
-    const result = active.sensor.captureLatest(active.sampler, active.capturedThrough, capturedTo);
-    active.capturedThrough = capturedTo;
-
+    // Two ways to advance, and which one runs is the difference between the
+    // operator flying the mount and the algorithm flying it.
+    //
+    // Under autonomy the runtime owns the sensor: it steps the world frame by
+    // frame, hands every frame to the algorithm in capture order, and issues
+    // the commands. The display then copies whatever the last frame was. Under
+    // manual control the store drives the sensor itself and rasterises only the
+    // newest frame due, because a viewer can look at one image.
     let sensorUpdate: Partial<SimulationStoreState> = {};
-    if (result.capture !== null) {
-      holdCapture(active, result.capture);
-      active.lastFrameIndex = result.capture.frame.frameId;
-      sensorUpdate = { sensorFrame: result.capture.frame, sensorTruth: result.capture.truth };
+
+    if (active.runtime !== null) {
+      active.runtime.step(budget.ticks);
+      active.capturedThrough = active.engine.time;
+      sensorUpdate = drainAutonomousFrame();
+      if (sensorUpdate.sensorFrame != null) {
+        active.lastFrameIndex = sensorUpdate.sensorFrame.frameId;
+      }
+    } else {
+      active.engine.step(budget.ticks);
+      const capturedTo = active.engine.time;
+      const result = active.sensor.captureLatest(
+        active.sampler,
+        active.capturedThrough,
+        capturedTo,
+      );
+      active.capturedThrough = capturedTo;
+
+      if (result.capture !== null) {
+        holdCapture(active, result.capture);
+        active.lastFrameIndex = result.capture.frame.frameId;
+        sensorUpdate = { sensorFrame: result.capture.frame, sensorTruth: result.capture.truth };
+      }
     }
+
+    const current = buildObserverFrame(active.engine.snapshot(), active.labels);
 
     const actuator = actuatorState(active);
 

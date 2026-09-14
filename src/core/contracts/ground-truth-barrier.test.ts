@@ -129,6 +129,18 @@ const probes: readonly Probe[] = [
     source: `import type { ActuatorTruth } from '@/core/gimbal';\nexport type Probe = ActuatorTruth;\n`,
   },
   {
+    path: join(probeDirectory, 'runtime-import.ts'),
+    source: `import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';\nexport const probe = ClosedLoopRuntime;\n`,
+  },
+  {
+    path: join(probeDirectory, 'runtime-relative-import.ts'),
+    source: `import type { IssuedCommand } from '../../runtime/closed-loop';\nexport type Probe = IssuedCommand;\n`,
+  },
+  {
+    path: join(probeDirectory, 'scenarios-import.ts'),
+    source: `import { loadScenario } from '@/scenarios';\nexport const probe = loadScenario;\n`,
+  },
+  {
     path: join(coreDirectory, 'three-import.ts'),
     source: `import * as three from 'three';\nexport const probe = three;\n`,
   },
@@ -260,6 +272,30 @@ describe('actuator barrier', () => {
   it('leaves evaluation free to read the actuator interior', async () => {
     const rules = await lintProbe(eslint, join(allowedDirectory, 'gimbal-privileged-import.ts'));
     expect(rules).not.toContain(RESTRICTED_RULE);
+  });
+});
+
+describe('scenario barrier', () => {
+  it('blocks the tracking side from loading a scenario', async () => {
+    // A scenario document contains the target trajectories in full. An
+    // algorithm that could load one would not need to track anything.
+    const rules = await lintProbe(eslint, join(probeDirectory, 'scenarios-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+});
+
+describe('closed-loop runtime barrier', () => {
+  it('blocks the tracking side from reaching the runtime', async () => {
+    // The runtime holds the engine, the sensor and the mount, and is what
+    // decides when a command enters the physical system. An algorithm that
+    // could import it could drive the mount directly or forge a command time.
+    const rules = await lintProbe(eslint, join(probeDirectory, 'runtime-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
+  });
+
+  it('blocks a relative path into the runtime', async () => {
+    const rules = await lintProbe(eslint, join(probeDirectory, 'runtime-relative-import.ts'));
+    expect(rules).toContain(RESTRICTED_RULE);
   });
 });
 

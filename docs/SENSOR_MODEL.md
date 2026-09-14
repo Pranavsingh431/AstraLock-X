@@ -291,6 +291,10 @@ none is warranted on this evidence.
 | `mono16`                                                | Declared in the contract; the renderer refuses it rather than emitting 8-bit data in a 16-bit buffer                                            |
 | Detection, estimation, control, PAT                     | Nothing looks at the pixels                                                                                                                     |
 
+Since Phase 4 something does look at the pixels: `baseline-kf-pid` reads
+`frame.data` directly and nothing else. See
+[BASELINE_PAT.md](BASELINE_PAT.md).
+
 GRAY8 — spelled `mono8` in the pixel-format contract, for continuity with
 Phase 0 — is the authoritative sensor format. The UI expands it to RGBA to draw
 it, which is a display concern only; a detector has no use for three identical

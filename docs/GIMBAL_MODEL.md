@@ -95,43 +95,35 @@ splits the tick in two.
 
 ### Stability bound
 
-The discrete system is stable only for a bounded `ω·dt`. The scenario schema
-**rejects** any configuration where
+The closed-form path has no stability condition — it is the analytic answer, and
+is well behaved even at `ω·dt = 2`. The clamped Euler fallback does. The
+scenario schema therefore still **rejects** any configuration where
 
 ```
   ω·dt = 2π·naturalFrequency / tickRate  >  0.5
 ```
 
 (`MAX_SERVO_OMEGA_TIMESTEP` in `src/core/contracts/gimbal.ts`). This is a
-validation error at load time, not a runtime surprise. `numerics.test.ts`
-demonstrates both that the model is well behaved at the bound and that it
-diverges well past it, so the bound is load-bearing rather than decorative.
+validation error at load time, not a runtime surprise. Its meaning changed with
+ADR-0012: it now guards the saturated fallback rather than the main path.
 
 ### Accuracy
 
-Measured against the closed-form step response, peak transient error as a
-fraction of the commanded step, at ω·dt = 0.251 (8 Hz servo, 200 Hz tick):
+The unsaturated path is exact. Measured against the closed-form step response,
+peak error as a fraction of the commanded step, at the bundled 200 Hz tick:
 
-| Damping ratio ζ | Peak transient error |
-| --------------- | -------------------- |
-| 0.3             | 12%                  |
-| 0.7             | 9.6%                 |
-| 0.9             | 8.6%                 |
-| 1.0             | 8.2%                 |
-| 1.5             | 6.5%                 |
+| Profile                            | ω·dt  | Phase 3 (Euler) | Now (closed form) |
+| ---------------------------------- | ----- | --------------- | ----------------- |
+| Near-ideal (12 Hz, ζ = 0.9)        | 0.377 | 13.3%           | 4 × 10⁻¹⁴%        |
+| Realistic-lab pan (6 Hz, ζ = 0.65) | 0.189 | 7.3%            | 7 × 10⁻¹⁴%        |
+| Realistic-lab tilt (5 Hz, ζ = 0.7) | 0.157 | 5.9%            | 7 × 10⁻¹⁴%        |
 
-Three things about those numbers, all verified in `numerics.test.ts`:
+That is floating-point noise, in every damping regime, at every step size.
+Settling-time difference against the continuous solution is zero.
 
-- The error is **in the transient only**. Steady-state error is zero to machine
-  precision — the fixed point of the update is the setpoint itself.
-- It is **first order in the step**: halving the tick halves it. Measured ratios
-  over three halvings are 2.05, 2.02, 2.01.
-- It is **proportional to the size of the step**, so it is a relative error.
-
-A scenario that needs better accuracy can have it by raising the tick rate or
-lowering the servo bandwidth; at ω·dt = 0.0063 the error is under 0.3%. The
-figures are stated here rather than left to be rediscovered, because a model
-whose error nobody has measured is not a model.
+The saturated fallback remains first-order in the step. A scenario that spends
+most of its time against the acceleration limit gets that accuracy, which is
+what the `ω·dt` bound above is now for.
 
 ## The six effects
 

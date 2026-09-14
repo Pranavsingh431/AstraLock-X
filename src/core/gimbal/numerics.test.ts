@@ -134,43 +134,53 @@ describe('the discrete axis against the closed form', () => {
   // profile's bandwidth: omega*dt = 0.25, half the validated ceiling.
   const TICK = 1 / 200;
 
-  // Measured peak transient error against the closed form, as a fraction of the
-  // step, at omega*dt = 0.251 (8 Hz servo, 200 Hz tick). These are the model's
-  // real accuracy and are quoted in docs/GIMBAL_MODEL.md rather than left for
-  // someone to rediscover: the error is in the transient, it shrinks with the
-  // tick, and it is zero at steady state.
+  // The unsaturated step is taken with the closed-form transition matrix, so
+  // the only error is floating point. Phase 3 integrated this path with
+  // semi-implicit Euler and paid 13.3% of a step in peak transient error on the
+  // near-ideal profile; that was discovered in the Phase 4 preflight and is the
+  // reason the integrator changed. See ADR-0012.
   it.each([
-    ['under-damped', 0.3, 0.12],
-    ['lightly damped', 0.7, 0.097],
-    ['near critical', 0.9, 0.087],
-    ['critically damped', 1, 0.083],
-    ['over-damped', 1.5, 0.065],
-  ])('tracks a %s response at the bundled tick', (_label, zeta, tolerance) => {
-    const error = worstError(8, zeta, TICK);
-    expect(error).toBeLessThan(tolerance);
-    // And is not trivially small, which would mean the case proves nothing:
-    // first-order Euler at this step really does cost several percent.
-    expect(error).toBeGreaterThan(tolerance / 2);
+    ['under-damped', 0.3],
+    ['lightly damped', 0.7],
+    ['near critical', 0.9],
+    ['critically damped', 1],
+    ['over-damped', 1.5],
+    ['heavily over-damped', 5],
+  ])('reproduces a %s response to machine precision', (_label, zeta) => {
+    expect(worstError(8, zeta, TICK)).toBeLessThan(1e-12);
   });
 
-  it('is accurate to a fraction of a percent when the axis is slow for the tick', () => {
-    // omega*dt = 0.0063. The error is a property of the step, not of the model,
-    // and a scenario that needs better can have it by asking for it.
-    expect(worstError(0.2, 0.7, TICK)).toBeLessThan(0.003);
+  it.each([
+    ['near-ideal', 12, 0.9],
+    ['realistic-lab pan', 6, 0.65],
+    ['realistic-lab tilt', 5, 0.7],
+  ])('reproduces the bundled %s profile exactly', (_label, frequency, zeta) => {
+    // Both shipped profiles, at the tick they actually run at. These are the
+    // plants the Phase 4 controller is tuned against, so their fidelity is not
+    // a general claim about the integrator but a specific one about them.
+    expect(worstError(frequency, zeta, TICK)).toBeLessThan(1e-12);
   });
 
-  it('converges as the step shrinks, at first order', () => {
-    // Semi-implicit Euler is first-order accurate: halving dt should roughly
-    // halve the error. Checked over three halvings so a coincidence at one
-    // step size cannot pass.
-    const errors = [TICK, TICK / 2, TICK / 4, TICK / 8].map((dt) => worstError(8, 0.7, dt));
+  it('is exact regardless of step size, not merely convergent', () => {
+    // The distinguishing property. A convergent integrator gets better as the
+    // step shrinks; this one is already right, so every step size agrees.
+    const errors = [TICK, TICK / 2, TICK / 4, TICK * 4].map((dt) => worstError(8, 0.7, dt));
+    for (const error of errors) expect(error).toBeLessThan(1e-12);
+  });
 
-    for (let index = 1; index < errors.length; index += 1) {
-      const ratio = errors[index - 1]! / errors[index]!;
-      expect(ratio).toBeGreaterThan(1.9);
-      expect(ratio).toBeLessThan(2.2);
-    }
-    expect(errors[errors.length - 1]!).toBeLessThan(0.012);
+  it('stays exact for a large step, where Euler was unstable', () => {
+    // omega*dt = 2.0, four times the bound the Euler path needed. The closed
+    // form has no stability condition: it is the analytic answer.
+    const dt = 1 / 200;
+    const frequency = 2 / (2 * Math.PI * dt);
+    expect(worstError(frequency, 0.7, dt, 1, 1)).toBeLessThan(1e-10);
+  });
+
+  it('scales with the size of the step only through floating point', () => {
+    const small = worstError(8, 0.7, TICK, 0.1);
+    const large = worstError(8, 0.7, TICK, 1);
+    expect(small).toBeLessThan(1e-12);
+    expect(large).toBeLessThan(1e-12);
   });
 
   it('has no steady-state error at all', () => {
@@ -184,13 +194,7 @@ describe('the discrete axis against the closed form', () => {
     expect(axis.state().motorRate).toBeCloseTo(0, 12);
   });
 
-  it('scales with the size of the step, so the error is relative not absolute', () => {
-    const small = worstError(8, 0.7, TICK, 0.1);
-    const large = worstError(8, 0.7, TICK, 1);
-    expect(large / small).toBeCloseTo(10, 1);
-  });
-
-  it('reproduces the theoretical overshoot to within a percent of the step', () => {
+  it('reproduces the theoretical overshoot', () => {
     const zeta = 0.3;
     const axis = linearAxis(4, zeta);
     axis.setSetpoint(1);
@@ -201,16 +205,19 @@ describe('the discrete axis against the closed form', () => {
       peak = Math.max(peak, axis.state().motorAngle);
     }
 
-    // Within 1% of the step: the discrete peak is slightly low, which is the
-    // same transient error measured above showing up at the overshoot.
+    // The sampled peak sits a hair below the continuous one purely because the
+    // sample grid may not land on the instant of the true maximum; the bound is
+    // the curvature of the response over half a tick, not integration error.
     const theoretical = 1 + Math.exp((-Math.PI * zeta) / Math.sqrt(1 - zeta * zeta));
-    expect(Math.abs(peak - theoretical)).toBeLessThan(0.01);
+    expect(peak).toBeLessThanOrEqual(theoretical + 1e-12);
+    expect(Math.abs(peak - theoretical)).toBeLessThan(1e-3);
   });
 
   it('stays stable right at the validated ceiling', () => {
-    // The schema refuses a scenario whose omega*dt exceeds this. At the bound
-    // the response must still be a decaying oscillation rather than a growing
-    // one — that is what the bound is for.
+    // The schema still refuses a scenario above this bound. It no longer
+    // guards the unsaturated path, which has no stability condition at all —
+    // it guards the clamped Euler fallback the axis uses while a limit binds,
+    // which is still first order and still conditionally stable.
     const dt = 1 / 200;
     const naturalFrequency = MAX_SERVO_OMEGA_TIMESTEP / (2 * Math.PI * dt);
     const axis = linearAxis(naturalFrequency, 0.7);
@@ -229,16 +236,46 @@ describe('the discrete axis against the closed form', () => {
     expect(latePeak).toBeLessThan(peak * 1e-3);
   });
 
-  it('diverges well past the ceiling, which is why the ceiling is validated', () => {
-    // Not a demand on the model — a demonstration that the schema bound is
-    // load-bearing rather than decorative.
-    const dt = 1 / 200;
-    const reckless = (MAX_SERVO_OMEGA_TIMESTEP * 10) / (2 * Math.PI * dt);
-    const axis = linearAxis(reckless, 0.7);
+  it('remains bounded when the saturated fallback is the path taken', () => {
+    // A tight acceleration limit forces the clamped Euler branch for most of
+    // the run. It must still converge rather than ring away.
+    const config = gimbalConfigSchema.parse({
+      pan: {
+        initialAngle: 0,
+        minAngle: -10,
+        maxAngle: 10,
+        maxRate: 0.4,
+        maxAcceleration: 1.5,
+        naturalFrequency: 8,
+        dampingRatio: 0.7,
+        deadband: 0,
+        backlash: 0,
+        encoderResolution: 1e-9,
+      },
+      tilt: {
+        initialAngle: 0,
+        minAngle: -10,
+        maxAngle: 10,
+        maxRate: 0.4,
+        maxAcceleration: 1.5,
+        naturalFrequency: 8,
+        dampingRatio: 0.7,
+        deadband: 0,
+        backlash: 0,
+        encoderResolution: 1e-9,
+      },
+      commandLatency: 0,
+    });
+    const axis = new GimbalAxis(config.pan);
     axis.setSetpoint(1);
 
-    for (let step = 0; step < 200; step += 1) axis.advance(dt);
+    let sawSaturation = false;
+    for (let step = 0; step < 8000; step += 1) {
+      axis.advance(1 / 200);
+      sawSaturation ||= axis.state().flags.accelerationSaturated;
+    }
 
-    expect(Math.abs(axis.state().motorAngle - 1)).toBeGreaterThan(1);
+    expect(sawSaturation).toBe(true);
+    expect(axis.state().motorAngle).toBeCloseTo(1, 6);
   });
 });

@@ -8,8 +8,8 @@ What actually works, and what does not. Updated at the end of each phase.
 | 1     | Simulation core: world, motion, seeded RNG, tick loop, 3D observer | **Complete** |
 | 2     | Virtual optical camera and sensor image pipeline                   | **Complete** |
 | 3     | Dynamic pan/tilt gimbal and actuator system                        | **Complete** |
-| 4     | Perception and estimation; first algorithm plugins; Scenario Lab   | Not started  |
-| 5     | Control and PAT state machine; Calibration                         | Not started  |
+| 4     | First autonomous closed-loop coarse PAT                            | **Complete** |
+| 5     | Robust PAT: IMM, beacon identity, uncertainty-aware recovery       | Not started  |
 | 6     | Metrics, experiment runner, AstraBench, Replay, Reports            | Not started  |
 | 7     | Mission Control: live 3D scene, camera view, telemetry plots       | Not started  |
 | 8     | Hardware-in-the-loop: serial and USB device drivers                | Not started  |
@@ -966,5 +966,183 @@ Median of five runs of 200,000 ticks on the development machine: mount alone
 
 ### Next
 
-Phase 4 — perception and estimation. Do not begin it without an explicit
-request.
+Phase 4 — the first autonomous closed loop. See below.
+
+---
+
+## Phase 4 — First autonomous closed-loop coarse PAT
+
+**Complete.**
+
+The loop is closed. Nothing in Phases 0–3 read the pixels; now something does,
+and what it decides moves the mount, and the mount moving changes the pixels.
+
+### Preflight: the actuator was not accurate enough
+
+Before tuning any controller, the phase required the numerical quality of the
+**shipped** gimbal profiles to be measured against the closed-form response.
+All three failed the 5% gate:
+
+| Profile                            | ω·dt  | Peak error | RMS transient | Settling difference |
+| ---------------------------------- | ----- | ---------- | ------------- | ------------------- |
+| Near-ideal (12 Hz, ζ = 0.9)        | 0.377 | **13.3%**  | 7.0%          | +10 ms              |
+| Realistic-lab pan (6 Hz, ζ = 0.65) | 0.189 | **7.3%**   | 3.4%          | −10 ms              |
+| Realistic-lab tilt (5 Hz, ζ = 0.7) | 0.157 | **5.9%**   | 2.8%          | −20 ms              |
+
+A controller tuned against that plant would have been compensating for the
+integrator rather than the mechanism, and its gains would have been wrong at any
+other tick rate.
+
+The unsaturated step is now taken in **closed form** — the matrix exponential of
+the second-order system, which is exact rather than convergent. Error fell to
+~4 × 10⁻¹⁴% on every profile, in every damping regime, at every step size, with
+zero settling-time difference. The clamped Euler path is retained for saturated
+intervals, where the system is genuinely nonlinear. The plant was **not**
+softened to make tracking easier: nothing about its bandwidth, limits, deadband,
+backlash or encoder changed. See
+[ADR-0012](adr/0012-exact-servo-discretisation.md).
+
+### What was built
+
+**A real detector** on GRAY8 pixels: threshold, 8-connected components by
+iterative flood fill, per-component area, peak, background-subtracted integrated
+intensity, bounding box and intensity-moment sub-pixel centroid. Selection is
+the strongest total signal — purely image-based, no identity.
+
+**Pixel to bearing** by inverse pinhole, rotated into world ENU with the
+**measured** mount pose. Round-trip against the simulator's own optics is exact
+to better than 1e-9 rad; with a quantised pose the bearing carries exactly the
+encoder error, and that error is not corrected.
+
+**A constant-velocity Kalman filter** over (azimuth, elevation, and their
+rates), with the standard white-noise-acceleration Q, Joseph-form covariance
+update, enforced symmetry, shortest-arc azimuth innovation, timestamp-derived
+dt, and sub-stepped long gaps.
+
+**A PID outer loop** around the mount's existing position servo, with
+conditional-integration anti-windup, a hard integral cap and a filtered
+derivative. It outputs a correction to the commanded angle, never a torque or a
+rate, and never bypasses the actuator.
+
+**A deterministic raster search** with no target prior, advancing only on
+measured position, measured rate and dwell, with a simulated-time waypoint
+timeout so a deadband cannot stall it.
+
+**SEARCH / TRACK / LOST** — and no more. `PATMode` gained a `lost` member so the
+baseline can report where it is without claiming the predictive recovery
+`reacquire` describes.
+
+**A closed-loop runtime** that owns causality: it advances the world only as far
+as the next frame, delivers every frame in capture order, stamps the command
+with the time the request actually existed, and releases the frame lease in a
+`finally`. The algorithm returns an **intent** with no timestamp and never holds
+the mount. See [ADR-0013](adr/0013-command-intent-and-issue-time.md).
+
+**Three bundled PAT scenarios**, and Mission Control controls to hand the mount
+to the tracker, watch its detections on the sensor feed, and take it back.
+
+### Verification
+
+| Check                  | Result                                |
+| ---------------------- | ------------------------------------- |
+| `pnpm format`          | clean                                 |
+| `pnpm lint`            | 0 errors, 0 warnings                  |
+| `tsc -b --force`       | 0 errors                              |
+| `pnpm test`            | 798 passing, 41 files                 |
+| `pnpm build`           | succeeds                              |
+| `cargo fmt` / `clippy` | clean                                 |
+| Manual (desktop app)   | all 17 demo steps, truth overlays off |
+
+177 tests added.
+
+### Measured results
+
+Judged from outside with privileged truth the algorithm never sees. Error is the
+beacon's true distance from the principal point, from 3 s after acquisition.
+
+| Scenario                     | Acquired | Modes                          | Visible | Median  | p95     |
+| ---------------------------- | -------- | ------------------------------ | ------- | ------- | ------- |
+| `pat-stationary-outside-fov` | 12.0 s   | SEARCH → TRACK                 | 100%    | 0.48 px | 4.28 px |
+| `pat-moving-target`          | 26.0 s   | SEARCH → TRACK                 | 100%    | 0.19 px | 3.20 px |
+| `pat-loss`                   | 0.02 s   | SEARCH → TRACK → LOST → SEARCH | 8.2%    | 2.27 px | 5.52 px |
+
+The stationary median is slightly _worse_ than the moving one. That is real: on
+a stationary target the loop settles into a small limit cycle driven by the
+mount's deadband and backlash, while on a constant-velocity target the integral
+settles into a steady lag that happens to sit nearer centre.
+
+Per-frame cost at 640×480: detector 0.97–1.05 ms, whole path 1.02 ms mean and
+1.15 ms p95, against a 16.67 ms frame period — about 6% of budget. No case for
+Rust, WASM or OpenCV at this resolution.
+
+### Bugs found while building this
+
+1. **The runtime's issue time depended on batch size.** Advancing ten ticks and
+   then processing the frames inside that span handed the mount every command
+   late by the batch, so the same scenario behaved differently headless and on
+   screen. The runtime now walks frame by frame; a test compares batched against
+   single-tick execution and requires identical frames, modes, command ids and
+   world state hash.
+2. **The exact servo step could exceed the acceleration limit mid-step.**
+   Checking the demand only at the start of the interval let the linear solution
+   ask for more than the mechanism has on the step where a fast axis comes out
+   of saturation. Two further checks — the mean acceleration implied and the
+   demand at the far end — close it.
+3. **`@/scenarios` was reachable from the algorithm side.** A bundled scenario
+   contains the target trajectories in full; an algorithm that could load one
+   would not need to track anything. Now barred, with a probe test.
+
+### Known weaknesses of the baseline
+
+Recorded because the robust phase needs a real baseline to beat, not a flattered
+one.
+
+1. **The brightest blob wins.** No beacon identity: anything brighter and
+   compact captures the tracker. A test asserts exactly this failure.
+2. **Acquisition is slow** — tens of seconds for a blind raster over a large
+   region. No uncertainty weighting, no prior.
+3. **Recovery is nothing.** LOST discards the track and restarts the scan from
+   the beginning.
+4. **The constant-velocity model lags a manoeuvre**, trailing through the
+   fastest part of a crossing pass.
+5. **No feed-forward**, so a constant-rate target sits at a steady offset that
+   only the integral slowly removes.
+6. **No measurement gating.** A single wrong detection is folded straight in;
+   the NIS is computed and reported but not used to reject.
+7. **One track.** No association; a second bright object is ignored or steals
+   the track.
+8. **Fixed detector thresholds.**
+
+### Limitations
+
+1. **The sensor is still ideal and noiseless**, so the measured centroid
+   accuracy is a best case. Camera noise arrives in a later phase.
+2. **No compute-time model.** Algorithm latency is zero once a frame is
+   available; only the mount's command latency is modelled.
+3. **`snr` is reported as 0 dB** because no noise model exists to compute it
+   from. It is not an invented figure.
+4. **Azimuth wrapping is exercised by unit tests only.** No bundled scenario
+   crosses ±π, though the mount's ±170° pan travel includes it.
+5. **`estimatedPointingError` is the tracker's own belief**, not the true error.
+   An over-confident filter reports a small number here while missing badly;
+   detecting that gap is evaluation's job and evaluation does not exist yet.
+6. **Interactive playback with autonomy engaged runs below the requested speed
+   multiplier** on this machine — the per-frame React re-render, not the loop,
+   is the bottleneck. The engineering result is unaffected and this is proved:
+   headless and irregular interactive cadence produce identical frames, modes,
+   command ids and state hash.
+7. **Everything inherited from Phases 2 and 3 still applies** — no link budget,
+   no occlusion, no `mono16`, no actuator disturbance, friction or
+   cross-coupling.
+
+### Deliberately not implemented
+
+IMM or constant-acceleration estimators, coded beacon authentication, CNN/ONNX
+verification, adaptive uncertainty-aware recovery, atmospheric disturbance,
+camera noise, FailureHunter, AstraBench, MPC, hardware-in-the-loop, an
+experiment recorder or report generator, and the robust
+SEARCH/ACQUIRE/TRACK/RECOVER/HANDOFF architecture. All belong to later phases.
+
+### Next
+
+Phase 5 — the robust tracker. Do not begin it without an explicit request.

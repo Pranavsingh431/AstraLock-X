@@ -22,6 +22,8 @@
 
 import type { GimbalAxisConfig } from '@/core/contracts/gimbal';
 
+import { ServoTransitionCache } from './servo-transition';
+
 /** Why an axis is not doing what it was asked. */
 export interface AxisSaturationFlags {
   readonly atMinLimit: boolean;
@@ -113,9 +115,13 @@ export class GimbalAxis {
   /** `2*pi*f`, precomputed because it is used twice per step. */
   private readonly omega: number;
 
+  /** Closed-form step for the unsaturated path, cached on `dt`. */
+  private readonly transition: ServoTransitionCache;
+
   constructor(config: GimbalAxisConfig) {
     this.config = config;
     this.omega = 2 * Math.PI * config.naturalFrequency;
+    this.transition = new ServoTransitionCache(this.omega, config.dampingRatio);
 
     this.setpointAngle = clamp(config.initialAngle, config.minAngle, config.maxAngle);
     this.motorAngle = this.setpointAngle;
@@ -165,19 +171,39 @@ export class GimbalAxis {
   /**
    * Integrates one interval.
    *
-   * Semi-implicit (symplectic) Euler: the rate is updated first and the new
-   * rate moves the angle. For a damped oscillator this is stable to far larger
-   * steps than forward Euler and does not inject energy, which matters because
-   * an axis that slowly gained amplitude would look exactly like a badly tuned
-   * servo rather than like a broken integrator.
+   * Two paths, chosen by whether the mechanism is against a limit.
+   *
+   * **Unsaturated — exact.** While no limit binds, the axis is a linear
+   * time-invariant second-order system and the step is taken with its closed-
+   * form transition matrix (see `servo-transition.ts`). There is no
+   * discretisation error at all: the result is the analytic solution evaluated
+   * at the step boundary.
+   *
+   * The deadband does not spoil this. Outside the band the subtractive dead
+   * zone is affine in the angle, so the dynamics are still LTI about a shifted
+   * setpoint `setpoint − B·sign(e)`; inside it the servo demand is zero and the
+   * axis coasts under damping alone, which is the same transition with the
+   * shifted setpoint placed at the current angle.
+   *
+   * **Saturated — clamped semi-implicit Euler.** When the acceleration or rate
+   * limit binds the system is no longer linear and there is no closed form, so
+   * the step falls back to
    *
    * ```
-   *   e      = deadband(setpoint - motorAngle)
-   *   a_raw  = omega^2 * e - 2 * zeta * omega * motorRate
    *   a      = clamp(a_raw, +/- maxAcceleration)
    *   rate'  = clamp(motorRate + a * dt, +/- maxRate)
    *   angle' = clamp(motorAngle + rate' * dt, minAngle, maxAngle)
    * ```
+   *
+   * which is first-order accurate. That is acceptable where it applies: a
+   * saturated axis is moving at a constant clamped acceleration or a constant
+   * clamped rate, and Euler integrates both of those exactly in the rate.
+   *
+   * Saturation is decided from the demand at the start of the step and
+   * re-checked against the rate the exact step would produce. For a decaying
+   * second-order response the demanded acceleration is largest at the beginning
+   * of a step, so an interval that is unsaturated at both ends is unsaturated
+   * throughout in every case the bundled profiles produce.
    *
    * `dt` is a parameter rather than a constant because a command that becomes
    * due mid-tick splits the tick in two; see `DynamicGimbal`.
@@ -197,19 +223,66 @@ export class GimbalAxis {
     // `maxAcceleration` and `maxRate` are branded units; the bounds are plain
     // numbers derived from them, which is what `clamp` works in.
     const accelerationBound: number = this.config.maxAcceleration;
+    const rateBound: number = this.config.maxRate;
     const limitedAcceleration = clamp(rawAcceleration, -accelerationBound, accelerationBound);
 
     this.commandedAcceleration = rawAcceleration;
     this.appliedAcceleration = limitedAcceleration;
     this.accelerationSaturated = limitedAcceleration !== rawAcceleration;
 
-    const unlimitedRate = this.motorRate + limitedAcceleration * dt;
-    const rateBound: number = this.config.maxRate;
-    const limitedRate = clamp(unlimitedRate, -rateBound, rateBound);
-    this.rateSaturated = limitedRate !== unlimitedRate;
-    this.motorRate = limitedRate;
+    let proposedAngle: number;
 
-    const proposedAngle = this.motorAngle + this.motorRate * dt;
+    if (!this.accelerationSaturated) {
+      // The setpoint the linear system is actually driving towards: the real
+      // one, less whatever the dead zone swallows.
+      const effectiveSetpoint = this.motorAngle + error;
+      const phi = this.transition.at(dt);
+      const e0 = this.motorAngle - effectiveSetpoint;
+      const v0 = this.motorRate;
+
+      const exactAngle = effectiveSetpoint + phi.phi11 * e0 + phi.phi12 * v0;
+      const exactRate = phi.phi21 * e0 + phi.phi22 * v0;
+
+      // The demand was within the acceleration limit at the *start* of the
+      // step, but the linear solution may still ask for more than the
+      // mechanism has partway through — most obviously on the step where a
+      // fast-moving axis first comes out of acceleration saturation, where the
+      // damping term is large. Two further checks close that gap: the mean
+      // acceleration the step actually implies, and the demand at the far end.
+      // A hard acceleration limit is a property of the plant, so the linear
+      // path may only be used where the plant could genuinely have followed it.
+      const meanAcceleration = (exactRate - v0) / dt;
+      const endError = applyDeadband(this.setpointAngle - exactAngle, this.config.deadband);
+      const endAcceleration =
+        this.omega * this.omega * endError - 2 * this.config.dampingRatio * this.omega * exactRate;
+
+      const exceedsAcceleration =
+        Math.abs(meanAcceleration) > accelerationBound ||
+        Math.abs(endAcceleration) > accelerationBound;
+      const exceedsRate = Math.abs(exactRate) > rateBound;
+
+      if (exceedsAcceleration || exceedsRate) {
+        // Not a linear interval after all. Take it the clamped way.
+        const unlimitedRate = v0 + limitedAcceleration * dt;
+        const limitedRate = clamp(unlimitedRate, -rateBound, rateBound);
+        this.rateSaturated = limitedRate !== unlimitedRate;
+        this.accelerationSaturated = exceedsAcceleration;
+        this.appliedAcceleration = clamp(meanAcceleration, -accelerationBound, accelerationBound);
+        this.motorRate = limitedRate;
+        proposedAngle = this.motorAngle + this.motorRate * dt;
+      } else {
+        this.rateSaturated = false;
+        this.motorRate = exactRate;
+        proposedAngle = exactAngle;
+      }
+    } else {
+      const unlimitedRate = this.motorRate + limitedAcceleration * dt;
+      const limitedRate = clamp(unlimitedRate, -rateBound, rateBound);
+      this.rateSaturated = limitedRate !== unlimitedRate;
+      this.motorRate = limitedRate;
+      proposedAngle = this.motorAngle + this.motorRate * dt;
+    }
+
     const stoppedAngle = clamp(proposedAngle, this.config.minAngle, this.config.maxAngle);
 
     if (stoppedAngle !== proposedAngle) {

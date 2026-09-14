@@ -13,6 +13,7 @@
 
 import { useEffect, useRef } from 'react';
 
+import type { BaselineDebug } from '@/core/algorithms';
 import type { CameraSensorFrame } from '@/core/contracts/sensors';
 import type { SensorEvaluationTruth } from '@/core/sensors/sensor-truth';
 import { useSimulationStore } from '@/stores/simulation-store';
@@ -75,6 +76,74 @@ function drawTruthOverlay(
   context.restore();
 }
 
+/**
+ * Draws what the **algorithm** believes, from its own safe output.
+ *
+ * Nothing here comes from `SensorEvaluationTruth`. The centroid is the one the
+ * detector computed from these pixels, the box is the component it selected,
+ * and the predicted marker is the filter's estimate projected back through the
+ * believed calibration and the measured pose. An operator can turn every
+ * privileged overlay off and still watch the tracker work — which is the point:
+ * if this overlay tracked the beacon only while truth was enabled, the tracker
+ * would not be tracking.
+ */
+function drawAlgorithmOverlay(
+  context: CanvasRenderingContext2D,
+  debug: BaselineDebug,
+  width: number,
+  height: number,
+): void {
+  context.save();
+  context.lineWidth = 1;
+  context.font = '10px ui-monospace, monospace';
+
+  // The principal point: where the controller is trying to put the target.
+  context.strokeStyle = 'rgba(148, 163, 184, 0.55)';
+  context.beginPath();
+  context.moveTo(width / 2 - 14, height / 2);
+  context.lineTo(width / 2 - 4, height / 2);
+  context.moveTo(width / 2 + 4, height / 2);
+  context.lineTo(width / 2 + 14, height / 2);
+  context.moveTo(width / 2, height / 2 - 14);
+  context.lineTo(width / 2, height / 2 - 4);
+  context.moveTo(width / 2, height / 2 + 4);
+  context.lineTo(width / 2, height / 2 + 14);
+  context.stroke();
+
+  // The filter's prediction, drawn even when this frame had no detection —
+  // that is the coast, and seeing it is how an operator knows the difference
+  // between "lost it" and "still believes it is there".
+  if (debug.predictedImageX !== null && debug.predictedImageY !== null) {
+    context.strokeStyle = '#38bdf8';
+    context.beginPath();
+    context.arc(debug.predictedImageX, debug.predictedImageY, 10, 0, Math.PI * 2);
+    context.stroke();
+  }
+
+  if (debug.boundingBox !== null) {
+    context.strokeStyle = '#34d399';
+    context.strokeRect(
+      debug.boundingBox.x - 0.5,
+      debug.boundingBox.y - 0.5,
+      debug.boundingBox.width + 1,
+      debug.boundingBox.height + 1,
+    );
+  }
+
+  if (debug.centroidX !== null && debug.centroidY !== null) {
+    context.fillStyle = '#34d399';
+    context.beginPath();
+    context.arc(debug.centroidX, debug.centroidY, 1.6, 0, Math.PI * 2);
+    context.fill();
+
+    if (debug.candidateScore !== null) {
+      context.fillText(debug.candidateScore.toFixed(2), debug.centroidX + 8, debug.centroidY - 6);
+    }
+  }
+
+  context.restore();
+}
+
 export function CameraMonitor(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageRef = useRef<ImageData | null>(null);
@@ -82,6 +151,8 @@ export function CameraMonitor(): React.JSX.Element {
   const frame = useSimulationStore((state) => state.sensorFrame);
   const truth = useSimulationStore((state) => state.sensorTruth);
   const showTruthOverlay = useSimulationStore((state) => state.showTruthOverlay);
+  const algorithmDebug = useSimulationStore((state) => state.algorithmDebug);
+  const showAlgorithmOverlay = useSimulationStore((state) => state.showAlgorithmOverlay);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -110,10 +181,17 @@ export function CameraMonitor(): React.JSX.Element {
     writeGrayToImageData(frame, image);
     context.putImageData(image, 0, 0);
 
+    // The algorithm's own view goes on first; the privileged overlay, when it
+    // is on at all, goes on top so the two can be compared without either
+    // being mistaken for the other.
+    if (showAlgorithmOverlay && algorithmDebug !== null) {
+      drawAlgorithmOverlay(context, algorithmDebug, width, height);
+    }
+
     if (showTruthOverlay && truth !== null) {
       drawTruthOverlay(context, truth, 1);
     }
-  }, [frame, truth, showTruthOverlay]);
+  }, [frame, truth, showTruthOverlay, algorithmDebug, showAlgorithmOverlay]);
 
   return (
     <canvas

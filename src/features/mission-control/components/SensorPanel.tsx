@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { useSimulationStore } from '@/stores/simulation-store';
 
 import { ActuatorTruthPanel } from './ActuatorTruthPanel';
+import { AutonomyControls } from './AutonomyControls';
 import { GimbalControls } from './GimbalControls';
 import { CameraMonitor } from './CameraMonitor';
 import { ResponseTrace } from './ResponseTrace';
@@ -81,6 +82,7 @@ export function SensorPanel(): React.JSX.Element {
       {/* The mount's diagnostics scroll independently so a tall truth panel
           cannot squeeze the viewfinder above it. */}
       <div className="max-h-[46%] shrink-0 overflow-y-auto">
+        <AutonomyControls />
         <GimbalControls />
         <div className="space-y-2.5 border-t px-3 py-2.5">
           <ResponseTrace axis="pan" />

@@ -19,6 +19,9 @@ import gimbalBacklash from './gimbal-backlash.json';
 import gimbalLatency from './gimbal-latency.json';
 import gimbalStepResponse from './gimbal-step-response.json';
 import linearPass from './linear-pass.json';
+import patLoss from './pat-loss.json';
+import patMoving from './pat-moving-target.json';
+import patStationary from './pat-stationary-outside-fov.json';
 import seededManeuver from './seeded-maneuver.json';
 import sinusoidal from './sinusoidal.json';
 import stationary from './stationary.json';
@@ -36,6 +39,9 @@ export const SCENARIO_IDS = [
   'gimbal-step-response',
   'gimbal-latency',
   'gimbal-backlash',
+  'pat-stationary-outside-fov',
+  'pat-moving-target',
+  'pat-loss',
 ] as const;
 
 export type ScenarioId = (typeof SCENARIO_IDS)[number];
@@ -52,6 +58,9 @@ const RAW_SCENARIOS: Record<ScenarioId, unknown> = {
   'gimbal-step-response': gimbalStepResponse,
   'gimbal-latency': gimbalLatency,
   'gimbal-backlash': gimbalBacklash,
+  'pat-stationary-outside-fov': patStationary,
+  'pat-moving-target': patMoving,
+  'pat-loss': patLoss,
 };
 
 const cache = new Map<ScenarioId, SimulationConfig>();

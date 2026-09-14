@@ -14,10 +14,18 @@ import type { Decibels, Radians, Seconds } from './units';
  * - `scan`      sweeping a search pattern, nothing acquired;
  * - `acquire`   a candidate is being confirmed before committing to it;
  * - `track`     holding a confirmed track inside the tracking envelope;
+ * - `lost`      a confirmed track was dropped; not yet searching again;
  * - `reacquire` lock was lost recently; searching the predicted neighbourhood;
  * - `fault`     hardware or algorithm fault; not pointing under control.
+ *
+ * `lost` and `reacquire` are different claims. `lost` says only that the track
+ * is gone; `reacquire` says the system is actively searching where it predicts
+ * the target went. The Phase 4 baseline reaches `lost` and then restarts a
+ * blind scan, so it never enters `reacquire` — predictive local recovery is
+ * deliberately left to the robust algorithm, and the baseline must not be able
+ * to claim it.
  */
-export type PATMode = 'idle' | 'scan' | 'acquire' | 'track' | 'reacquire' | 'fault';
+export type PATMode = 'idle' | 'scan' | 'acquire' | 'track' | 'lost' | 'reacquire' | 'fault';
 
 /** Why the mode last changed. Recorded so a run can be explained afterwards. */
 export type PATTransitionReason =

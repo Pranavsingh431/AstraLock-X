@@ -18,5 +18,7 @@ supersedes the old one, so the reasoning at the time stays visible.
 | [0009](0009-cpu-sensor-not-webgl-readback.md)            | The authoritative camera is CPU-side, not a WebGL readback            | Accepted |
 | [0010](0010-independent-sensor-clock.md)                 | The camera has its own clock                                          | Accepted |
 | [0011](0011-true-versus-measured-actuator-state.md)      | The mount's true pose and its measured pose are different quantities  | Accepted |
+| [0012](0012-exact-servo-discretisation.md)               | The servo's unsaturated step is taken in closed form                  | Accepted |
+| [0013](0013-command-intent-and-issue-time.md)            | An algorithm states intent; the runtime decides when it happened      | Accepted |
 
 Use [0000-template.md](0000-template.md) for new records.

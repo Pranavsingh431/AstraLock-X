@@ -57,13 +57,19 @@ src/
                 encoder quantisation, command latency. Privileged — it holds the
                 actuator interior, so the lint barrier keeps it away from the
                 tracking side (ADR-0011)
+    runtime/    The closed-loop runtime. The only place world, mount, camera and
+                algorithm meet. Owns causality: frame ordering, command issue
+                time, frame-lease lifetime. Privileged (ADR-0013)
     perception/ Frames to detections
     estimation/ Detections to tracks
     control/    Tracks to gimbal commands
     pat/        Acquisition state machine
     metrics/    Scoring, against ground truth, from outside
     experiments/Run execution, event logs, seed sweeps
-    algorithms/ AlgorithmPlugin implementations and their registry
+    algorithms/ AlgorithmPlugin implementations and their registry. The most
+                restricted directory: it may not reach ground truth, the
+                simulator, the sensor, the mount, the runtime or the bundled
+                scenarios (docs/BASELINE_PAT.md)
   workers/      Web Workers for the tick loop and batch runs
   stores/       Zustand stores for UI state
   lib/          Small shared utilities
@@ -114,6 +120,17 @@ carries the **measured** encoder reading — two numbers that differ by up to ha
 a count and must not be conflated
 ([ADR-0011](adr/0011-true-versus-measured-actuator-state.md),
 [GIMBAL_MODEL.md](GIMBAL_MODEL.md)).
+
+So does the autonomous loop. `core/runtime` owns the meeting point of world,
+mount, camera and algorithm, and with it the two things that decide whether the
+loop is honest: frames reach the algorithm in capture order and none is skipped,
+and a command is stamped with the time the _request existed_ rather than the
+time the frame was taken. An algorithm returns an intent with no timestamp and
+never holds the mount, so it cannot back-date a command or bypass the actuator
+([ADR-0013](adr/0013-command-intent-and-issue-time.md),
+[BASELINE_PAT.md](BASELINE_PAT.md)). The interface is told what happened
+afterwards and is not part of the loop: the same scenario gives the same result
+headless and on screen.
 
 Interactive rendering runs at the display's rate; the physics runs at a fixed
 tick. The renderer blends the previous and current snapshots across the sub-tick

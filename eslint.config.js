@@ -124,6 +124,31 @@ const GROUND_TRUTH_PATTERNS = [
       'The sensor subsystem consumes world state and produces the evaluation truth for each frame. A tracker receives a CameraSensorFrame from the harness; it never builds one (ADR-0003, ADR-0009).',
   },
   {
+    group: ['@/scenarios', '@/scenarios/**', '**/scenarios', '**/scenarios/**'],
+    allowTypeImports: false,
+    message:
+      'A bundled scenario is the answer key: its target blocks carry the trajectories the ' +
+      'tracker is supposed to discover. Camera calibration reaches an algorithm as CameraState, ' +
+      'from the harness (ADR-0003).',
+  },
+  {
+    group: [
+      '@/core/runtime',
+      '@/core/runtime/**',
+      '**/core/runtime',
+      '**/core/runtime/**',
+      '**/runtime/*',
+      '../runtime',
+      '../../runtime',
+      '../../../runtime',
+    ],
+    allowTypeImports: false,
+    message:
+      'The closed-loop runtime owns the simulator, the sensor and the mount, and decides when a ' +
+      'command enters the physical system. An algorithm that could reach it could stamp its own ' +
+      'command times or drive the mount directly (ADR-0013).',
+  },
+  {
     group: [
       '@/core/gimbal',
       '@/core/gimbal/**',
@@ -265,8 +290,18 @@ export default tseslint.config(
 
   // The ground-truth isolation barrier. Must come after the block above, whose
   // rule options it deliberately supersedes and re-includes.
+  //
+  // Test files are excluded, as they are from the core-purity rule above, and
+  // for the same reason: a test is an *evaluator*. Judging whether a tracker
+  // found the target means seeing both what it was shown and where the target
+  // really was, so an algorithm's tests legitimately import the simulator and
+  // the sensor. That does not weaken the barrier — it is still verified
+  // directly, by ground-truth-barrier.test.ts running the real ESLint
+  // configuration over probe files placed in a tracking-side directory as
+  // ordinary, non-test modules.
   {
     files: TRACKING_SIDE,
+    ignores: ['src/core/**/*.test.{ts,tsx}', 'src/core/**/*.test-d.ts'],
     rules: {
       '@typescript-eslint/no-restricted-imports': GROUND_TRUTH_IMPORT_BARRIER,
     },

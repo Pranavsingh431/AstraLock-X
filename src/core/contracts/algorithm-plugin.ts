@@ -26,7 +26,7 @@
 
 import type { z } from 'zod';
 
-import type { ControlCommand } from './control';
+import type { CommandIntent, ControlCommand } from './control';
 import type { TargetEstimate } from './estimation';
 import {
   assertGroundTruthFree,
@@ -59,9 +59,13 @@ export interface TrackingInput {
   /** Measured gimbal state, carrying quantisation, bias and latency. */
   readonly gimbal: GimbalState;
   /**
-   * The command this algorithm issued on the previous tick, echoed back. The
-   * gimbal may have clipped it; comparing this against `gimbal` is how an
-   * algorithm notices it is asking for more authority than it has.
+   * The command the runtime issued on this algorithm's behalf last time,
+   * echoed back with the timestamp the runtime gave it.
+   *
+   * Stamped rather than an intent, because knowing what you sent and when you
+   * sent it is something real control software has. The gimbal may have
+   * clipped it; comparing this against `gimbal` is how an algorithm notices it
+   * is asking for more authority than it has.
    */
   readonly previousCommand: ControlCommand | null;
 }
@@ -72,8 +76,17 @@ export interface TrackingOutput<TDebug = unknown> {
   readonly observations: readonly TargetObservation[];
   /** Current belief about every live track. */
   readonly estimates: readonly TargetEstimate[];
-  /** Gimbal demand, or `null` to leave the gimbal on its previous command. */
-  readonly command: ControlCommand | null;
+  /**
+   * What the algorithm wants, or `null` to leave the mount on its previous
+   * command.
+   *
+   * An **intent**, not a command: it carries no timestamp, because the
+   * algorithm does not get to decide when its request entered the physical
+   * system. The runtime stamps it with the simulation time at which the
+   * request was actually made and submits it to the mount, which is what stops
+   * a command being back-dated to the frame's capture time (ADR-0013).
+   */
+  readonly command: CommandIntent | null;
   /** Current PAT mode, as the algorithm sees it. */
   readonly pat: PATState;
   /**

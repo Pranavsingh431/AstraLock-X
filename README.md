@@ -8,16 +8,17 @@ and — eventually — hardware-in-the-loop validation of coarse PAT systems. It
 runs offline, produces reproducible experiments, and reports measured results
 rather than illustrative ones.
 
-> **Status: Phase 3 — dynamic pan/tilt gimbal and actuator system.** The camera
-> now sits on a real mount. Commanding a pose no longer sets it: the command is
-> delayed, the servo takes time to respond, the axes have rate, acceleration and
-> travel limits, the gearing has play, and the encoder reports a quantised angle
-> that is not the angle forming the image. Mission Control commands the mount and
-> shows command against measurement.
+> **Status: Phase 4 — first autonomous closed-loop coarse PAT.** The loop is
+> closed. A classical detector reads the camera's real GRAY8 pixels, an inverse
+> pinhole turns a sub-pixel centroid into a bearing using the _measured_ mount
+> pose, a constant-velocity Kalman filter estimates where the target is going,
+> and a PID drives the real dynamic gimbal — which changes what the camera sees
+> next. It finds a beacon it was never told about by physically scanning for it.
 >
-> There is still **no detector, no Kalman filter, no controller and no
-> autonomous tracking**. Nothing looks at the pixels yet; the mount is pointed by
-> hand. See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
+> The tracker is a deliberately simple **baseline**: no beacon identity, no
+> manoeuvre model, no predictive recovery, no learned component. Its weaknesses
+> are documented rather than patched, because later algorithms have to beat
+> something real. See [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md).
 
 ## What the problem is
 
@@ -102,6 +103,7 @@ pnpm verify
 - [docs/SIMULATION.md](docs/SIMULATION.md) — coordinates, clock, PRNG, trajectory equations, and what is not modelled
 - [docs/SENSOR_MODEL.md](docs/SENSOR_MODEL.md) — pinhole projection, camera clock, point spread, the frame contract and the truth boundary
 - [docs/GIMBAL_MODEL.md](docs/GIMBAL_MODEL.md) — the actuator: servo dynamics, latency, deadband, backlash, encoder quantisation, measured accuracy and what is not modelled
+- [docs/BASELINE_PAT.md](docs/BASELINE_PAT.md) — the autonomous tracker: detector, pixel-to-bearing, Kalman filter, PID, search, control timing, measured results and known weaknesses
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — setup, commands, conventions
 - [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md) — what works, what does not
 - [docs/adr/](docs/adr/) — why things are the way they are
