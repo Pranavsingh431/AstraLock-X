@@ -172,3 +172,26 @@ a probability, and never as a percentage or a confidence. A run without identity
 has no such section at all — an algorithm with no correlator has no opinion to
 score, and an empty identity table under its name would suggest it had failed a
 test it never sat.
+
+## Phase 9 benchmark reporting
+
+A completed benchmark writes its own `report.html` beside its `aggregate.json`,
+generated from the persisted artifacts rather than from anything held in memory
+during the run. It is self-contained: no CDN, no fetched fonts, no script that
+phones anywhere, so it opens from a USB stick on a machine with no network.
+
+It carries provenance, the suite's configuration, the fairness validation for
+each case, per-arm counts and distributions, per-seed paired differences, the
+runs that did not complete, and definitions for every column. Plots are drawn
+from the stored samples as step functions and points — an empirical CDF is one
+step per run, with the points marked. There is no kernel smoothing: with five
+seeds a smooth density is a picture of the smoother rather than of the data.
+
+There is deliberately no overall score and no winner badge. Seconds,
+microradians and a retention fraction have no exchange rate, so a composite
+would invent one and hide it inside a constant. The report shows metric-specific
+results and a count of the seeds each arm was better on.
+
+Every figure in it is reproducible by `recomputeBenchmark`, which rebuilds the
+aggregate from the runs' own artifacts and compares. Zero differences is the
+passing condition.

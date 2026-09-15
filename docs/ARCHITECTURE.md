@@ -306,3 +306,33 @@ scores the tracker's verdicts against truth the tracker never saw. The codes,
 the timing constraint the camera imposes, the correlator and the measured
 results are in [BEACON_IDENTITY.md](BEACON_IDENTITY.md); the decisions are
 ADR-0023, ADR-0024 and ADR-0025.
+
+## AstraBench (Phase 9)
+
+`src/core/benchmark/` runs suites of experiments headlessly and aggregates them.
+It sits **above** the experiment layer and adds nothing inside it: a benchmark
+run is an ordinary Phase 5 experiment, with the same recorder, the same raw
+artifacts and the same recomputable summary. That is what keeps a benchmark
+number auditable down to the telemetry it came from.
+
+The module has no React, no DOM and no renderer. It constructs the same
+`SimulationEngine`, `DynamicGimbal`, `VirtualCameraSensor`, disturbance
+pipeline, `AlgorithmPlugin`, `ClosedLoopRuntime` and metrics engine that Mission
+Control does, because a benchmark whose numbers came from a simplified
+benchmark simulator would be measuring the simplified simulator.
+
+Physics belongs to a _case_ and algorithms to its _arms_, so the arms of a case
+structurally cannot differ in physics. Two fingerprints — one over the whole
+validated `SimulationConfig` minus its display name, one over the metrics
+definition — are recorded per run, and a comparison whose arms disagree is
+reported invalid rather than reduced to a winner. The benchmark schema is
+versioned separately from the experiment schema, so a change to one cannot
+invalidate the other.
+
+Benchmark documents live in a second store (`benchmarks/`) beside `runs/`. On
+the desktop that split is enforced by the Rust host, whose `store` parameter is
+an allowlist of two fixed names and cannot become a path.
+
+The details, the fairness rules and the measured throughput are in
+[ASTRABENCH.md](ASTRABENCH.md); the plugin contract an algorithm is written
+against is in [ALGORITHM_PLUGIN.md](ALGORITHM_PLUGIN.md).

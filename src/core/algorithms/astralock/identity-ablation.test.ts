@@ -18,7 +18,13 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_ASTRALOCK_CONFIG, astraLockXPat } from '@/core/algorithms';
+import {
+  DEFAULT_ASTRALOCK_CONFIG,
+  DEFAULT_TERMINAL_PROFILE_ID,
+  astraLockXPat,
+  terminalProfileById,
+  withExpectedBeacon,
+} from '@/core/algorithms';
 import { parseSimulationConfig } from '@/core/contracts/simulation';
 import { buildRig, drive } from '@/core/experiments/rig.node';
 import { MemoryStorage } from '@/core/experiments/storage';
@@ -28,6 +34,9 @@ import type { ScenarioId } from '@/scenarios';
 import type { AstraLockConfig } from './config';
 
 vi.setConfig({ testTimeout: 1_800_000 });
+
+/** The receiver setting for every coded arm below. */
+const MISSION_PROFILE = terminalProfileById(DEFAULT_TERMINAL_PROFILE_ID)!;
 
 /** Seconds of simulated time per arm. Long enough to include the crossing. */
 const SECONDS = 45;
@@ -56,21 +65,14 @@ interface Arm {
 async function arm(scenario: ScenarioId, identity: boolean, seed?: number): Promise<Arm> {
   const base = loadScenario(scenario);
   const config = seed === undefined ? base : parseSimulationConfig({ ...base, seed });
-  const code = config.targets[0]!.beacon!.identityCode!;
-
-  const algorithmConfig: AstraLockConfig = {
-    ...DEFAULT_ASTRALOCK_CONFIG,
-    identity: {
-      ...DEFAULT_ASTRALOCK_CONFIG.identity,
-      enabled: identity,
-      // The terminal is configured with the pattern its partner will send, the
-      // way a radio is set to a frequency. Read from the scenario by the test
-      // harness, which plays the role of the mission plan; never by the
-      // algorithm, which sees only pixels.
-      expectedSequence: code.sequence,
-      symbolDuration: code.symbolDuration,
-    },
-  };
+  // The terminal is set to the mission's beacon profile, explicitly — Code A at
+  // four frames per symbol, which is what every bundled coded beacon sends. It
+  // is not read from the scenario: since Phase 9 nothing copies the emitted code
+  // into the receiver, in the application or in a harness.
+  const algorithmConfig: AstraLockConfig = withExpectedBeacon(
+    DEFAULT_ASTRALOCK_CONFIG,
+    identity ? MISSION_PROFILE : null,
+  );
 
   const rig = buildRig({
     scenario: config,

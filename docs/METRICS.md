@@ -277,6 +277,18 @@ non-designated emitter in the image. Otherwise duration and rate are
 of zero from a single-emitter scenario is not evidence of identity robustness.
 Every bundled Phase 4 scenario has one emitter.
 
+## Benchmark aggregation
+
+AstraBench computes no new metrics. It aggregates the ones above across runs and
+adds only counting and pairing, both defined in
+[ASTRABENCH.md](ASTRABENCH.md): attempted/completed/failed/cancelled counts, a
+declared success criterion per case, per-run distributions with their missing
+counts, and per-seed paired differences between arms.
+
+A run that failed or was cancelled is never a missing sample — it is counted as
+a failure. A completed run whose metric is undefined is a missing sample, and
+the count travels with the statistic.
+
 ## Beacon identity
 
 **What the tracker claimed, checked against what was true.** Present only for a
@@ -317,6 +329,36 @@ holds for a second is one episode of not knowing, not sixty.
 
 The correlation is a Pearson coefficient on `[-1, 1]`, invariant to brightness.
 **It is not a probability** and nothing in the report presents it as one.
+
+## Metrics definition versions
+
+A stored summary records the definition version it was computed under, and a
+recomputation under a different version is a new result rather than a correction
+of the old one. That is what stops "lock retention" quietly meaning something
+different next month.
+
+| Version | Phase | What it added                                                           |
+| ------- | ----- | ----------------------------------------------------------------------- |
+| 1       | 5     | The original definitions. `track` is the only mode counted as tracking. |
+| 2       | 6     | `handoff` counts as tracking, and handoff validity is scored.           |
+| 3       | 7     | The image-SNR aperture. No change to what counts as tracking.           |
+
+**`TRACKING_MODES` must have an entry for every version.** Between Phase 7 and
+Phase 9 it did not: v3 was missing, `trackingModesFor` fell back to `['track']`,
+and handoff-ready time silently stopped counting as tracking — reversing the v2
+decision without anybody making it. Handoff validity was keyed on
+`definitionVersion === 2` and stopped being computed for the same reason.
+
+Nothing failed, because a fallback to a valid mode list produces valid-looking
+numbers. What it did was understate lock retention for any algorithm that
+reaches HANDOFF, which is AstraLock-X and not the baseline. AstraBench found it
+on a stationary beacon AstraLock-X was holding to 109 µrad of true pointing
+error while being scored at 0.049 retention; the same run now scores 1.000.
+
+The table is now required to be complete by test, and `trackingModesFor` throws
+for a version it does not cover rather than approximating one. No published
+Phase 7 or Phase 8 figure changes: only runs reaching HANDOFF were affected, and
+none of those phases' reported scenarios do.
 
 ## Frame rates
 

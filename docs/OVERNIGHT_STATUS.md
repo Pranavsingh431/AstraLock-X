@@ -30,7 +30,22 @@ Xcode license agreements", after an Xcode update on this machine; the fix is
 and uploads the desktop bundle on Linux, macOS and Windows, so the desktop build
 itself is covered — what is not covered locally is launching the native `.app`.
 
-## Phase 9 and later
+## Phase 9 — AstraBench
+
+Starting point: `14c8989733d6a2011fa3d0af296e7494c080d24c` (verified Phase 8).
+
+Phase 9 removes the Phase 8 scenario-to-receiver coupling and builds AstraBench,
+described in [ASTRABENCH.md](ASTRABENCH.md) and
+[ALGORITHM_PLUGIN.md](ALGORITHM_PLUGIN.md). Local acceptance evidence is in
+[PHASE_STATUS.md](PHASE_STATUS.md).
+
+The Xcode licence blocker from Phase 8 is unchanged: `cargo check`, `cargo
+clippy` and `cargo test` all fail at the link step with "You have not agreed to
+the Xcode license agreements", and the fix (`sudo xcodebuild -license`) needs the
+machine owner's password. `cargo fmt --check` is clean; the Rust change is
+verified by CI.
+
+## Phase 10 and later
 
 Not started. No AI/ONNX verifier, AstraBench benchmark engine, FailureHunter,
 replay, HIL or final UI redesign was added as part of Phase 8. There is no

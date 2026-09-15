@@ -20,7 +20,7 @@ import type { PATMode } from '@/core/contracts/pat';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ALGORITHMS } from '@/core/algorithms';
+import { ALGORITHMS, TERMINAL_BEACON_PROFILES } from '@/core/algorithms';
 import { useSimulationStore } from '@/stores/simulation-store';
 
 import { confirmIfRecording } from '../recording-guard';
@@ -63,8 +63,9 @@ export function AutonomyControls(): React.JSX.Element {
   const debug = useSimulationStore((state) => state.algorithmDebug);
   const overlay = useSimulationStore((state) => state.showAlgorithmOverlay);
   const identityEnabled = useSimulationStore((state) => state.identityEnabled);
-  const identityAvailable = useSimulationStore((state) => state.identityAvailable);
+  const expectedProfileId = useSimulationStore((state) => state.expectedBeaconProfileId);
   const setIdentityEnabled = useSimulationStore((state) => state.setIdentityEnabled);
+  const setExpectedBeaconProfile = useSimulationStore((state) => state.setExpectedBeaconProfile);
   const override = useSimulationStore((state) => state.manualOverride);
   const runtimeError = useSimulationStore((state) => state.runtimeError);
   const snr = useSimulationStore((state) => state.detectionSnr);
@@ -245,7 +246,7 @@ export function AutonomyControls(): React.JSX.Element {
               Manual override
             </label>
 
-            {identityAvailable && algorithmId === 'astralock-x' && (
+            {algorithmId === 'astralock-x' && (
               <label className="flex items-center gap-1.5 text-[11px] text-violet-700/90">
                 <input
                   type="checkbox"
@@ -264,7 +265,36 @@ export function AutonomyControls(): React.JSX.Element {
             )}
           </div>
 
-          {identityAvailable && algorithmId === 'astralock-x' && !identityEnabled && (
+          {algorithmId === 'astralock-x' && identityEnabled && (
+            <div className="space-y-1">
+              <label className="flex items-center gap-1.5 text-[11px] text-violet-700/90">
+                Expected code
+                <select
+                  aria-label="Expected beacon code"
+                  value={expectedProfileId}
+                  onChange={(event) => {
+                    if (!confirmIfRecording('Changing the expected code ends the recording.')) {
+                      return;
+                    }
+                    setExpectedBeaconProfile(event.target.value);
+                  }}
+                  className="rounded-sm border border-violet-500/30 bg-transparent px-1 py-0.5 text-[11px]"
+                >
+                  {TERMINAL_BEACON_PROFILES.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="text-[10px] leading-snug text-violet-700/90">
+                A receiver setting, not read from the scenario. A beacon that does not send this
+                pattern will not be acquired.
+              </p>
+            </div>
+          )}
+
+          {algorithmId === 'astralock-x' && !identityEnabled && (
             <p className="text-[10px] leading-snug text-violet-700/90">
               Identity off: the tracker is choosing on motion alone, as it did before coded beacons
               existed. This is the control arm.

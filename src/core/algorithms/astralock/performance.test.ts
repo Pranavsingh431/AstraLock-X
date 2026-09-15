@@ -18,8 +18,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_ASTRALOCK_CONFIG,
   DEFAULT_BASELINE_PAT_CONFIG,
+  DEFAULT_TERMINAL_PROFILE_ID,
   astraLockXPat,
   baselineKfPidPat,
+  terminalProfileById,
+  withExpectedBeacon,
 } from '@/core/algorithms';
 import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';
 import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
@@ -36,22 +39,15 @@ const FRAME_BUDGET_MS = 1000 / 60;
 /**
  * The robust algorithm's configuration, optionally with identity enabled.
  *
- * The expected pattern is read from the scenario by the harness, playing the
- * role a mission plan plays for a real terminal. Nothing about the world
- * crosses: a sequence of ones and zeros and a symbol duration.
+ * The receiver is set to the bundled Code A terminal profile explicitly, never
+ * from the scenario (Phase 9 preflight).
  */
-function astraConfig(scenario: ScenarioId, identity: boolean) {
+function astraConfig(_scenario: ScenarioId, identity: boolean) {
   if (!identity) return DEFAULT_ASTRALOCK_CONFIG;
-  const code = loadScenario(scenario).targets[0]!.beacon!.identityCode!;
-  return {
-    ...DEFAULT_ASTRALOCK_CONFIG,
-    identity: {
-      ...DEFAULT_ASTRALOCK_CONFIG.identity,
-      enabled: true,
-      expectedSequence: code.sequence,
-      symbolDuration: code.symbolDuration as number,
-    },
-  };
+  return withExpectedBeacon(
+    DEFAULT_ASTRALOCK_CONFIG,
+    terminalProfileById(DEFAULT_TERMINAL_PROFILE_ID)!,
+  );
 }
 
 const summarise = (samples: number[]) => {

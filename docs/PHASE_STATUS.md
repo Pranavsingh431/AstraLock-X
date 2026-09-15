@@ -1657,3 +1657,126 @@ The model, the codes, the correlator, the measured results and the limits are in
 No AI/ONNX verifier, AstraBench batch benchmarking, FailureHunter, replay, HIL
 or final UI redesign has been added. There is no communications modem, no link
 budget and no wave-optics propagation.
+
+## Phase 9 — AstraBench: deterministic PAT algorithm benchmarking
+
+Phase 9 builds the infrastructure for fair, reproducible, automatic comparison
+of the algorithms and scenarios that already exist. It adds no tracking
+mathematics, no detector, no disturbance physics and no verifier.
+
+### The preflight correction
+
+Phase 8 shipped a coupling that had to go before any benchmark could be
+trusted. The application read the designated emitter's `identityCode` out of the
+loaded scenario and copied it into the tracker's configuration when the runtime
+was built. Every measured result was still honest — the algorithm never saw the
+scenario, and the anti-cheat suite proved it — but the _configuration_ was a
+function of the physical answer: change what the target transmitted and the
+receiver silently followed. No arrangement of scenario and algorithm could
+produce a genuine identity failure, and a comparison in which one arm cannot
+lose is not a comparison.
+
+The correction is structural rather than careful. `sessionAlgorithmConfig` takes
+no `SimulationConfig` at all, so there is no argument through which a scenario
+could reach a receiver setting. The expected pattern is now a **terminal beacon
+profile** the operator selects in Mission Control or a benchmark arm declares: a
+sequence and a symbol duration, the two numbers a mission card would carry.
+
+Measured on identical physics, the same scenario and the same seed:
+
+| Transmits | Terminal expects | Outcome            | Retention | Frames called MATCH |
+| --------- | ---------------- | ------------------ | --------: | ------------------: |
+| Code A    | Code A           | acquired           |     1.000 |               98.7% |
+| Code B    | Code B           | acquired           |     1.000 |               98.7% |
+| Code B    | Code A           | **no acquisition** |     0.000 |               13.3% |
+| Code A    | Code B           | **no acquisition** |     0.000 |                3.6% |
+
+And in the running application, on `code-clean` at t ≈ 25 s: a terminal set to
+Code B sits in RECOVER at 7 457 µrad of true pointing error, while the same
+world with the terminal set to Code A is in TRACK at **81 µrad** with
+correlation 0.931. What the emitter sent stays in `scenario.json`; what the
+receiver expected is recorded in `algorithm.json`.
+
+### AstraBench
+
+A headless runner executes suites of cases × seeds × arms against the real
+simulator, sensor, mount, disturbance pipeline, runtime, recorder and metrics
+engine. Each run is an ordinary Phase 5 experiment.
+
+Physics belongs to a case and algorithms to its arms, so the arms of a case
+structurally cannot differ in physics. Two fingerprints per run — one over the
+validated `SimulationConfig` minus its display name, one over the metrics
+definition — make that checkable, and a case whose arms disagree is reported
+`INVALID_PHYSICAL_MISMATCH` or `INVALID_METRIC_MISMATCH` rather than reduced to
+a winner.
+
+Failures, cancellations and completions are all recorded; the aggregate stores
+every per-run value behind every median; success criteria are declared in the
+suite before execution; and comparison is per-seed and paired, with no composite
+score anywhere.
+
+### What the first suite found
+
+The first real Quick Validation run surfaced a defect that had been in the
+metrics engine since Phase 7 — which is the most useful thing a new benchmark
+can do.
+
+`TRACKING_MODES` maps a metrics-definition version to the PAT modes that count
+as tracking. Phase 6 added `handoff` for v2 with the reasoning written down.
+Phase 7 bumped the version to 3 to carry the image-SNR aperture and did not
+extend the table, so `trackingModesFor` fell back to `['track']` and
+handoff-ready time silently stopped counting as tracking. Handoff validity,
+keyed on `definitionVersion === 2`, stopped being computed for the same reason.
+
+Nothing failed — a fallback to a valid mode list produces valid-looking numbers.
+It understated lock retention for any algorithm that reaches HANDOFF, which is
+AstraLock-X and not the baseline, so it was wrong asymmetrically. AstraBench
+found it on a stationary beacon AstraLock-X was holding to 109 µrad while being
+scored at **0.049** retention; the same run now scores **1.000**.
+
+The table now covers every version, a test requires that it does,
+`trackingModesFor` throws rather than approximating an unknown version, and
+handoff validity is keyed on "not v1". **No published Phase 7 or Phase 8 figure
+changes**: only runs reaching HANDOFF were affected and none of those phases'
+reported scenarios do.
+
+### Measured
+
+| Evidence                                                | Result                                                    |
+| ------------------------------------------------------- | --------------------------------------------------------- |
+| Whole TypeScript suite, type tests included             | 84 files, 1 621 tests passed                              |
+| Performance suites (run separately, one file at a time) | 6 files, 30 tests passed                                  |
+| Quick Validation: 12 runs, 520 simulated seconds        | 27.5 s wall, **18.9× real time**                          |
+| 50-run load suite                                       | 9.6 s wall, 193 ms per run, heap 36.8 → 90.4 MB           |
+| Orchestration overhead vs driving runs directly         | **1.12×**, including recording and evaluating every frame |
+| Benchmark recomputation from artifacts                  | **0 differences**                                         |
+| Run order reversed (cases, seeds and arms)              | identical engineering results                             |
+| TypeScript format, lint, typecheck and production build | passed locally                                            |
+| Rust `cargo fmt --check`                                | clean                                                     |
+| Rust compile, Clippy and tests                          | **CI only** — see below                                   |
+
+### Honest limits
+
+- **The Xcode licence still blocks Rust locally.** `cargo check`, `cargo clippy`
+  and `cargo test` all fail at the link step with "You have not agreed to the
+  Xcode license agreements", the same blocker as Phase 8. The fix is
+  `sudo xcodebuild -license`, which needs the machine owner's password. The
+  Phase 9 Rust change — a two-name `store` allowlist so benchmark documents do
+  not share the run namespace — is therefore verified by CI rather than locally,
+  and `cargo fmt` is the only Rust check that ran here.
+- **Benchmarks need the desktop application.** They write run artifacts, and a
+  browser tab has nowhere durable to put them. The interface says so and
+  disables the start button. Steps of the manual validation that require
+  storage — running a suite from the workspace, the results table, the report,
+  the recompute button — were therefore exercised headlessly against real
+  `NodeFileStorage`, which is the same runner, recorder, aggregator and report
+  the desktop uses.
+- **Sequential only.** No worker parallelism; the 90-run Engineering Comparison
+  takes about four minutes and is not run in CI.
+- **Five seeds is a small sample**, and no statistical significance is claimed.
+
+### Not started
+
+No AI/ONNX verifier, FailureHunter, Operating Envelope Explorer, replay, HIL,
+cloud backend, database or authentication has been added, and Phase 10 — the
+premium interface redesign — has not been started.

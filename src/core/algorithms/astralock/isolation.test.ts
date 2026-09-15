@@ -14,7 +14,13 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_ASTRALOCK_CONFIG, astraLockXPat } from '@/core/algorithms';
+import {
+  DEFAULT_ASTRALOCK_CONFIG,
+  DEFAULT_TERMINAL_PROFILE_ID,
+  astraLockXPat,
+  terminalProfileById,
+  withExpectedBeacon,
+} from '@/core/algorithms';
 import type { AstraLockDebug } from '@/core/algorithms';
 import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';
 import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
@@ -26,24 +32,17 @@ import { loadScenario, type ScenarioId } from '@/scenarios';
 vi.setConfig({ testTimeout: 600_000 });
 
 /**
- * The robust configuration with identity enabled for a coded scenario.
+ * The robust configuration with identity enabled.
  *
- * The expected pattern is read from the scenario *by the test*, which plays the
- * part a mission plan plays for a real terminal. The two numbers that cross are
- * a sequence and a symbol duration; nothing about the world does.
+ * A constant, and that it can be a constant is the point. Set to the bundled
+ * Code A terminal profile explicitly; it takes no scenario, because since the
+ * Phase 9 preflight the receiver setting and the emitted code are independent
+ * and there is no argument through which one could reach the other.
  */
-function identityConfig(scenario: ScenarioId) {
-  const code = loadScenario(scenario).targets[0]!.beacon!.identityCode!;
-  return {
-    ...DEFAULT_ASTRALOCK_CONFIG,
-    identity: {
-      ...DEFAULT_ASTRALOCK_CONFIG.identity,
-      enabled: true,
-      expectedSequence: code.sequence,
-      symbolDuration: code.symbolDuration as number,
-    },
-  };
-}
+const IDENTITY_CONFIG = withExpectedBeacon(
+  DEFAULT_ASTRALOCK_CONFIG,
+  terminalProfileById(DEFAULT_TERMINAL_PROFILE_ID)!,
+);
 
 interface Run {
   readonly modes: readonly string[];
@@ -68,7 +67,7 @@ function run(
     sensor,
     sampler: new ExactWorldSampler(engine),
     plugin: astraLockXPat,
-    config: identity ? identityConfig(scenario) : DEFAULT_ASTRALOCK_CONFIG,
+    config: identity ? IDENTITY_CONFIG : DEFAULT_ASTRALOCK_CONFIG,
     ...runtimeOptions,
   });
 

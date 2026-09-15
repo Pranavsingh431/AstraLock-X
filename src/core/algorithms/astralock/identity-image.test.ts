@@ -19,7 +19,7 @@
  * a test is allowed to do and the algorithm is not.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { detect } from '@/core/algorithms/baseline/detector';
 import { DEFAULT_ASTRALOCK_CONFIG } from '@/core/algorithms';
@@ -30,6 +30,11 @@ import { SimulationEngine } from '@/core/simulation/engine';
 import { loadScenario } from '@/scenarios';
 
 import { CandidateTracker, classify, searchPhase, type IdentitySample } from './identity';
+
+// These rasterise real frames for tens of simulated seconds, which is seconds
+// of wall clock on an idle machine and more on a loaded one. The default
+// five-second timeout is a measurement of the host rather than of the code.
+vi.setConfig({ testTimeout: 300_000 });
 
 const CONFIG = DEFAULT_ASTRALOCK_CONFIG;
 const RULE = CONFIG.identity;

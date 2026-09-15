@@ -21,6 +21,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_ASTRALOCK_CONFIG, astraLockXPat } from '@/core/algorithms';
+import { CODE_A } from '@/core/contracts/code-library';
 import { parseSimulationConfig, type SimulationConfig } from '@/core/contracts/simulation';
 import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';
 import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
@@ -63,10 +64,12 @@ function retimed(frameRate: number, framesPerSymbol: number, exposure: number): 
 }
 
 /** Runs a retimed scenario to the end and reports the correlator's verdict. */
-function verdictOf(config: SimulationConfig, seconds: number) {
+function verdictOf(config: SimulationConfig, symbolDuration: number, seconds: number) {
   const engine = new SimulationEngine(config);
   const sensor = new VirtualCameraSensor({ config });
-  const code = config.targets[0]!.beacon!.identityCode!;
+  // The receiver is told the symbol duration the retimed transmitter uses —
+  // the test sets both from the same parameters, explicitly. It does not read
+  // the scenario to find out.
   const runtime = new ClosedLoopRuntime({
     engine,
     sensor,
@@ -77,8 +80,8 @@ function verdictOf(config: SimulationConfig, seconds: number) {
       identity: {
         ...DEFAULT_ASTRALOCK_CONFIG.identity,
         enabled: true,
-        expectedSequence: code.sequence,
-        symbolDuration: code.symbolDuration as number,
+        expectedSequence: [...CODE_A],
+        symbolDuration,
       },
     },
   });
@@ -109,7 +112,7 @@ describe('camera frame rate', () => {
     // reading the wrong symbol boundaries at the other two.
     const results = [30, 60, 90].map((fps) => ({
       fps,
-      ...verdictOf(retimed(fps, 4, 0.002), 32),
+      ...verdictOf(retimed(fps, 4, 0.002), 4 / fps, 32),
     }));
 
     // eslint-disable-next-line no-console -- the measured figures are the point
@@ -145,8 +148,8 @@ describe('exposure length', () => {
     // a transition and see an intermediate level. Sampling the code at the
     // capture instant would report a level the sensor never collected;
     // integrating it reports what it did.
-    const brief = verdictOf(retimed(60, 2, 0.002), 32);
-    const long = verdictOf(retimed(60, 2, 0.016), 32);
+    const brief = verdictOf(retimed(60, 2, 0.002), 2 / 60, 32);
+    const long = verdictOf(retimed(60, 2, 0.016), 2 / 60, 32);
 
     // eslint-disable-next-line no-console -- the measured figures are the point
     console.log(

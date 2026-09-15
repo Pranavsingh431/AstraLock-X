@@ -12,8 +12,13 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_ASTRALOCK_CONFIG, astraLockXPat } from '@/core/algorithms';
-import { loadScenario } from '@/scenarios';
+import {
+  DEFAULT_ASTRALOCK_CONFIG,
+  DEFAULT_TERMINAL_PROFILE_ID,
+  astraLockXPat,
+  terminalProfileById,
+  withExpectedBeacon,
+} from '@/core/algorithms';
 
 import { renderStoredReport } from './report';
 import { buildRig, drive } from './rig.node';
@@ -82,21 +87,15 @@ describe('the beacon identity section', () => {
   /** Records a coded run with identity on or off and renders its report. */
   async function codedReport(identity: boolean, runId: string): Promise<string> {
     const storage = new MemoryStorage();
-    const code = loadScenario('code-decoy-hard').targets[0]!.beacon!.identityCode!;
     const rig = buildRig({
       scenario: 'code-decoy-hard',
       storage,
       runId,
       plugin: astraLockXPat,
-      algorithmConfig: {
-        ...DEFAULT_ASTRALOCK_CONFIG,
-        identity: {
-          ...DEFAULT_ASTRALOCK_CONFIG.identity,
-          enabled: identity,
-          expectedSequence: code.sequence,
-          symbolDuration: code.symbolDuration as number,
-        },
-      },
+      algorithmConfig: withExpectedBeacon(
+        DEFAULT_ASTRALOCK_CONFIG,
+        identity ? terminalProfileById(DEFAULT_TERMINAL_PROFILE_ID)! : null,
+      ),
     });
     await rig.recorder!.start({ autonomyActive: true });
     drive(rig, 30);

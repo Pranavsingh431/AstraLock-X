@@ -26,7 +26,22 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+/**
+ * Which of the host's two stores an instance addresses.
+ *
+ * `runs` holds experiments and `benchmarks` holds AstraBench's own documents.
+ * Two namespaces rather than one, so that listing runs returns runs: a
+ * benchmark directory given an experiment-shaped identifier would show up in
+ * the Reports view as a run that cannot be parsed.
+ */
+export type TauriStoreName = 'runs' | 'benchmarks';
+
 export class TauriStorage implements ExperimentStorage {
+  /**
+   * @param store defaults to `runs`, so every Phase 5-8 caller is unchanged.
+   */
+  constructor(private readonly store: TauriStoreName = 'runs') {}
+
   /**
    * Cached absolute paths, so `runPath` can stay synchronous.
    *
@@ -36,21 +51,21 @@ export class TauriStorage implements ExperimentStorage {
   private readonly paths = new Map<string, string>();
 
   public async createRun(runId: string): Promise<RunLocation> {
-    const path = await invoke<string>('experiment_create_run', { runId });
+    const path = await invoke<string>('experiment_create_run', { runId, store: this.store });
     this.paths.set(runId, path);
     return { runId, path };
   }
 
   public async writeAtomic(runId: string, fileName: string, contents: string): Promise<void> {
-    await invoke('experiment_write_atomic', { runId, fileName, contents });
+    await invoke('experiment_write_atomic', { runId, fileName, contents, store: this.store });
   }
 
   public async append(runId: string, fileName: string, contents: string): Promise<void> {
-    await invoke('experiment_append', { runId, fileName, contents });
+    await invoke('experiment_append', { runId, fileName, contents, store: this.store });
   }
 
   public async readFile(runId: string, fileName: string): Promise<string> {
-    return invoke<string>('experiment_read_file', { runId, fileName });
+    return invoke<string>('experiment_read_file', { runId, fileName, store: this.store });
   }
 
   /**
@@ -72,6 +87,7 @@ export class TauriStorage implements ExperimentStorage {
     for (;;) {
       const chunk = new Uint8Array(
         await invoke<ArrayBuffer>('experiment_read_chunk', {
+          store: this.store,
           runId,
           fileName,
           offset,
@@ -87,15 +103,15 @@ export class TauriStorage implements ExperimentStorage {
   }
 
   public async fileSize(runId: string, fileName: string): Promise<number> {
-    return invoke<number>('experiment_file_size', { runId, fileName });
+    return invoke<number>('experiment_file_size', { runId, fileName, store: this.store });
   }
 
   public async listRuns(): Promise<readonly string[]> {
-    return invoke<string[]>('experiment_list_runs');
+    return invoke<string[]>('experiment_list_runs', { store: this.store });
   }
 
   public async deleteRun(runId: string): Promise<void> {
-    await invoke('experiment_delete_run', { runId });
+    await invoke('experiment_delete_run', { runId, store: this.store });
     this.paths.delete(runId);
   }
 
@@ -105,19 +121,19 @@ export class TauriStorage implements ExperimentStorage {
 
   /** Resolves and caches a run's absolute path without creating it. */
   public async resolvePath(runId: string): Promise<string> {
-    const path = await invoke<string>('experiment_run_path', { runId });
+    const path = await invoke<string>('experiment_run_path', { runId, store: this.store });
     this.paths.set(runId, path);
     return path;
   }
 
   /** The directory every run lives under, for display. */
   public async runsRoot(): Promise<string> {
-    return invoke<string>('experiment_runs_root');
+    return invoke<string>('experiment_runs_root', { store: this.store });
   }
 
   /** Opens the run's directory in the platform file manager. */
   public async reveal(runId: string): Promise<void> {
-    await invoke('experiment_reveal_run', { runId });
+    await invoke('experiment_reveal_run', { runId, store: this.store });
   }
 
   /**
@@ -127,7 +143,7 @@ export class TauriStorage implements ExperimentStorage {
    * so what the operator sees is exactly the artifact in the run directory.
    */
   public async openReport(runId: string): Promise<void> {
-    await invoke('experiment_open_report', { runId });
+    await invoke('experiment_open_report', { runId, store: this.store });
   }
 }
 
@@ -173,5 +189,16 @@ export class UnavailableStorage implements ExperimentStorage {
 
 /** The right storage for wherever the application is running. */
 export function createStorage(): ExperimentStorage {
-  return isTauri() ? new TauriStorage() : new UnavailableStorage();
+  return isTauri() ? new TauriStorage('runs') : new UnavailableStorage();
+}
+
+/**
+ * Storage for AstraBench's own documents — the suite, the aggregate, the
+ * report — separate from the experiments a benchmark produces.
+ *
+ * The runs themselves are ordinary experiments and go to `createStorage()`;
+ * only the benchmark-level documents live here.
+ */
+export function createBenchmarkStorage(): ExperimentStorage {
+  return isTauri() ? new TauriStorage('benchmarks') : new UnavailableStorage();
 }

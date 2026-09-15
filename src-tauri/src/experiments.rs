@@ -7,9 +7,16 @@
 //! It is implemented as a handful of narrow commands rather than by enabling a
 //! general filesystem plugin. A plugin would grant the frontend the ability to
 //! read and write wherever its scope allowed; these commands can only touch
-//! files inside `<app data>/runs/<run id>/`, cannot traverse out of it, and
-//! accept only the fixed set of file names an experiment consists of. The
-//! smaller surface is worth the extra code.
+//! files inside `<app data>/<store>/<id>/`, cannot traverse out of it, and
+//! accept only the fixed set of file names an experiment or a benchmark
+//! consists of. The smaller surface is worth the extra code.
+//!
+//! Phase 9 added the second store. AstraBench writes a benchmark's own
+//! documents — the suite it ran, the aggregate it computed, the report it
+//! rendered — and those are not an experiment. They live in `benchmarks/`
+//! rather than being given experiment-shaped identifiers in `runs/`, so that
+//! listing runs still returns runs and nothing has to guess from a name what
+//! kind of directory it found. `store` is an allowlist of two, not a path.
 //!
 //! Writes that must not tear — the manifest and the summary — go through
 //! `write_atomic`, which writes a temporary file and renames it. A run that is
@@ -26,7 +33,7 @@ use tauri::{AppHandle, Manager};
 /// Largest chunk a single streaming read may return.
 const MAX_CHUNK_BYTES: u32 = 8 << 20;
 
-/// The files an experiment run may contain.
+/// The files an experiment run or a benchmark directory may contain.
 ///
 /// A fixed list rather than a pattern: the frontend never needs to invent a
 /// file name, so accepting an arbitrary one would be surface with no purpose.
@@ -39,7 +46,35 @@ const ALLOWED_FILES: &[&str] = &[
     "evaluation.csv",
     "summary.json",
     "report.html",
+    // Benchmark documents (Phase 9).
+    "suite.json",
+    "aggregate.json",
 ];
+
+/// The directories under the application data directory that may be written.
+///
+/// Two, both fixed. The parameter exists so experiments and benchmarks keep
+/// separate namespaces; it is not a path and cannot become one.
+const ALLOWED_STORES: &[&str] = &["runs", "benchmarks"];
+
+/// Rejects any store that is not one of the two.
+fn validate_store(store: &str) -> Result<(), String> {
+    if ALLOWED_STORES.contains(&store) {
+        Ok(())
+    } else {
+        Err(format!("Unknown store: {store}"))
+    }
+}
+
+/// The store a command addresses, defaulting to runs.
+///
+/// Defaulted so that a frontend built before Phase 9 — or any caller that only
+/// deals in experiments — keeps working without passing it.
+fn store_or_runs(store: Option<String>) -> Result<String, String> {
+    let name = store.unwrap_or_else(|| "runs".to_owned());
+    validate_store(&name)?;
+    Ok(name)
+}
 
 /// Rejects anything that is not a plain generated run identifier.
 fn validate_run_id(run_id: &str) -> Result<(), String> {
@@ -64,13 +99,14 @@ fn validate_file_name(file_name: &str) -> Result<(), String> {
     }
 }
 
-/// Root directory for every run, created on first use.
-fn runs_root(app: &AppHandle) -> Result<PathBuf, String> {
+/// Root directory for a store, created on first use.
+fn store_root(app: &AppHandle, store: &str) -> Result<PathBuf, String> {
+    validate_store(store)?;
     let base = app
         .path()
         .app_data_dir()
         .map_err(|error| format!("No application data directory: {error}"))?;
-    let root = base.join("runs");
+    let root = base.join(store);
     fs::create_dir_all(&root)
         .map_err(|error| format!("Cannot create {}: {error}", root.display()))?;
     Ok(root)
@@ -81,33 +117,44 @@ fn runs_root(app: &AppHandle) -> Result<PathBuf, String> {
 /// The identifier is already validated, so this is defence in depth rather than
 /// the only check — but a path traversal that reached the user's home directory
 /// would be a serious bug and the verification costs nothing.
-fn run_dir(app: &AppHandle, run_id: &str) -> Result<PathBuf, String> {
+fn run_dir(app: &AppHandle, store: &str, run_id: &str) -> Result<PathBuf, String> {
     validate_run_id(run_id)?;
-    let root = runs_root(app)?;
+    let root = store_root(app, store)?;
     let directory = root.join(run_id);
 
     if !directory.starts_with(&root) {
-        return Err(format!("Run directory escapes the run root: {run_id}"));
+        return Err(format!("Run directory escapes the store root: {run_id}"));
     }
     Ok(directory)
 }
 
-fn file_path(app: &AppHandle, run_id: &str, file_name: &str) -> Result<PathBuf, String> {
+fn file_path(
+    app: &AppHandle,
+    store: &str,
+    run_id: &str,
+    file_name: &str,
+) -> Result<PathBuf, String> {
     validate_file_name(file_name)?;
-    Ok(run_dir(app, run_id)?.join(file_name))
+    Ok(run_dir(app, store, run_id)?.join(file_name))
 }
 
 #[tauri::command]
-pub fn experiment_create_run(app: AppHandle, run_id: String) -> Result<String, String> {
-    let directory = run_dir(&app, &run_id)?;
+pub fn experiment_create_run(
+    app: AppHandle,
+    run_id: String,
+    store: Option<String>,
+) -> Result<String, String> {
+    let store = store_or_runs(store)?;
+    let directory = run_dir(&app, &store, &run_id)?;
     fs::create_dir_all(&directory)
         .map_err(|error| format!("Cannot create {}: {error}", directory.display()))?;
     Ok(directory.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
-pub fn experiment_runs_root(app: AppHandle) -> Result<String, String> {
-    Ok(runs_root(&app)?.to_string_lossy().into_owned())
+pub fn experiment_runs_root(app: AppHandle, store: Option<String>) -> Result<String, String> {
+    let store = store_or_runs(store)?;
+    Ok(store_root(&app, &store)?.to_string_lossy().into_owned())
 }
 
 /// Replaces a file's contents: write a temporary file, flush it, rename it.
@@ -122,8 +169,10 @@ pub fn experiment_write_atomic(
     run_id: String,
     file_name: String,
     contents: String,
+    store: Option<String>,
 ) -> Result<(), String> {
-    let target = file_path(&app, &run_id, &file_name)?;
+    let store = store_or_runs(store)?;
+    let target = file_path(&app, &store, &run_id, &file_name)?;
     write_atomic_to(&target, contents.as_bytes())
 }
 
@@ -151,8 +200,10 @@ pub fn experiment_append(
     run_id: String,
     file_name: String,
     contents: String,
+    store: Option<String>,
 ) -> Result<(), String> {
-    let target = file_path(&app, &run_id, &file_name)?;
+    let store = store_or_runs(store)?;
+    let target = file_path(&app, &store, &run_id, &file_name)?;
     let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -168,8 +219,10 @@ pub fn experiment_read_file(
     app: AppHandle,
     run_id: String,
     file_name: String,
+    store: Option<String>,
 ) -> Result<String, String> {
-    let target = file_path(&app, &run_id, &file_name)?;
+    let store = store_or_runs(store)?;
+    let target = file_path(&app, &store, &run_id, &file_name)?;
     fs::read_to_string(&target)
         .map_err(|error| format!("Cannot read {}: {error}", target.display()))
 }
@@ -187,8 +240,10 @@ pub fn experiment_read_chunk(
     file_name: String,
     offset: u64,
     length: u32,
+    store: Option<String>,
 ) -> Result<Response, String> {
-    let target = file_path(&app, &run_id, &file_name)?;
+    let store = store_or_runs(store)?;
+    let target = file_path(&app, &store, &run_id, &file_name)?;
     Ok(Response::new(read_chunk_from(&target, offset, length)?))
 }
 
@@ -212,14 +267,17 @@ pub fn experiment_file_size(
     app: AppHandle,
     run_id: String,
     file_name: String,
+    store: Option<String>,
 ) -> Result<u64, String> {
-    let target = file_path(&app, &run_id, &file_name)?;
+    let store = store_or_runs(store)?;
+    let target = file_path(&app, &store, &run_id, &file_name)?;
     Ok(fs::metadata(&target).map(|meta| meta.len()).unwrap_or(0))
 }
 
 #[tauri::command]
-pub fn experiment_list_runs(app: AppHandle) -> Result<Vec<String>, String> {
-    let root = runs_root(&app)?;
+pub fn experiment_list_runs(app: AppHandle, store: Option<String>) -> Result<Vec<String>, String> {
+    let store = store_or_runs(store)?;
+    let root = store_root(&app, &store)?;
     let mut ids: Vec<String> = fs::read_dir(&root)
         .map_err(|error| format!("Cannot list {}: {error}", root.display()))?
         .filter_map(Result::ok)
@@ -235,8 +293,13 @@ pub fn experiment_list_runs(app: AppHandle) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-pub fn experiment_delete_run(app: AppHandle, run_id: String) -> Result<(), String> {
-    let directory = run_dir(&app, &run_id)?;
+pub fn experiment_delete_run(
+    app: AppHandle,
+    run_id: String,
+    store: Option<String>,
+) -> Result<(), String> {
+    let store = store_or_runs(store)?;
+    let directory = run_dir(&app, &store, &run_id)?;
     if directory.exists() {
         fs::remove_dir_all(&directory)
             .map_err(|error| format!("Cannot delete {}: {error}", directory.display()))?;
@@ -245,8 +308,15 @@ pub fn experiment_delete_run(app: AppHandle, run_id: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub fn experiment_run_path(app: AppHandle, run_id: String) -> Result<String, String> {
-    Ok(run_dir(&app, &run_id)?.to_string_lossy().into_owned())
+pub fn experiment_run_path(
+    app: AppHandle,
+    run_id: String,
+    store: Option<String>,
+) -> Result<String, String> {
+    let store = store_or_runs(store)?;
+    Ok(run_dir(&app, &store, &run_id)?
+        .to_string_lossy()
+        .into_owned())
 }
 
 /// Opens a path with the platform's default handler: a directory in the file
@@ -267,8 +337,13 @@ fn reveal(path: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn experiment_reveal_run(app: AppHandle, run_id: String) -> Result<(), String> {
-    let directory = run_dir(&app, &run_id)?;
+pub fn experiment_reveal_run(
+    app: AppHandle,
+    run_id: String,
+    store: Option<String>,
+) -> Result<(), String> {
+    let store = store_or_runs(store)?;
+    let directory = run_dir(&app, &store, &run_id)?;
     if !directory.exists() {
         return Err(format!("No such run: {run_id}"));
     }
@@ -280,8 +355,13 @@ pub fn experiment_reveal_run(app: AppHandle, run_id: String) -> Result<(), Strin
 /// The file on disk, not a copy rendered in the webview: the report the
 /// operator reads is exactly the artifact in the run directory.
 #[tauri::command]
-pub fn experiment_open_report(app: AppHandle, run_id: String) -> Result<(), String> {
-    let report = file_path(&app, &run_id, "report.html")?;
+pub fn experiment_open_report(
+    app: AppHandle,
+    run_id: String,
+    store: Option<String>,
+) -> Result<(), String> {
+    let store = store_or_runs(store)?;
+    let report = file_path(&app, &store, &run_id, "report.html")?;
     if !report.is_file() {
         return Err(format!("Run {run_id} has no report"));
     }
@@ -290,7 +370,10 @@ pub fn experiment_open_report(app: AppHandle, run_id: String) -> Result<(), Stri
 
 #[cfg(test)]
 mod tests {
-    use super::{read_chunk_from, validate_file_name, validate_run_id, write_atomic_to};
+    use super::{
+        read_chunk_from, store_or_runs, validate_file_name, validate_run_id, validate_store,
+        write_atomic_to,
+    };
     use std::fs;
     use std::path::PathBuf;
 
@@ -376,5 +459,36 @@ mod tests {
                 "should reject {candidate:?}"
             );
         }
+    }
+
+    #[test]
+    fn accepts_the_benchmark_documents() {
+        // Phase 9 added two file names, and only two.
+        assert!(validate_file_name("suite.json").is_ok());
+        assert!(validate_file_name("aggregate.json").is_ok());
+    }
+
+    #[test]
+    fn accepts_only_the_two_stores() {
+        assert!(validate_store("runs").is_ok());
+        assert!(validate_store("benchmarks").is_ok());
+        // Not a path, and cannot be made into one.
+        for candidate in ["", "..", "../runs", "Runs", "runs/", "/etc", "secrets"] {
+            assert!(
+                validate_store(candidate).is_err(),
+                "should reject {candidate:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn defaults_to_the_run_store() {
+        // A caller that predates the parameter keeps addressing experiments.
+        assert_eq!(store_or_runs(None).unwrap(), "runs");
+        assert_eq!(
+            store_or_runs(Some("benchmarks".to_owned())).unwrap(),
+            "benchmarks"
+        );
+        assert!(store_or_runs(Some("elsewhere".to_owned())).is_err());
     }
 }

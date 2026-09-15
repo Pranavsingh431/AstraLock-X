@@ -55,6 +55,8 @@ beforeEach(async () => {
   useSimulationStore.getState().setAutonomy(false);
   await useSimulationStore.getState().abortExperiment();
   useSimulationStore.getState().setAlgorithm('baseline-kf-pid');
+  useSimulationStore.getState().setIdentityEnabled(false);
+  useSimulationStore.getState().setExpectedBeaconProfile('code-a-15-66ms');
   useSimulationStore.getState().loadScenarioById('astralock-stationary');
   for (const runId of await storage.listRuns()) await storage.deleteRun(runId);
 });
@@ -278,23 +280,27 @@ describe('demonstrating without truth on screen', () => {
 });
 
 describe('the beacon identity panel', () => {
-  it('is absent on a scenario whose beacon carries no code', () => {
+  it('is absent while identity is off, which is the default even on a coded scenario', () => {
     renderView();
     act(() => {
+      useSimulationStore.getState().loadScenarioById('code-clean');
       useSimulationStore.getState().setAlgorithm('astralock-x');
       useSimulationStore.getState().setAutonomy(true);
     });
     stepFor(10);
 
-    // Nothing to recognise, so nothing is claimed. Not a panel of dashes.
-    expect(screen.queryByText(/Beacon identity/i)).not.toBeInTheDocument();
+    // Loading a scenario whose beacon carries a code does not switch the
+    // receiver on: whether a terminal looks for a code is its own setting.
+    expect(useSimulationStore.getState().identityEnabled).toBe(false);
+    expect(screen.queryByText(/Beacon identity — coded/i)).not.toBeInTheDocument();
   });
 
-  it('reports the correlator’s own verdict on a coded scenario', () => {
+  it('reports the correlator’s own verdict when the operator configures the expected code', () => {
     renderView();
     act(() => {
       useSimulationStore.getState().loadScenarioById('code-clean');
       useSimulationStore.getState().setAlgorithm('astralock-x');
+      useSimulationStore.getState().setIdentityEnabled(true);
       useSimulationStore.getState().setAutonomy(true);
     });
     stepFor(12);
@@ -305,6 +311,43 @@ describe('the beacon identity panel', () => {
     expect(screen.getByText('Correlation')).toBeInTheDocument();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
     expect(screen.getByText(/Not a probability/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Expected beacon code' })).toHaveValue(
+      'code-a-15-66ms',
+    );
+  });
+
+  it('does not adapt to what the target transmits: expecting code B, a code-A beacon is never recognised', () => {
+    renderView();
+    act(() => {
+      useSimulationStore.getState().loadScenarioById('code-clean');
+      useSimulationStore.getState().setAlgorithm('astralock-x');
+      useSimulationStore.getState().setIdentityEnabled(true);
+      useSimulationStore.getState().setExpectedBeaconProfile('code-b-15-66ms');
+      useSimulationStore.getState().setAutonomy(true);
+    });
+
+    let recognised = false;
+    let tracked = false;
+    for (let second = 0; second < 14; second += 1) {
+      stepFor(1);
+      const state = useSimulationStore.getState();
+      const debug = state.algorithmDebug;
+      if (debug !== null && 'identityState' in debug && debug.identityState === 'match') {
+        recognised = true;
+      }
+      if (state.patMode === 'track' || state.patMode === 'handoff') tracked = true;
+    }
+    // A misconfigured terminal, behaving as one: no recognition, no track.
+    expect(recognised).toBe(false);
+    expect(tracked).toBe(false);
+
+    // Setting the receiver to the right pattern is a configuration change, and
+    // it is the only thing that makes the difference.
+    act(() => {
+      useSimulationStore.getState().setExpectedBeaconProfile('code-a-15-66ms');
+    });
+    stepFor(12);
+    expect(screen.getByText('MATCH')).toBeInTheDocument();
   });
 
   it('names no emitter, because the tracker knows none', () => {
@@ -312,6 +355,7 @@ describe('the beacon identity panel', () => {
     act(() => {
       useSimulationStore.getState().loadScenarioById('code-decoy-wrong');
       useSimulationStore.getState().setAlgorithm('astralock-x');
+      useSimulationStore.getState().setIdentityEnabled(true);
       useSimulationStore.getState().setAutonomy(true);
     });
     stepFor(12);
@@ -328,6 +372,7 @@ describe('the beacon identity panel', () => {
     act(() => {
       useSimulationStore.getState().loadScenarioById('code-clean');
       useSimulationStore.getState().setAlgorithm('astralock-x');
+      useSimulationStore.getState().setIdentityEnabled(true);
       useSimulationStore.getState().setAutonomy(true);
     });
     stepFor(12);

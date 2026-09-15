@@ -15,9 +15,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { fingerprint } from './fingerprint';
-import { analyseLock, computeSummary, percentile, statistics } from './metrics';
+import { analyseLock, computeSummary, percentile, statistics, trackingModesFor } from './metrics';
 import type { SummaryContext } from './metrics';
-import { DEFAULT_METRICS_CONFIG, experimentSummarySchema } from './schema';
+import {
+  DEFAULT_METRICS_CONFIG,
+  METRICS_DEFINITION_VERSION,
+  TRACKING_MODES,
+  experimentSummarySchema,
+} from './schema';
 import type { EvaluationSample, ExperimentEvent, MetricsConfig, TelemetrySample } from './schema';
 
 // --- Builders ---------------------------------------------------------------
@@ -728,5 +733,65 @@ describe('beacon identity scoring', () => {
       frame(3, 'match', { truth_other_emitters_in_image: 1, pat_state: 'search' }),
     ]);
     expect(summary!.identityChallenges).toBe(2);
+  });
+});
+
+// --- Metrics definition coverage (Phase 9) -----------------------------------
+
+describe('the tracking modes a definition names', () => {
+  it('covers every definition version the application can produce', () => {
+    // The regression that motivated this test cost three phases of understated
+    // retention. Phase 7 bumped the definition version to carry an SNR
+    // aperture, `TRACKING_MODES` was not extended, and `trackingModesFor` fell
+    // back to `['track']` — so handoff-ready time silently stopped counting as
+    // tracking for every run scored under v3, reversing a v2 decision without
+    // anybody making it.
+    //
+    // It failed silently because a fallback to a valid mode list produces
+    // valid-looking numbers. So the table is now required to be complete, and
+    // this test is what requires it.
+    for (let version = 1; version <= METRICS_DEFINITION_VERSION; version += 1) {
+      expect(TRACKING_MODES[version], `definition v${String(version)}`).toBeDefined();
+    }
+  });
+
+  it('counts handoff as tracking from v2 onwards', () => {
+    // Handoff-ready is tracking with stricter conditions met. Time spent there
+    // must not count against the tracker, and only the baseline — which never
+    // reports handoff — is indifferent to this.
+    expect(TRACKING_MODES[1]).toEqual(['track']);
+    for (let version = 2; version <= METRICS_DEFINITION_VERSION; version += 1) {
+      expect(TRACKING_MODES[version], `definition v${String(version)}`).toContain('handoff');
+    }
+  });
+
+  it('never counts RECOVER as tracking', () => {
+    // The algorithm stating it has lost measurement support, even while it
+    // keeps pointing at its prediction. Counting it would credit a tracker for
+    // coasting.
+    for (let version = 1; version <= METRICS_DEFINITION_VERSION; version += 1) {
+      expect(TRACKING_MODES[version], `definition v${String(version)}`).not.toContain('reacquire');
+    }
+  });
+
+  it('refuses a definition version nobody has written down', () => {
+    expect(() =>
+      trackingModesFor({ ...DEFAULT_METRICS_CONFIG, definitionVersion: 99 } as never),
+    ).toThrow(/does not say which PAT modes/);
+  });
+
+  it('credits handoff time as locked, on a sequence built to check it', () => {
+    // The end-to-end consequence, on a synthetic run that sits in HANDOFF while
+    // pointing accurately. Under the broken v3 this scored zero retention.
+    const samples = every(0, 8, () => ({ pat_state: 'handoff' }));
+    const summary = summarise(samples);
+
+    // Retention is the quantity the gap corrupted: every sample is on target
+    // and in HANDOFF, so the whole trackable window is locked. Under the broken
+    // v3 this was zero. (The outcome is `no-search-recorded` because a
+    // synthetic sequence has no search event; acquisition timing is a separate
+    // concern and is covered elsewhere.)
+    expect(summary.lockRetentionRate.value).toBe(1);
+    expect(summary.lockedDurationSeconds.value).toBe(summary.trackableOpportunitySeconds.value);
   });
 });

@@ -115,6 +115,8 @@ pnpm verify
 - [docs/REPORTING.md](docs/REPORTING.md) — the generated offline report and the Reports screen
 - [docs/DISTURBANCE_MODEL.md](docs/DISTURBANCE_MODEL.md) — camera-observable platform, propagation-style, sensor and transport disturbances
 - [docs/BEACON_IDENTITY.md](docs/BEACON_IDENTITY.md) — coded optical beacon identity: why a camera cannot read a fast carrier, the codes, exposure integration, the correlator, measured results and what it cannot do
+- [docs/ASTRABENCH.md](docs/ASTRABENCH.md) — deterministic algorithm benchmarking: fairness fingerprints, paired seeds, aggregation, the offline benchmark report and its limits
+- [docs/ALGORITHM_PLUGIN.md](docs/ALGORITHM_PLUGIN.md) — writing a tracking algorithm: the contract, what arrives, what it cannot reach, and how to register one
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — setup, commands, conventions
 - [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md) — what works, what does not
 - [docs/adr/](docs/adr/) — why things are the way they are

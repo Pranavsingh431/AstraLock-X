@@ -19,7 +19,13 @@ import { join } from 'node:path';
 
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_ASTRALOCK_CONFIG, astraLockXPat } from '@/core/algorithms';
+import {
+  DEFAULT_ASTRALOCK_CONFIG,
+  DEFAULT_TERMINAL_PROFILE_ID,
+  astraLockXPat,
+  terminalProfileById,
+  withExpectedBeacon,
+} from '@/core/algorithms';
 import { parseBaselinePatConfig } from '@/core/algorithms/baseline/config';
 import { parseSimulationConfig } from '@/core/contracts/simulation';
 import { loadScenario } from '@/scenarios';
@@ -37,6 +43,9 @@ import {
 import { RUN_FILES } from './storage';
 
 vi.setConfig({ testTimeout: 600_000 });
+
+/** The receiver setting for the coded runs: explicit, never read from the scenario. */
+const MISSION_PROFILE = terminalProfileById(DEFAULT_TERMINAL_PROFILE_ID)!;
 
 const roots: string[] = [];
 afterAll(async () => {
@@ -208,22 +217,13 @@ describe('a recorded coded-beacon run', () => {
     // something, which is a defect in what gets recorded.
     const root = await temporaryRoot();
     const scenario = loadScenario('code-decoy-hard');
-    const code = scenario.targets[0]!.beacon!.identityCode!;
 
     const rig = buildRig({
       scenario,
       storage: new NodeFileStorage(root),
       runId: 'run-coded',
       plugin: astraLockXPat,
-      algorithmConfig: {
-        ...DEFAULT_ASTRALOCK_CONFIG,
-        identity: {
-          ...DEFAULT_ASTRALOCK_CONFIG.identity,
-          enabled: true,
-          expectedSequence: code.sequence,
-          symbolDuration: code.symbolDuration as number,
-        },
-      },
+      algorithmConfig: withExpectedBeacon(DEFAULT_ASTRALOCK_CONFIG, MISSION_PROFILE),
     });
     await rig.recorder!.start({ autonomyActive: true });
     drive(rig, 30);
@@ -240,10 +240,13 @@ describe('a recorded coded-beacon run', () => {
     expect(recomputed.beaconIdentity!.identityChallenges).toBeGreaterThan(0);
   });
 
-  it('stores the expected pattern the tracker was configured with', async () => {
+  it('stores the expected pattern in algorithm.json and the emitted pattern in scenario.json', async () => {
     // The ON and OFF arms of a comparison differ only in the tracker's
     // configuration. A record that did not say which arm it was would be
     // unusable, so the sequence and the enable flag are part of algorithm.json.
+    // What the emitter physically sent is a fact about the world and stays in
+    // scenario.json; the two are recorded separately because they are
+    // configured separately.
     const root = await temporaryRoot();
     const scenario = loadScenario('code-clean');
     const code = scenario.targets[0]!.beacon!.identityCode!;
@@ -253,15 +256,7 @@ describe('a recorded coded-beacon run', () => {
       storage: new NodeFileStorage(root),
       runId: 'run-coded-config',
       plugin: astraLockXPat,
-      algorithmConfig: {
-        ...DEFAULT_ASTRALOCK_CONFIG,
-        identity: {
-          ...DEFAULT_ASTRALOCK_CONFIG.identity,
-          enabled: true,
-          expectedSequence: code.sequence,
-          symbolDuration: code.symbolDuration as number,
-        },
-      },
+      algorithmConfig: withExpectedBeacon(DEFAULT_ASTRALOCK_CONFIG, MISSION_PROFILE),
     });
     await rig.recorder!.start({ autonomyActive: true });
     drive(rig, 12);
@@ -272,7 +267,7 @@ describe('a recorded coded-beacon run', () => {
       await storage.readFile('run-coded-config', RUN_FILES.algorithm),
     ) as { identity: { enabled: boolean; expectedSequence: number[] } };
     expect(algorithm.identity.enabled).toBe(true);
-    expect(algorithm.identity.expectedSequence).toEqual([...code.sequence]);
+    expect(algorithm.identity.expectedSequence).toEqual([...MISSION_PROFILE.sequence]);
 
     const saved = parseSimulationConfig(
       JSON.parse(await storage.readFile('run-coded-config', RUN_FILES.scenario)),

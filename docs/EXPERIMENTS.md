@@ -437,3 +437,23 @@ directory still loads, recomputes and verifies cold from its raw artifacts, and
 its absent identity columns and absent summary block parse as "never asked"
 rather than as zeroes. The test suite recomputes a stored Phase 5 run under its
 own definition with zero differences.
+
+## Phase 9: experiments produced by a benchmark
+
+A benchmark run is an ordinary experiment. AstraBench creates one recorder per
+run with the suite's metrics configuration and the arm's algorithm
+configuration, writes the usual `manifest.json`, `scenario.json`,
+`algorithm.json`, `events.jsonl`, `telemetry.csv`, `evaluation.csv` and
+`summary.json`, and finalises it with `scenario-duration-reached`. Nothing about
+the artifacts is benchmark-specific, and each one recomputes and renders on its
+own exactly as a hand-recorded run does.
+
+Run identifiers are derived rather than generated:
+`bench-<benchmark>-<case>-s<seed>-<arm>`, each part bounded so the whole stays
+inside the host's 128-character limit. A benchmark's manifest names the run ids
+it produced, which is how a benchmark directory stays self-contained by
+reference without copying a scenario document per run.
+
+The benchmark's own documents — the suite, the aggregate, the report — are not
+experiments and live in a separate store, `benchmarks/`, so that listing runs
+returns runs. See [ASTRABENCH.md](ASTRABENCH.md).

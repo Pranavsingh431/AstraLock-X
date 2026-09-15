@@ -20,8 +20,11 @@ import { buildRig, drive } from '@/core/experiments/rig.node';
 import {
   DEFAULT_ASTRALOCK_CONFIG,
   DEFAULT_BASELINE_PAT_CONFIG,
+  DEFAULT_TERMINAL_PROFILE_ID,
   astraLockXPat,
   baselineKfPidPat,
+  terminalProfileById,
+  withExpectedBeacon,
 } from '@/core/algorithms';
 import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';
 import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
@@ -175,22 +178,16 @@ describe('a coded scenario with identity switched off', () => {
   const behaviour = (identity: boolean) => {
     const engine = new SimulationEngine(loadScenario('code-clean'));
     const sensor = new VirtualCameraSensor({ config: engine.config });
-    const code = engine.config.targets[0]!.beacon!.identityCode!;
     const runtime = new ClosedLoopRuntime({
       engine,
       sensor,
       sampler: new ExactWorldSampler(engine),
       plugin: astraLockXPat,
       config: identity
-        ? {
-            ...DEFAULT_ASTRALOCK_CONFIG,
-            identity: {
-              ...DEFAULT_ASTRALOCK_CONFIG.identity,
-              enabled: true,
-              expectedSequence: code.sequence,
-              symbolDuration: code.symbolDuration as number,
-            },
-          }
+        ? withExpectedBeacon(
+            DEFAULT_ASTRALOCK_CONFIG,
+            terminalProfileById(DEFAULT_TERMINAL_PROFILE_ID)!,
+          )
         : DEFAULT_ASTRALOCK_CONFIG,
     });
 

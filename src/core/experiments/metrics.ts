@@ -36,9 +36,28 @@ import type {
 import { TRACKING_MODES } from './schema';
 import type { ExperimentSchemaVersion } from './schema';
 
-/** The PAT modes a metrics definition treats as the algorithm claiming a track. */
+/**
+ * The PAT modes a metrics definition treats as the algorithm claiming a track.
+ *
+ * **Throws for a version the table does not cover.** It used to fall back to
+ * `['track']`, and that fallback cost three phases of understated retention:
+ * Phase 7 bumped the definition version to carry an SNR aperture, the table was
+ * not extended, and handoff-ready time silently stopped counting as tracking
+ * for every run scored under v3. Nothing failed, because a fallback to a valid
+ * mode list produces valid-looking numbers.
+ *
+ * A metrics definition nobody has written down is not a metrics definition, so
+ * it is refused rather than approximated.
+ */
 export function trackingModesFor(config: MetricsConfig): readonly string[] {
-  return TRACKING_MODES[config.definitionVersion] ?? ['track'];
+  const modes = TRACKING_MODES[config.definitionVersion];
+  if (modes === undefined) {
+    throw new RangeError(
+      `Metrics definition v${String(config.definitionVersion)} does not say which PAT modes ` +
+        'count as tracking. Add an entry to TRACKING_MODES rather than letting it default.',
+    );
+  }
+  return modes;
 }
 
 // --- Statistics -------------------------------------------------------------
@@ -654,9 +673,13 @@ export class SummaryBuilder {
     const time = sample.capture_time_s;
     const inTrack = this.trackingModes.includes(sample.pat_state);
     const inHandoff = sample.pat_state === 'handoff';
+    // Every definition except v1 has a handoff-validity threshold, and writing
+    // the condition as "not v1" rather than "is v2" is what stops the next
+    // version bump from silently dropping it — which is exactly how v3 lost it
+    // between Phase 7 and Phase 9.
     const handoffValid =
       inHandoff &&
-      config.definitionVersion === 2 &&
+      config.definitionVersion !== 1 &&
       sample.truth_angular_pointing_error_rad !== null &&
       sample.truth_angular_pointing_error_rad <= config.handoffValidityThresholdRad;
     if (inHandoff) this.firstHandoff ??= time;

@@ -35,10 +35,11 @@ beforeEach(() => {
 /**
  * A view that is still a placeholder.
  *
- * Mission Control became real in Phase 1, so the placeholder assertions moved
- * to a view that is genuinely still unbuilt rather than being deleted.
+ * Mission Control became real in Phase 1 and AstraBench in Phase 9, so the
+ * placeholder assertions keep moving to a view that is genuinely still unbuilt
+ * rather than being deleted. Replay is the next one.
  */
-const PLACEHOLDER_VIEW = 'astrabench' as const;
+const PLACEHOLDER_VIEW = 'replay' as const;
 
 describe('AppShell', () => {
   it('opens on the default view', () => {
@@ -83,7 +84,9 @@ describe('AppShell', () => {
     const user = userEvent.setup();
     render(<AppShell />);
 
-    // The third view in navigation order is AstraBench.
+    // The third view in navigation order is AstraBench, which became a real
+    // workspace in Phase 9 — so this now exercises the shortcut against a view
+    // that renders something rather than a placeholder.
     await user.keyboard('{Control>}3{/Control}');
 
     expect(useNavigationStore.getState().activeView).toBe('astrabench');

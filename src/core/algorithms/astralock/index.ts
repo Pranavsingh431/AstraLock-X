@@ -15,3 +15,4 @@ export * from './evidence';
 export * from './imm';
 export * from './plugin';
 export * from './search';
+export * from './terminal-profile';

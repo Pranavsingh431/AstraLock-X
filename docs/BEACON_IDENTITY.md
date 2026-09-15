@@ -424,6 +424,51 @@ decoy sitting in a wide recovery gate is refused on identity frame after frame
 while the real beacon is looked for — visible in the telemetry as a rising
 `identity_rejected` count with no measurement accepted.
 
+## Expected code versus emitted code
+
+The pattern a receiver looks for and the pattern an emitter transmits are two
+separate settings, and nothing copies one into the other.
+
+**Phase 8 got this wrong, and Phase 9 corrected it.** The application read the
+designated emitter's `identityCode` out of the loaded scenario and put it into
+the tracker's configuration when the runtime was built. Every measured result
+was still honest — the algorithm itself never saw the scenario, and the
+anti-cheat suite proved it — but the _configuration_ was a function of the
+physical answer. Change what the target transmits and the receiver silently
+followed, so no arrangement of scenario and algorithm could produce a genuine
+identity failure. That is fine for a demonstration and fatal for a benchmark: a
+comparison in which one arm cannot lose is not a comparison.
+
+The receiver's expected pattern is now a **terminal beacon profile**, chosen by
+the operator in Mission Control or written into a benchmark arm. A profile is
+two numbers a mission card would carry — a sequence and a symbol duration — and
+names no emitter, no target index and no phase. The correction is structural
+rather than careful: the store's algorithm-configuration function takes no
+`SimulationConfig` at all, so there is no argument through which a scenario
+could reach a receiver setting.
+
+The consequence is visible and measured. A terminal expecting Code A, flown
+against a beacon transmitting Code B on otherwise identical physics:
+
+| Transmits | Terminal expects | Outcome            | Retention | Frames called MATCH |
+| --------- | ---------------- | ------------------ | --------: | ------------------: |
+| Code A    | Code A           | acquired           |     1.000 |               98.7% |
+| Code B    | Code B           | acquired           |     1.000 |               98.7% |
+| Code B    | Code A           | **no acquisition** |     0.000 |               13.3% |
+| Code A    | Code B           | **no acquisition** |     0.000 |                3.6% |
+
+A mismatched terminal does briefly report MATCH — on a history of twenty-odd
+samples an unmatched code can clear the threshold by accident, which is the trap
+the evidence rule exists for — but it cannot hold, and a confirmed coarse lock
+requires dwell. Choosing the other profile is a configuration act with a record
+in `algorithm.json`, while what the emitter actually sent stays in
+`scenario.json`. The two are recorded separately because they are configured
+separately.
+
+`expected-code-independence.test.ts` holds this line, and
+[ALGORITHM_PLUGIN.md](ALGORITHM_PLUGIN.md) states the rule for any algorithm
+added later.
+
 ## Measured results
 
 Nine scenarios, 45 seconds each, identity switched on and off with nothing else

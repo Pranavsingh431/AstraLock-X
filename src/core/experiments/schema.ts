@@ -64,12 +64,26 @@ export const METRICS_DEFINITION_VERSION = 3;
  *   stating that it has lost measurement support, even while it keeps pointing
  *   at its prediction.
  *
- * For the baseline, which never reports `handoff`, the two versions give
+ * - **v3** (Phase 7): unchanged from v2. The version was bumped to carry the
+ *   image-SNR aperture, not to change what counts as tracking.
+ *
+ * For the baseline, which never reports `handoff`, every version gives
  * identical results.
+ *
+ * **This table must have an entry for every definition version.** It did not
+ * between Phase 7 and Phase 9: v3 was missing, `trackingModesFor` fell back to
+ * `['track']`, and handoff-ready time silently stopped counting as tracking —
+ * reversing the v2 decision above without anybody deciding it. Nothing failed,
+ * because the fallback is a valid mode list; it simply understated lock
+ * retention for any algorithm that reaches HANDOFF, which is AstraLock-X and
+ * not the baseline. AstraBench found it on the first suite it ran, on a
+ * stationary beacon AstraLock-X was holding to 109 µrad while being scored at
+ * 0.049 retention. See docs/METRICS.md.
  */
 export const TRACKING_MODES: Readonly<Record<number, readonly string[]>> = {
   1: ['track'],
   2: ['track', 'handoff'],
+  3: ['track', 'handoff'],
 };
 
 // --- Lifecycle --------------------------------------------------------------
