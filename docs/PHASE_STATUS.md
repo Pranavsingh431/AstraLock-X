@@ -1519,11 +1519,11 @@ because the evidence ran out — a beacon that stops signalling is reported as
 unconfirmable, not as wrong.
 
 Nine coded scenarios cover a clean coded target, an uncoded intruder, an obvious
-decoy well off the predicted path, an
-intruder sending a different code, the Phase 7 hard decoy with both sources
-coded, an intruder replaying a rotation of the beacon's code, an intruder
-sending the identical code at the identical phase, a beacon that stops
-signalling twenty seconds in, and a coded beacon through bursty frame loss.
+decoy well off the predicted path, an intruder sending a different code, the
+Phase 7 hard decoy with both sources coded, an intruder replaying a rotation of
+the beacon's code, an intruder sending the identical code at the identical
+phase, a beacon that stops signalling twenty seconds in, and a coded beacon
+through bursty frame loss.
 
 ### What it achieves, measured
 
