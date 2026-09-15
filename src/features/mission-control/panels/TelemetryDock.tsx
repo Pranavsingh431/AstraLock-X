@@ -70,7 +70,7 @@ export function TelemetryDock(): React.JSX.Element {
           }
         />
 
-        <div className="min-h-0 flex-1 p-2.5">
+        <div className="min-h-0 flex-1 overflow-auto p-2.5">
           <TabsContent value="timeline" className="astra-rise">
             <div className="flex h-full flex-col justify-center gap-2">
               <PatTimeline />

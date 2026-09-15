@@ -28,10 +28,13 @@ export function NotImplementedView({ view }: { view: ViewDefinition }): React.JS
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="border-dashed font-mono tracking-wide">
               <Lock aria-hidden />
-              NOT IMPLEMENTED
+              FUTURE WORK
             </Badge>
             <Badge variant="secondary" className="font-mono">
-              {view.plannedPhase}
+              Not part of this prototype
+            </Badge>
+            <Badge variant="outline" className="font-mono text-muted-foreground">
+              Deferred to a later stage
             </Badge>
           </div>
           <CardTitle className="mt-2 text-xl">{view.label}</CardTitle>
@@ -41,7 +44,7 @@ export function NotImplementedView({ view }: { view: ViewDefinition }): React.JS
         <CardContent className="space-y-6">
           <section>
             <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-              Planned capabilities
+              What it would do
             </h3>
             <ul className="mt-3 space-y-2">
               {view.plannedCapabilities.map((capability) => (
@@ -73,8 +76,9 @@ export function NotImplementedView({ view }: { view: ViewDefinition }): React.JS
 
           <Separator />
           <p className="text-xs leading-relaxed text-muted-foreground">
-            This view is intentionally empty. AstraLock-X displays measured results only, so nothing
-            appears here until there is a simulator to produce them and a tracker to measure.
+            This view is intentionally empty. It is scoped work that this prototype deliberately
+            does not include, kept visible so the roadmap is legible rather than hidden — an
+            unfinished tool presented as operational would be worse than an empty one.
           </p>
         </CardContent>
       </Card>

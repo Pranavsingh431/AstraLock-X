@@ -19,7 +19,11 @@ describe('view registry', () => {
     for (const view of VIEWS) {
       expect(view.label.length).toBeGreaterThan(0);
       expect(view.summary.length).toBeGreaterThan(0);
-      expect(view.plannedPhase).toMatch(/^Phase \d+$/);
+      // A delivered view names the phase it arrived in; a deferred one names
+      // nothing, because promising a phase for work that is not planned is a
+      // claim about a schedule that does not exist.
+      if (view.status === 'implemented') expect(view.deliveredIn).toMatch(/^Phase \d+$/);
+      else expect(view.deliveredIn).toBeNull();
       expect(view.plannedCapabilities.length).toBeGreaterThan(0);
     }
   });

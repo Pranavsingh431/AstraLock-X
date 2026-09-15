@@ -25,16 +25,31 @@ import {
   BENCHMARK_SUITES,
   recomputeBenchmark,
   runBenchmark,
+  successCriterionFor,
   totalRuns,
   type BenchmarkAggregate,
   type BenchmarkManifest,
   type BenchmarkProgress,
   type BenchmarkSuite,
   type CaseAggregate,
+  type SuccessCriterion,
 } from '@/core/benchmark';
 import { createBenchmarkStorage, createStorage, isTauri } from '@/core/experiments';
 import { readAppInfo } from '@/lib/app-info';
-import { EmptyState, Panel, PanelHeader, StatusBadge, WarningBanner } from '@/components/astra';
+import {
+  EmptyState,
+  EngineeringTable,
+  Panel,
+  PanelHeader,
+  Rh,
+  StatusBadge,
+  TableBody,
+  TableHead,
+  Td,
+  Th,
+  Tr,
+  WarningBanner,
+} from '@/components/astra';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -57,6 +72,82 @@ const number = (value: number | null, digits = 3): string =>
 
 const percent = (value: number | null): string =>
   value === null ? '—' : `${(value * 100).toFixed(0)}%`;
+
+/**
+ * What the suite will run, before it runs.
+ *
+ * The whole argument for this benchmark is that the comparison is decided
+ * before execution: the scenarios, the seeds and the arms are written in source
+ * and fingerprinted, so nothing can be selected after seeing a result. That
+ * argument is only visible if the plan is on screen — so the plan is what fills
+ * this space until there is an aggregate to replace it.
+ *
+ * Every value is read from the suite definition. Nothing here is a prediction.
+ */
+function Preflight({ suite }: { suite: BenchmarkSuite }): React.JSX.Element {
+  return (
+    <div className="space-y-2 p-1">
+      <EmptyState
+        title="No results yet — this is what the suite will run."
+        hint="Results replace this once a suite finishes, read back from the aggregate.json it wrote rather than accumulated here while it ran."
+      />
+
+      <Panel>
+        <PanelHeader title="Planned runs" />
+        <div className="overflow-x-auto">
+          <EngineeringTable>
+            <TableHead>
+              <Th>Case</Th>
+              <Th>Scenario</Th>
+              <Th>Arms</Th>
+              <Th numeric>Seeds</Th>
+              <Th numeric>Runs</Th>
+              <Th>Counts as success</Th>
+            </TableHead>
+            <TableBody>
+              {suite.cases.map((entry) => (
+                <Tr key={entry.caseId}>
+                  <Rh>{entry.label}</Rh>
+                  <Td>
+                    <code className="text-[10px]">{entry.scenarioId}</code>
+                  </Td>
+                  <Td>{entry.arms.map((arm) => arm.label).join(' vs ')}</Td>
+                  <Td numeric>{entry.seeds.join(', ')}</Td>
+                  <Td numeric>{entry.seeds.length * entry.arms.length}</Td>
+                  <Td>{describeSuccess(successCriterionFor(suite, entry))}</Td>
+                </Tr>
+              ))}
+            </TableBody>
+          </EngineeringTable>
+        </div>
+        <p className="px-2.5 py-2 text-[10px] leading-snug text-muted-foreground">
+          Seeds are declared in source before any of them was run. Every arm of a case flies the
+          identical scenario, seed and disturbance realization; the runner refuses the comparison if
+          their physical fingerprints differ.
+        </p>
+      </Panel>
+    </div>
+  );
+}
+
+/**
+ * The success rule for a case, as a phrase rather than a discriminated union.
+ *
+ * Exhaustive by construction: adding a criterion without wording it becomes a
+ * compile error rather than a case that silently prints its own tag name.
+ */
+function describeSuccess(criterion: SuccessCriterion): string {
+  switch (criterion.kind) {
+    case 'acquired':
+      return 'coarse lock acquired';
+    case 'retention-at-least':
+      return `acquired, retention ≥ ${criterion.threshold.toFixed(2)}`;
+    case 'handoff-ready':
+      return 'acquired, and reached handoff readiness';
+    case 'retention-without-false-lock':
+      return `retention ≥ ${criterion.threshold.toFixed(2)}, no false lock`;
+  }
+}
 
 /**
  * Time remaining, from runs that have actually finished.
@@ -291,10 +382,7 @@ export function AstraBenchView(): React.JSX.Element {
 
       <ScrollArea className="min-h-0 flex-1">
         {aggregate === null ? (
-          <EmptyState
-            title="No results yet."
-            hint="Results appear after a suite finishes, read back from the aggregate.json it wrote — not accumulated here while it ran."
-          />
+          <Preflight suite={suite} />
         ) : (
           <Results
             aggregate={aggregate}

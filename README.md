@@ -127,6 +127,9 @@ pnpm verify
 - [docs/BEACON_IDENTITY.md](docs/BEACON_IDENTITY.md) — coded optical beacon identity: why a camera cannot read a fast carrier, the codes, exposure integration, the correlator, measured results and what it cannot do
 - [docs/ASTRABENCH.md](docs/ASTRABENCH.md) — deterministic algorithm benchmarking: fairness fingerprints, paired seeds, aggregation, the offline benchmark report and its limits
 - [docs/ALGORITHM_PLUGIN.md](docs/ALGORITHM_PLUGIN.md) — writing a tracking algorithm: the contract, what arrives, what it cannot reach, and how to register one
+- [docs/PPT_EVIDENCE.md](docs/PPT_EVIDENCE.md) — the submission's source of truth: what is implemented, the verified headline results and their provenance, limitations and future work
+- [docs/SIH_COMPLIANCE.md](docs/SIH_COMPLIANCE.md) — the problem statement's requirements mapped to what exists today, with anything incomplete marked
+- [docs/SCREENSHOT_GUIDE.md](docs/SCREENSHOT_GUIDE.md) — exact scenario, algorithm and timing for each submission screenshot
 - [docs/UI_GUIDE.md](docs/UI_GUIDE.md) — the workstation: colour and its meanings, the design primitives, the two view modes, overlay semantics, and the rules for adding a panel
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — setup, commands, conventions
 - [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md) — what works, what does not

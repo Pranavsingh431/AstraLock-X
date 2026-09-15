@@ -1,0 +1,2094 @@
+{
+  "wallMs": 43824,
+  "aggregate": {
+    "schemaVersion": 1,
+    "benchmarkId": "bench-sih-quick-validation",
+    "suiteId": "quick-validation",
+    "suiteName": "AstraBench Quick Validation",
+    "suiteFingerprint": "suite:sha256:a87ed252995d881f531ccb5b78e3bf7f1d56ac6f4e71bf8a5d90971e6324e5a3",
+    "status": "completed",
+    "plannedRuns": 12,
+    "attempted": 12,
+    "completed": 12,
+    "failed": 0,
+    "cancelled": 0,
+    "cases": [
+      {
+        "caseId": "acquire-outside-fov",
+        "label": "Acquisition from outside the field of view",
+        "scenarioId": "astralock-stationary",
+        "seeds": [
+          9101
+        ],
+        "successCriterion": "coarse lock acquired",
+        "comparison": {
+          "valid": true,
+          "reason": null,
+          "detail": null
+        },
+        "arms": [
+          {
+            "armId": "baseline-kf-pid",
+            "label": "Baseline KF + PID",
+            "algorithmId": "baseline-kf-pid",
+            "algorithmVersion": "1.0.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 1,
+            "successRate": 1,
+            "unrecoveredLossRuns": 0,
+            "falseLockRuns": 0,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  16.05
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 16.05,
+                "median": 16.05,
+                "p95": 16.05,
+                "min": 16.05,
+                "max": 16.05
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  286.5638947395867
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 286.5638947395867,
+                "median": 286.5638947395867,
+                "p95": 286.5638947395867,
+                "min": 286.5638947395867,
+                "max": 286.5638947395867
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  715.5011760042369
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 715.5011760042369,
+                "median": 715.5011760042369,
+                "p95": 715.5011760042369,
+                "min": 715.5011760042369,
+                "max": 715.5011760042369
+              },
+              "lockRetentionRate": {
+                "values": [
+                  1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1,
+                "median": 1,
+                "p95": 1,
+                "min": 1,
+                "max": 1
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              }
+            }
+          },
+          {
+            "armId": "astralock-x",
+            "label": "AstraLock-X",
+            "algorithmId": "astralock-x",
+            "algorithmVersion": "1.1.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 1,
+            "successRate": 1,
+            "unrecoveredLossRuns": 0,
+            "falseLockRuns": 0,
+            "handoffReadyRuns": 1,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  12.533333333333333
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 12.533333333333333,
+                "median": 12.533333333333333,
+                "p95": 12.533333333333333,
+                "min": 12.533333333333333,
+                "max": 12.533333333333333
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  256.5298684914056
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 256.5298684914056,
+                "median": 256.5298684914056,
+                "p95": 256.5298684914056,
+                "min": 256.5298684914056,
+                "max": 256.5298684914056
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  578.637398257308
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 578.637398257308,
+                "median": 578.637398257308,
+                "p95": 578.637398257308,
+                "min": 578.637398257308,
+                "max": 578.637398257308
+              },
+              "lockRetentionRate": {
+                "values": [
+                  1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1,
+                "median": 1,
+                "p95": 1,
+                "min": 1,
+                "max": 1
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              }
+            }
+          }
+        ],
+        "paired": [
+          {
+            "metricKey": "acquisitionTimeS",
+            "metricLabel": "Coarse acquisition time",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 16.05,
+                "candidate": 12.533333333333333,
+                "delta": -3.5166666666666675,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "rmsPointingErrorUrad",
+            "metricLabel": "RMS pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 286.5638947395867,
+                "candidate": 256.5298684914056,
+                "delta": -30.034026248181135,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "p95PointingErrorUrad",
+            "metricLabel": "P95 pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 715.5011760042369,
+                "candidate": 578.637398257308,
+                "delta": -136.86377774692892,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "lockRetentionRate",
+            "metricLabel": "Lock retention",
+            "unit": "1",
+            "lowerIsBetter": false,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 1,
+                "candidate": 1,
+                "delta": 0,
+                "better": "tie"
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 1,
+            "undecided": 0
+          },
+          {
+            "metricKey": "reacquisitionTimeS",
+            "metricLabel": "Reacquisition time (recovered episodes)",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": null,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          },
+          {
+            "metricKey": "falseLockSeconds",
+            "metricLabel": "False-lock duration",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": null,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          }
+        ]
+      },
+      {
+        "caseId": "smooth-crossing",
+        "label": "Smooth crossing target",
+        "scenarioId": "astralock-moving",
+        "seeds": [
+          9101
+        ],
+        "successCriterion": "coarse lock acquired",
+        "comparison": {
+          "valid": true,
+          "reason": null,
+          "detail": null
+        },
+        "arms": [
+          {
+            "armId": "baseline-kf-pid",
+            "label": "Baseline KF + PID",
+            "algorithmId": "baseline-kf-pid",
+            "algorithmVersion": "1.0.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 1,
+            "successRate": 1,
+            "unrecoveredLossRuns": 0,
+            "falseLockRuns": 0,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  30.1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 30.1,
+                "median": 30.1,
+                "p95": 30.1,
+                "min": 30.1,
+                "max": 30.1
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  384.41038515206355
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 384.41038515206355,
+                "median": 384.41038515206355,
+                "p95": 384.41038515206355,
+                "min": 384.41038515206355,
+                "max": 384.41038515206355
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  980.923996100727
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 980.923996100727,
+                "median": 980.923996100727,
+                "p95": 980.923996100727,
+                "min": 980.923996100727,
+                "max": 980.923996100727
+              },
+              "lockRetentionRate": {
+                "values": [
+                  1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1,
+                "median": 1,
+                "p95": 1,
+                "min": 1,
+                "max": 1
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              }
+            }
+          },
+          {
+            "armId": "astralock-x",
+            "label": "AstraLock-X",
+            "algorithmId": "astralock-x",
+            "algorithmVersion": "1.1.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 1,
+            "successRate": 1,
+            "unrecoveredLossRuns": 0,
+            "falseLockRuns": 0,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  13.116666666666667
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 13.116666666666667,
+                "median": 13.116666666666667,
+                "p95": 13.116666666666667,
+                "min": 13.116666666666667,
+                "max": 13.116666666666667
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  341.19136000338966
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 341.19136000338966,
+                "median": 341.19136000338966,
+                "p95": 341.19136000338966,
+                "min": 341.19136000338966,
+                "max": 341.19136000338966
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  585.1957754387397
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 585.1957754387397,
+                "median": 585.1957754387397,
+                "p95": 585.1957754387397,
+                "min": 585.1957754387397,
+                "max": 585.1957754387397
+              },
+              "lockRetentionRate": {
+                "values": [
+                  1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1,
+                "median": 1,
+                "p95": 1,
+                "min": 1,
+                "max": 1
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              }
+            }
+          }
+        ],
+        "paired": [
+          {
+            "metricKey": "acquisitionTimeS",
+            "metricLabel": "Coarse acquisition time",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 30.1,
+                "candidate": 13.116666666666667,
+                "delta": -16.983333333333334,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "rmsPointingErrorUrad",
+            "metricLabel": "RMS pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 384.41038515206355,
+                "candidate": 341.19136000338966,
+                "delta": -43.21902514867389,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "p95PointingErrorUrad",
+            "metricLabel": "P95 pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 980.923996100727,
+                "candidate": 585.1957754387397,
+                "delta": -395.7282206619873,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "lockRetentionRate",
+            "metricLabel": "Lock retention",
+            "unit": "1",
+            "lowerIsBetter": false,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 1,
+                "candidate": 1,
+                "delta": 0,
+                "better": "tie"
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 1,
+            "undecided": 0
+          },
+          {
+            "metricKey": "reacquisitionTimeS",
+            "metricLabel": "Reacquisition time (recovered episodes)",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": null,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          },
+          {
+            "metricKey": "falseLockSeconds",
+            "metricLabel": "False-lock duration",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": null,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          }
+        ]
+      },
+      {
+        "caseId": "manoeuvring-target",
+        "label": "Manoeuvring target",
+        "scenarioId": "astralock-maneuver",
+        "seeds": [
+          9101
+        ],
+        "successCriterion": "coarse lock acquired",
+        "comparison": {
+          "valid": true,
+          "reason": null,
+          "detail": null
+        },
+        "arms": [
+          {
+            "armId": "baseline-kf-pid",
+            "label": "Baseline KF + PID",
+            "algorithmId": "baseline-kf-pid",
+            "algorithmVersion": "1.0.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 1,
+            "successRate": 1,
+            "unrecoveredLossRuns": 0,
+            "falseLockRuns": 0,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  29.35
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 29.35,
+                "median": 29.35,
+                "p95": 29.35,
+                "min": 29.35,
+                "max": 29.35
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  370.93994118777965
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 370.93994118777965,
+                "median": 370.93994118777965,
+                "p95": 370.93994118777965,
+                "min": 370.93994118777965,
+                "max": 370.93994118777965
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  833.8740124308662
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 833.8740124308662,
+                "median": 833.8740124308662,
+                "p95": 833.8740124308662,
+                "min": 833.8740124308662,
+                "max": 833.8740124308662
+              },
+              "lockRetentionRate": {
+                "values": [
+                  1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1,
+                "median": 1,
+                "p95": 1,
+                "min": 1,
+                "max": 1
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              }
+            }
+          },
+          {
+            "armId": "astralock-x",
+            "label": "AstraLock-X",
+            "algorithmId": "astralock-x",
+            "algorithmVersion": "1.1.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 1,
+            "successRate": 1,
+            "unrecoveredLossRuns": 0,
+            "falseLockRuns": 0,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  13.216666666666667
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 13.216666666666667,
+                "median": 13.216666666666667,
+                "p95": 13.216666666666667,
+                "min": 13.216666666666667,
+                "max": 13.216666666666667
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  297.15288873294924
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 297.15288873294924,
+                "median": 297.15288873294924,
+                "p95": 297.15288873294924,
+                "min": 297.15288873294924,
+                "max": 297.15288873294924
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  538.3332674885314
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 538.3332674885314,
+                "median": 538.3332674885314,
+                "p95": 538.3332674885314,
+                "min": 538.3332674885314,
+                "max": 538.3332674885314
+              },
+              "lockRetentionRate": {
+                "values": [
+                  1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1,
+                "median": 1,
+                "p95": 1,
+                "min": 1,
+                "max": 1
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              }
+            }
+          }
+        ],
+        "paired": [
+          {
+            "metricKey": "acquisitionTimeS",
+            "metricLabel": "Coarse acquisition time",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 29.35,
+                "candidate": 13.216666666666667,
+                "delta": -16.133333333333333,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "rmsPointingErrorUrad",
+            "metricLabel": "RMS pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 370.93994118777965,
+                "candidate": 297.15288873294924,
+                "delta": -73.78705245483042,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "p95PointingErrorUrad",
+            "metricLabel": "P95 pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 833.8740124308662,
+                "candidate": 538.3332674885314,
+                "delta": -295.54074494233475,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "lockRetentionRate",
+            "metricLabel": "Lock retention",
+            "unit": "1",
+            "lowerIsBetter": false,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 1,
+                "candidate": 1,
+                "delta": 0,
+                "better": "tie"
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 1,
+            "undecided": 0
+          },
+          {
+            "metricKey": "reacquisitionTimeS",
+            "metricLabel": "Reacquisition time (recovered episodes)",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": null,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          },
+          {
+            "metricKey": "falseLockSeconds",
+            "metricLabel": "False-lock duration",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": null,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          }
+        ]
+      },
+      {
+        "caseId": "short-loss",
+        "label": "Brief loss and return",
+        "scenarioId": "astralock-short-loss",
+        "seeds": [
+          9101
+        ],
+        "successCriterion": "coarse lock acquired",
+        "comparison": {
+          "valid": true,
+          "reason": null,
+          "detail": null
+        },
+        "arms": [
+          {
+            "armId": "baseline-kf-pid",
+            "label": "Baseline KF + PID",
+            "algorithmId": "baseline-kf-pid",
+            "algorithmVersion": "1.0.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 1,
+            "successRate": 1,
+            "unrecoveredLossRuns": 0,
+            "falseLockRuns": 0,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  41.36666666666667
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 41.36666666666667,
+                "median": 41.36666666666667,
+                "p95": 41.36666666666667,
+                "min": 41.36666666666667,
+                "max": 41.36666666666667
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  616.7507791722109
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 616.7507791722109,
+                "median": 616.7507791722109,
+                "p95": 616.7507791722109,
+                "min": 616.7507791722109,
+                "max": 616.7507791722109
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  1202.3842391471992
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1202.3842391471992,
+                "median": 1202.3842391471992,
+                "p95": 1202.3842391471992,
+                "min": 1202.3842391471992,
+                "max": 1202.3842391471992
+              },
+              "lockRetentionRate": {
+                "values": [
+                  1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1,
+                "median": 1,
+                "p95": 1,
+                "min": 1,
+                "max": 1
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              }
+            }
+          },
+          {
+            "armId": "astralock-x",
+            "label": "AstraLock-X",
+            "algorithmId": "astralock-x",
+            "algorithmVersion": "1.1.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 1,
+            "successRate": 1,
+            "unrecoveredLossRuns": 0,
+            "falseLockRuns": 0,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  23.266666666666666
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 23.266666666666666,
+                "median": 23.266666666666666,
+                "p95": 23.266666666666666,
+                "min": 23.266666666666666,
+                "max": 23.266666666666666
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  321.9653904626026
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 321.9653904626026,
+                "median": 321.9653904626026,
+                "p95": 321.9653904626026,
+                "min": 321.9653904626026,
+                "max": 321.9653904626026
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  673.7947005858998
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 673.7947005858998,
+                "median": 673.7947005858998,
+                "p95": 673.7947005858998,
+                "min": 673.7947005858998,
+                "max": 673.7947005858998
+              },
+              "lockRetentionRate": {
+                "values": [
+                  1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1,
+                "median": 1,
+                "p95": 1,
+                "min": 1,
+                "max": 1
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              }
+            }
+          }
+        ],
+        "paired": [
+          {
+            "metricKey": "acquisitionTimeS",
+            "metricLabel": "Coarse acquisition time",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 41.36666666666667,
+                "candidate": 23.266666666666666,
+                "delta": -18.1,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "rmsPointingErrorUrad",
+            "metricLabel": "RMS pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 616.7507791722109,
+                "candidate": 321.9653904626026,
+                "delta": -294.78538870960824,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "p95PointingErrorUrad",
+            "metricLabel": "P95 pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 1202.3842391471992,
+                "candidate": 673.7947005858998,
+                "delta": -528.5895385612994,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "lockRetentionRate",
+            "metricLabel": "Lock retention",
+            "unit": "1",
+            "lowerIsBetter": false,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 1,
+                "candidate": 1,
+                "delta": 0,
+                "better": "tie"
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 1,
+            "undecided": 0
+          },
+          {
+            "metricKey": "reacquisitionTimeS",
+            "metricLabel": "Reacquisition time (recovered episodes)",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": null,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          },
+          {
+            "metricKey": "falseLockSeconds",
+            "metricLabel": "False-lock duration",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": null,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          }
+        ]
+      },
+      {
+        "caseId": "decoy-hard",
+        "label": "A plausible decoy",
+        "scenarioId": "dist-decoy-hard",
+        "seeds": [
+          9101
+        ],
+        "successCriterion": "acquired, retention ≥ 0.80, no false lock",
+        "comparison": {
+          "valid": true,
+          "reason": null,
+          "detail": null
+        },
+        "arms": [
+          {
+            "armId": "baseline-kf-pid",
+            "label": "Baseline KF + PID",
+            "algorithmId": "baseline-kf-pid",
+            "algorithmVersion": "1.0.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 1,
+            "successRate": 1,
+            "unrecoveredLossRuns": 0,
+            "falseLockRuns": 0,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  30.1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 30.1,
+                "median": 30.1,
+                "p95": 30.1,
+                "min": 30.1,
+                "max": 30.1
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  315.4092131420314
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 315.4092131420314,
+                "median": 315.4092131420314,
+                "p95": 315.4092131420314,
+                "min": 315.4092131420314,
+                "max": 315.4092131420314
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  851.8917608737235
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 851.8917608737235,
+                "median": 851.8917608737235,
+                "p95": 851.8917608737235,
+                "min": 851.8917608737235,
+                "max": 851.8917608737235
+              },
+              "lockRetentionRate": {
+                "values": [
+                  1
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1,
+                "median": 1,
+                "p95": 1,
+                "min": 1,
+                "max": 1
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              }
+            }
+          },
+          {
+            "armId": "astralock-x",
+            "label": "AstraLock-X",
+            "algorithmId": "astralock-x",
+            "algorithmVersion": "1.1.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 0,
+            "successRate": 0,
+            "unrecoveredLossRuns": 1,
+            "falseLockRuns": 1,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  13.116666666666667
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 13.116666666666667,
+                "median": 13.116666666666667,
+                "p95": 13.116666666666667,
+                "min": 13.116666666666667,
+                "max": 13.116666666666667
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  361634.9341975023
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 361634.9341975023,
+                "median": 361634.9341975023,
+                "p95": 361634.9341975023,
+                "min": 361634.9341975023,
+                "max": 361634.9341975023
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  659958.1320912503
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 659958.1320912503,
+                "median": 659958.1320912503,
+                "p95": 659958.1320912503,
+                "min": 659958.1320912503,
+                "max": 659958.1320912503
+              },
+              "lockRetentionRate": {
+                "values": [
+                  0.23523261892315736
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 0.23523261892315736,
+                "median": 0.23523261892315736,
+                "p95": 0.23523261892315736,
+                "min": 0.23523261892315736,
+                "max": 0.23523261892315736
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [
+                  24.433333333333334
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 24.433333333333334,
+                "median": 24.433333333333334,
+                "p95": 24.433333333333334,
+                "min": 24.433333333333334,
+                "max": 24.433333333333334
+              }
+            }
+          }
+        ],
+        "paired": [
+          {
+            "metricKey": "acquisitionTimeS",
+            "metricLabel": "Coarse acquisition time",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 30.1,
+                "candidate": 13.116666666666667,
+                "delta": -16.983333333333334,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "rmsPointingErrorUrad",
+            "metricLabel": "RMS pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 315.4092131420314,
+                "candidate": 361634.9341975023,
+                "delta": 361319.5249843603,
+                "better": "baseline"
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 1,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "p95PointingErrorUrad",
+            "metricLabel": "P95 pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 851.8917608737235,
+                "candidate": 659958.1320912503,
+                "delta": 659106.2403303765,
+                "better": "baseline"
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 1,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "lockRetentionRate",
+            "metricLabel": "Lock retention",
+            "unit": "1",
+            "lowerIsBetter": false,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 1,
+                "candidate": 0.23523261892315736,
+                "delta": -0.7647673810768426,
+                "better": "baseline"
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 1,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "reacquisitionTimeS",
+            "metricLabel": "Reacquisition time (recovered episodes)",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": null,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          },
+          {
+            "metricKey": "falseLockSeconds",
+            "metricLabel": "False-lock duration",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "baseline-kf-pid",
+            "candidateArmId": "astralock-x",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": 24.433333333333334,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          }
+        ]
+      },
+      {
+        "caseId": "coded-decoy-hard",
+        "label": "Hard decoy, both coded",
+        "scenarioId": "code-decoy-hard",
+        "seeds": [
+          9101
+        ],
+        "successCriterion": "acquired, retention ≥ 0.80, no false lock",
+        "comparison": {
+          "valid": true,
+          "reason": null,
+          "detail": null
+        },
+        "arms": [
+          {
+            "armId": "astralock-x",
+            "label": "AstraLock-X",
+            "algorithmId": "astralock-x",
+            "algorithmVersion": "1.1.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 0,
+            "successRate": 0,
+            "unrecoveredLossRuns": 1,
+            "falseLockRuns": 1,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  13.116666666666667
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 13.116666666666667,
+                "median": 13.116666666666667,
+                "p95": 13.116666666666667,
+                "min": 13.116666666666667,
+                "max": 13.116666666666667
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  361635.9648726859
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 361635.9648726859,
+                "median": 361635.9648726859,
+                "p95": 361635.9648726859,
+                "min": 361635.9648726859,
+                "max": 361635.9648726859
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  659949.1239709524
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 659949.1239709524,
+                "median": 659949.1239709524,
+                "p95": 659949.1239709524,
+                "min": 659949.1239709524,
+                "max": 659949.1239709524
+              },
+              "lockRetentionRate": {
+                "values": [
+                  0.23523261892315736
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 0.23523261892315736,
+                "median": 0.23523261892315736,
+                "p95": 0.23523261892315736,
+                "min": 0.23523261892315736,
+                "max": 0.23523261892315736
+              },
+              "reacquisitionTimeS": {
+                "values": [],
+                "missing": 1,
+                "count": 0,
+                "mean": null,
+                "median": null,
+                "p95": null,
+                "min": null,
+                "max": null
+              },
+              "falseLockSeconds": {
+                "values": [
+                  24.4
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 24.4,
+                "median": 24.4,
+                "p95": 24.4,
+                "min": 24.4,
+                "max": 24.4
+              }
+            }
+          },
+          {
+            "armId": "astralock-x-identity",
+            "label": "AstraLock-X + beacon identity",
+            "algorithmId": "astralock-x",
+            "algorithmVersion": "1.1.0",
+            "attempted": 1,
+            "completed": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "acquired": 1,
+            "succeeded": 1,
+            "successRate": 1,
+            "unrecoveredLossRuns": 0,
+            "falseLockRuns": 0,
+            "handoffReadyRuns": 0,
+            "metrics": {
+              "acquisitionTimeS": {
+                "values": [
+                  13.116666666666667
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 13.116666666666667,
+                "median": 13.116666666666667,
+                "p95": 13.116666666666667,
+                "min": 13.116666666666667,
+                "max": 13.116666666666667
+              },
+              "rmsPointingErrorUrad": {
+                "values": [
+                  2435.2898746345454
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 2435.2898746345454,
+                "median": 2435.2898746345454,
+                "p95": 2435.2898746345454,
+                "min": 2435.2898746345454,
+                "max": 2435.2898746345454
+              },
+              "p95PointingErrorUrad": {
+                "values": [
+                  1521.995305194995
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 1521.995305194995,
+                "median": 1521.995305194995,
+                "p95": 1521.995305194995,
+                "min": 1521.995305194995,
+                "max": 1521.995305194995
+              },
+              "lockRetentionRate": {
+                "values": [
+                  0.9215891270256142
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 0.9215891270256142,
+                "median": 0.9215891270256142,
+                "p95": 0.9215891270256142,
+                "min": 0.9215891270256142,
+                "max": 0.9215891270256142
+              },
+              "reacquisitionTimeS": {
+                "values": [
+                  2.5
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 2.5,
+                "median": 2.5,
+                "p95": 2.5,
+                "min": 2.5,
+                "max": 2.5
+              },
+              "falseLockSeconds": {
+                "values": [
+                  0
+                ],
+                "missing": 0,
+                "count": 1,
+                "mean": 0,
+                "median": 0,
+                "p95": 0,
+                "min": 0,
+                "max": 0
+              }
+            }
+          }
+        ],
+        "paired": [
+          {
+            "metricKey": "acquisitionTimeS",
+            "metricLabel": "Coarse acquisition time",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "astralock-x",
+            "candidateArmId": "astralock-x-identity",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 13.116666666666667,
+                "candidate": 13.116666666666667,
+                "delta": 0,
+                "better": "tie"
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 1,
+            "undecided": 0
+          },
+          {
+            "metricKey": "rmsPointingErrorUrad",
+            "metricLabel": "RMS pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "astralock-x",
+            "candidateArmId": "astralock-x-identity",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 361635.9648726859,
+                "candidate": 2435.2898746345454,
+                "delta": -359200.67499805137,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "p95PointingErrorUrad",
+            "metricLabel": "P95 pointing error (post-acquisition)",
+            "unit": "µrad",
+            "lowerIsBetter": true,
+            "baselineArmId": "astralock-x",
+            "candidateArmId": "astralock-x-identity",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 659949.1239709524,
+                "candidate": 1521.995305194995,
+                "delta": -658427.1286657574,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "lockRetentionRate",
+            "metricLabel": "Lock retention",
+            "unit": "1",
+            "lowerIsBetter": false,
+            "baselineArmId": "astralock-x",
+            "candidateArmId": "astralock-x-identity",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 0.23523261892315736,
+                "candidate": 0.9215891270256142,
+                "delta": 0.6863565081024569,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          },
+          {
+            "metricKey": "reacquisitionTimeS",
+            "metricLabel": "Reacquisition time (recovered episodes)",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "astralock-x",
+            "candidateArmId": "astralock-x-identity",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": null,
+                "candidate": 2.5,
+                "delta": null,
+                "better": null
+              }
+            ],
+            "candidateBetter": 0,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 1
+          },
+          {
+            "metricKey": "falseLockSeconds",
+            "metricLabel": "False-lock duration",
+            "unit": "s",
+            "lowerIsBetter": true,
+            "baselineArmId": "astralock-x",
+            "candidateArmId": "astralock-x-identity",
+            "differences": [
+              {
+                "seed": 9101,
+                "baseline": 24.4,
+                "candidate": 0,
+                "delta": -24.4,
+                "better": "candidate"
+              }
+            ],
+            "candidateBetter": 1,
+            "baselineBetter": 0,
+            "ties": 0,
+            "undecided": 0
+          }
+        ]
+      }
+    ]
+  },
+  "manifest": {
+    "schemaVersion": 1,
+    "benchmarkId": "bench-sih-quick-validation",
+    "suiteId": "quick-validation",
+    "suiteName": "AstraBench Quick Validation",
+    "suiteFingerprint": "suite:sha256:a87ed252995d881f531ccb5b78e3bf7f1d56ac6f4e71bf8a5d90971e6324e5a3",
+    "status": "completed",
+    "startedAt": "2026-09-15T14:43:22.009Z",
+    "finishedAt": "2026-09-15T14:44:05.793Z",
+    "plannedRuns": 12,
+    "runs": [
+      {
+        "caseId": "acquire-outside-fov",
+        "seed": 9101,
+        "armId": "baseline-kf-pid",
+        "algorithmId": "baseline-kf-pid",
+        "algorithmVersion": "1.0.0",
+        "runId": "bench-bench-sih-quick-validation-acquire-outside-fov-s9101-baseline-kf-pid",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:fd096d9a8fa73d1efdfc2275b0a50d03fa5cf29c17bc0963ed7827121925a9a2",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 3073
+      },
+      {
+        "caseId": "acquire-outside-fov",
+        "seed": 9101,
+        "armId": "astralock-x",
+        "algorithmId": "astralock-x",
+        "algorithmVersion": "1.1.0",
+        "runId": "bench-bench-sih-quick-validation-acquire-outside-fov-s9101-astralock-x",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:fd096d9a8fa73d1efdfc2275b0a50d03fa5cf29c17bc0963ed7827121925a9a2",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 3312
+      },
+      {
+        "caseId": "smooth-crossing",
+        "seed": 9101,
+        "armId": "baseline-kf-pid",
+        "algorithmId": "baseline-kf-pid",
+        "algorithmVersion": "1.0.0",
+        "runId": "bench-bench-sih-quick-validation-smooth-crossing-s9101-baseline-kf-pid",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:25e4334373863184229ff9b45b2672c41311a123464e56d7fbd81f0e561f004c",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 2751
+      },
+      {
+        "caseId": "smooth-crossing",
+        "seed": 9101,
+        "armId": "astralock-x",
+        "algorithmId": "astralock-x",
+        "algorithmVersion": "1.1.0",
+        "runId": "bench-bench-sih-quick-validation-smooth-crossing-s9101-astralock-x",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:25e4334373863184229ff9b45b2672c41311a123464e56d7fbd81f0e561f004c",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 3313
+      },
+      {
+        "caseId": "manoeuvring-target",
+        "seed": 9101,
+        "armId": "baseline-kf-pid",
+        "algorithmId": "baseline-kf-pid",
+        "algorithmVersion": "1.0.0",
+        "runId": "bench-bench-sih-quick-validation-manoeuvring-target-s9101-baseline-kf-pid",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:73c84587f867fccaff3ea979a542f842a6a810d03b9d49fa001105a6517104cc",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 3091
+      },
+      {
+        "caseId": "manoeuvring-target",
+        "seed": 9101,
+        "armId": "astralock-x",
+        "algorithmId": "astralock-x",
+        "algorithmVersion": "1.1.0",
+        "runId": "bench-bench-sih-quick-validation-manoeuvring-target-s9101-astralock-x",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:73c84587f867fccaff3ea979a542f842a6a810d03b9d49fa001105a6517104cc",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 3678
+      },
+      {
+        "caseId": "short-loss",
+        "seed": 9101,
+        "armId": "baseline-kf-pid",
+        "algorithmId": "baseline-kf-pid",
+        "algorithmVersion": "1.0.0",
+        "runId": "bench-bench-sih-quick-validation-short-loss-s9101-baseline-kf-pid",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:6f4aa29d61b6984728cd06451e6faf5a5be7bac4e022aaf25d016c670a4dfc93",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 3037
+      },
+      {
+        "caseId": "short-loss",
+        "seed": 9101,
+        "armId": "astralock-x",
+        "algorithmId": "astralock-x",
+        "algorithmVersion": "1.1.0",
+        "runId": "bench-bench-sih-quick-validation-short-loss-s9101-astralock-x",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:6f4aa29d61b6984728cd06451e6faf5a5be7bac4e022aaf25d016c670a4dfc93",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 3504
+      },
+      {
+        "caseId": "decoy-hard",
+        "seed": 9101,
+        "armId": "baseline-kf-pid",
+        "algorithmId": "baseline-kf-pid",
+        "algorithmVersion": "1.0.0",
+        "runId": "bench-bench-sih-quick-validation-decoy-hard-s9101-baseline-kf-pid",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:605c100304add70003f940bad0ea70cd36f740a70c7bf4622d492d1b9ceaba1a",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 3065
+      },
+      {
+        "caseId": "decoy-hard",
+        "seed": 9101,
+        "armId": "astralock-x",
+        "algorithmId": "astralock-x",
+        "algorithmVersion": "1.1.0",
+        "runId": "bench-bench-sih-quick-validation-decoy-hard-s9101-astralock-x",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:605c100304add70003f940bad0ea70cd36f740a70c7bf4622d492d1b9ceaba1a",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 3682
+      },
+      {
+        "caseId": "coded-decoy-hard",
+        "seed": 9101,
+        "armId": "astralock-x",
+        "algorithmId": "astralock-x",
+        "algorithmVersion": "1.1.0",
+        "runId": "bench-bench-sih-quick-validation-coded-decoy-hard-s9101-astralock-x",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:c2428845fcd281345c64d475f0eb1f64341154b38b88d6bdf9af82c20400f1fc",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 5609
+      },
+      {
+        "caseId": "coded-decoy-hard",
+        "seed": 9101,
+        "armId": "astralock-x-identity",
+        "algorithmId": "astralock-x",
+        "algorithmVersion": "1.1.0",
+        "runId": "bench-bench-sih-quick-validation-coded-decoy-hard-s9101-astralock-x-identity",
+        "status": "completed",
+        "error": null,
+        "physicalFingerprint": "physical:sha256:c2428845fcd281345c64d475f0eb1f64341154b38b88d6bdf9af82c20400f1fc",
+        "metricFingerprint": "metric:sha256:739bf6b6d7b1493665bb4f7d657c94c224df56f2e1db9f0d8d0efb0df975e107",
+        "hostDurationMs": 5515
+      }
+    ],
+    "applicationVersion": "0.0.0",
+    "sourceCommit": null,
+    "platform": "node-evidence"
+  }
+}

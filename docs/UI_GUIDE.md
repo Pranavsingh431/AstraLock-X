@@ -15,6 +15,13 @@ AstraLock-X is an engineering workbench for coarse pointing, acquisition and
 tracking. Its users are people deciding whether a tracker works, why it failed,
 and whether a measurement can be quoted. Everything below follows from that.
 
+**The chrome is white; the viewports are dark.** The rail, header, panels,
+tables and controls are white on a very light neutral ground — dense, printable,
+legible under a projector. The virtual camera feed and the 3D twin stay dark,
+because a sensor image belongs on black and because the contrast between the
+white workstation and the dark optical view is most of what makes the screen
+read as an instrument rather than as a dashboard.
+
 Three consequences worth stating outright:
 
 - **Density beats comfort.** A control row is 28–36 px, a panel header 10 px
@@ -37,7 +44,7 @@ Colours are named by meaning, never by hue, and defined once in
 
 | Token               | Used for                                                         |
 | ------------------- | ---------------------------------------------------------------- |
-| `--status-active`   | cyan: the primary accent, a live or selected state               |
+| `--status-active`   | blue: the primary accent, a live or selected state               |
 | `--status-nominal`  | emerald: a good state the system has actually confirmed          |
 | `--status-degraded` | amber: a real degraded condition, and RECOVER                    |
 | `--status-fault`    | red: a real failure, and recording                               |
@@ -59,7 +66,14 @@ one colour with a hard reservation. `PanelTone = 'truth'` gives a panel a violet
 border, a violet header and a violet wash; a reader can therefore answer "is
 this the tracker's belief or the answer key?" from across the room.
 
-The light theme (`.theme-light`) redefines the same tokens and nothing else.
+Two further tokens exist so nothing recolours the engineering viewports by
+accident: `--viewport` for the 3D twin and `--viewport-sensor` for the camera
+feed. Both are dark, deliberately, in a white application.
+
+Every accent is chosen dark enough to be read as _text_ on white, not only as a
+fill. The `-dim` variants are the matching light tints. There is one theme: a
+selector is future work, and shipping two half-tuned palettes would be worse
+than shipping one finished one.
 
 ---
 
@@ -134,7 +148,7 @@ Everything is disabled under `prefers-reduced-motion: reduce`, globally, in
 ```
 
 **The workspace rail** names all six workspaces rather than relying on icons,
-marks the current one three ways (a cyan leading bar, a lighter ground, and
+marks the current one three ways (a blue leading bar, a lighter ground, and
 `aria-current="page"`), and dims the ones that are not implemented without
 hiding them — each of those opens and says what it will do and what has to exist
 first.
@@ -179,7 +193,7 @@ default, EVALUATION off:
 
 Overlay semantics are consistent wherever they appear. An unselected candidate
 is a small hollow circle; the selected one gets a box and a filled centroid mark.
-MATCH is emerald, MISMATCH red, AMBIGUOUS amber. The prediction is a cyan circle
+MATCH is emerald, MISMATCH red, AMBIGUOUS amber. The prediction is a blue circle
 drawn even on a frame with no detection — that is the coast, and seeing it is how
 an operator tells "lost it" from "still believes it is there". Around it, a
 dashed ring is the estimator's own one-sigma angular uncertainty projected to
@@ -304,7 +318,7 @@ measured.
   rail is a `nav` with `aria-current`, and the status bar is `contentinfo`.
 - Headings nest: the workspace name is the `h1` in the title bar, panels are
   `h2`. A screen reader can move through the workstation by structure.
-- `:focus-visible` draws a 2 px cyan outline everywhere, and it is never removed.
+- `:focus-visible` draws a 2 px blue outline everywhere, and it is never removed.
 - Tables are `<table>` markup with `<th>` row headers, not grids of `<div>`.
 - The PAT timeline carries a full `aria` description of its segments, because
   a proportional bar is meaningless to a screen reader otherwise.

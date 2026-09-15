@@ -7,3 +7,7 @@ src-tauri/gen
 src-tauri/icons
 # Experiment runs recorded by an earlier build, kept byte for byte.
 src/core/experiments/__fixtures__
+
+# Generated evidence. Machine-written JSON and captured PNGs; reformatting it
+# would make the artifact differ from what the run produced.
+artifacts/

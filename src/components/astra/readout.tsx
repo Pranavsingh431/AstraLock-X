@@ -135,14 +135,19 @@ export function DiagnosticRow({
 export type Status =
   'nominal' | 'active' | 'degraded' | 'recovering' | 'limited' | 'fault' | 'idle';
 
+/*
+ * On white, a chip is a thin coloured rule around a very light wash of the same
+ * hue — the colour is carried by the border and the word, not by a saturated
+ * pill. A row of eight solid badges turns a dense panel into a toy.
+ */
 const STATUS_STYLE: Record<Status, string> = {
-  nominal: 'border-status-nominal/50 bg-status-nominal/12 text-status-nominal',
-  active: 'border-status-active/50 bg-status-active/12 text-status-active',
-  degraded: 'border-status-degraded/50 bg-status-degraded/12 text-status-degraded',
-  recovering: 'border-status-degraded/50 bg-status-degraded/12 text-status-degraded',
-  limited: 'border-status-degraded/40 bg-status-degraded/8 text-status-degraded',
-  fault: 'border-status-fault/55 bg-status-fault/12 text-status-fault',
-  idle: 'border-panel-border bg-muted/40 text-muted-foreground',
+  nominal: 'border-status-nominal/40 bg-status-nominal/8 text-status-nominal',
+  active: 'border-status-active/40 bg-status-active/8 text-status-active',
+  degraded: 'border-status-degraded/45 bg-status-degraded/10 text-status-degraded',
+  recovering: 'border-status-degraded/45 bg-status-degraded/10 text-status-degraded',
+  limited: 'border-status-degraded/35 bg-status-degraded/6 text-status-degraded',
+  fault: 'border-status-fault/45 bg-status-fault/8 text-status-fault',
+  idle: 'border-panel-border bg-secondary text-muted-foreground',
 };
 
 export interface StatusBadgeProps extends React.ComponentProps<'span'> {
@@ -261,17 +266,16 @@ export function EmptyState({
   className?: string | undefined;
 }): React.JSX.Element {
   return (
-    <div
-      className={cn(
-        'flex h-full min-h-20 flex-col items-center justify-center gap-1.5 px-4 py-6 text-center',
-        className,
+    <div className={cn('flex items-start gap-2 px-2.5 py-2', className)}>
+      {Icon !== undefined && (
+        <Icon aria-hidden className="mt-px size-3.5 shrink-0 text-muted-foreground/60" />
       )}
-    >
-      {Icon !== undefined && <Icon aria-hidden className="size-4 text-muted-foreground/50" />}
-      <p className="text-[11px] text-muted-foreground">{title}</p>
-      {hint !== undefined && (
-        <p className="max-w-xs text-[10px] leading-snug text-muted-foreground/70">{hint}</p>
-      )}
+      <div className="min-w-0">
+        <p className="text-[11px] text-foreground/75">{title}</p>
+        {hint !== undefined && (
+          <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{hint}</p>
+        )}
+      </div>
     </div>
   );
 }

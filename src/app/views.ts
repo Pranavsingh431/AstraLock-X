@@ -31,22 +31,36 @@ export interface ViewDefinition {
   readonly status: 'implemented' | 'not-implemented';
   /** One line describing what this view is for. */
   readonly summary: string;
-  /** Phase that will make this view functional. */
-  readonly plannedPhase: string;
+  /**
+   * When this view became real, or `null` when it is future work.
+   *
+   * Deferred views carry `null` rather than a phase number: naming a phase for
+   * something this prototype has decided not to build would be a schedule
+   * claim, and there is no schedule.
+   */
+  readonly deliveredIn: string | null;
   /** What this view will do once built. Statements of intent, not of fact. */
   readonly plannedCapabilities: readonly string[];
-  /** What has to exist first. Empty when nothing blocks it. */
+  /**
+   * What has to exist first. Empty when nothing blocks it.
+   *
+   * Both deferred views are now empty: the experiment runner, event log,
+   * sensor models and gimbal model all shipped in earlier phases. Neither is
+   * blocked by anything technical — they are scope this prototype chose not to
+   * include, and saying "requires the experiment runner" about a runner that
+   * has existed since Phase 5 would be stale rather than honest.
+   */
   readonly blockedBy: readonly string[];
 }
 
 /**
  * Registry of views.
  *
- * Mission Control and the Phase 7 disturbance subset of Scenario Lab are real.
- * The remaining views are placeholders and each says so. Their descriptions are
- * plans rather than claims — a view with nothing measured to show stays empty,
- * because a placeholder full of invented numbers is worse than a blank panel
- * and has a way of surviving into a release.
+ * Mission Control, Scenario Lab, AstraBench and Reports are real. Replay and
+ * Calibration are deliberately out of scope for this prototype and each says
+ * so. Their descriptions are plans rather than claims — a view with nothing
+ * measured to show stays empty, because a placeholder full of invented numbers
+ * is worse than a blank panel and has a way of surviving into a release.
  */
 export const VIEWS: readonly ViewDefinition[] = [
   {
@@ -55,7 +69,7 @@ export const VIEWS: readonly ViewDefinition[] = [
     icon: Gauge,
     status: 'implemented',
     summary: 'Observer view of a running simulation.',
-    plannedPhase: 'Phase 6',
+    deliveredIn: 'Phase 6',
     plannedCapabilities: [
       'Camera feed with the detections the tracker actually produced',
       'Pointing-error and gimbal-rate traces updating as the run advances',
@@ -69,7 +83,7 @@ export const VIEWS: readonly ViewDefinition[] = [
     icon: FlaskConical,
     status: 'implemented',
     summary: 'Edit the physical disturbance configuration of the active scenario.',
-    plannedPhase: 'Phase 7',
+    deliveredIn: 'Phase 7',
     plannedCapabilities: [
       'Apply a named physical-disturbance preset to the active scenario',
       'Edit platform, optical, sensor and frame-dropout parameters in engineering units',
@@ -84,7 +98,7 @@ export const VIEWS: readonly ViewDefinition[] = [
     icon: ChartNoAxesColumn,
     status: 'implemented',
     summary: 'Compare tracking algorithms across scenarios and seeds, on identical physics.',
-    plannedPhase: 'Phase 9',
+    deliveredIn: 'Phase 9',
     plannedCapabilities: [
       'Batch execution of algorithm and scenario combinations over declared seeds',
       'Pointing-error distributions, acquisition time and time-in-lock per algorithm',
@@ -99,14 +113,14 @@ export const VIEWS: readonly ViewDefinition[] = [
     icon: History,
     status: 'not-implemented',
     summary: 'Step through a completed run and inspect why it behaved as it did.',
-    plannedPhase: 'Phase 5',
+    deliveredIn: null,
     plannedCapabilities: [
       'Reconstruct a run exactly from its config and seed',
       'Scrub, step and pause over the recorded event log',
       'Inspect tracker state alongside ground truth at any tick',
       'Compare two runs that differ in one variable',
     ],
-    blockedBy: ['Experiment runner', 'Event log persistence'],
+    blockedBy: [],
   },
   {
     id: 'calibration',
@@ -114,14 +128,14 @@ export const VIEWS: readonly ViewDefinition[] = [
     icon: Crosshair,
     status: 'not-implemented',
     summary: 'Estimate camera intrinsics and camera-to-gimbal alignment.',
-    plannedPhase: 'Phase 4',
+    deliveredIn: null,
     plannedCapabilities: [
       'Estimate intrinsics and distortion from observed reference points',
       'Recover the camera-to-gimbal mounting rotation and encoder bias',
       'Report residuals, so a bad calibration is visible rather than silent',
       'Feed the resulting estimates into CameraState for subsequent runs',
     ],
-    blockedBy: ['Sensor models', 'Gimbal model'],
+    blockedBy: [],
   },
   {
     id: 'reports',
@@ -132,7 +146,7 @@ export const VIEWS: readonly ViewDefinition[] = [
     // files. The flag was simply never cleared.
     status: 'implemented',
     summary: 'Browse saved runs and verify their results against the raw files.',
-    plannedPhase: 'Phase 5',
+    deliveredIn: 'Phase 5',
     plannedCapabilities: [
       'Export ExperimentSummary records as JSON and CSV',
       'Include the full config and seed, so any result can be reproduced',

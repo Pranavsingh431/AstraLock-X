@@ -1,11 +1,15 @@
 @import 'tailwindcss';
 
 /*
- * AstraLock-X runs dark: a deep-navy instrument shell, the ground a black
- * sensor image sits inside without disappearing into. Phase 8 ran it light —
- * closer to print-ready laboratory documentation — and Phase 10 moved it to the
- * console aesthetic the application is actually for. Both themes are still
- * defined, and `.theme-light` on the root restores the other one.
+ * AstraLock-X is a white instrument.
+ *
+ * The chrome — rail, header, panels, tables, controls — is white on a very
+ * light neutral ground, the way laboratory and aerospace engineering software
+ * is: dense, printable, and legible under a projector. The *viewports* are the
+ * exception and are deliberately dark. A virtual camera image is a sensor
+ * image; it belongs on black, not on white, and the contrast between the white
+ * workstation and the dark optical view is most of what makes the screen read
+ * as an instrument rather than as a dashboard.
  *
  * ## The palette, and what each colour is allowed to mean
  *
@@ -13,113 +17,78 @@
  * colour also spells its own name, because a screenshot has to be readable in
  * grayscale and by someone who has not learned the palette.
  *
- *   cyan / primary   live instrumentation, the selected thing, the active view
+ *   blue             live instrumentation, the selected thing, the active view
  *   emerald          confirmed, healthy, verified — a positive engineering fact
  *   amber            degraded, recovering, or waiting on evidence
  *   red              a genuine fault or a wrong answer
  *   violet           privileged: ground truth, evaluation, debug-only
  *
- * The violet is the important one. Anything drawn from simulator truth is
- * violet-bordered and labelled, so that a reader can tell at a glance whether a
- * panel is showing what the tracker knows or what only the simulator knows.
+ * The violet is the important one, and it is also the one under the tightest
+ * budget: it marks a border, a header and a chip, and it is never a surface.
+ * Anything drawn from simulator truth is violet-edged and labelled, so a reader
+ * can tell at a glance whether a panel shows what the tracker knows or what
+ * only the simulator knows.
+ *
+ * Every accent is chosen dark enough to be read as *text* on white, not only as
+ * a fill. The `-dim` variants are the matching light tints, for the rare case
+ * where a wash needs to be opaque rather than an alpha over an unknown ground.
  */
 :root {
-  /*
-   * An instrument panel, not a web page. The ground is a deep navy that a black
-   * sensor image sits inside without disappearing into, borders are low-contrast
-   * so a dense readout does not turn into a grid of boxes, and the one saturated
-   * accent is the cyan that marks live instrumentation.
-   */
-  --background: oklch(0.145 0.018 250);
-  --foreground: oklch(0.965 0.004 247);
-  --card: oklch(0.178 0.019 250);
-  --card-foreground: oklch(0.965 0.004 247);
-  --popover: oklch(0.182 0.019 250);
-  --popover-foreground: oklch(0.965 0.004 247);
-  --primary: oklch(0.78 0.14 210);
-  --primary-foreground: oklch(0.145 0.018 250);
-  --secondary: oklch(0.228 0.021 250);
-  --secondary-foreground: oklch(0.965 0.004 247);
-  --muted: oklch(0.228 0.021 250);
-  --muted-foreground: oklch(0.7 0.021 245);
-  --accent: oklch(0.268 0.028 246);
-  --accent-foreground: oklch(0.975 0.004 247);
-  --destructive: oklch(0.63 0.2 25);
-  --destructive-foreground: oklch(0.98 0.005 247);
-  --border: oklch(0.268 0.022 248);
-  --input: oklch(0.285 0.022 248);
-  --ring: oklch(0.78 0.14 210);
+  --radius: 0.375rem;
+
+  /* A very slightly cool white. The ground is a shade below the panels so a
+   * dense stack reads as panels rather than as one continuous sheet. */
+  --background: oklch(0.978 0.003 248);
+  --foreground: oklch(0.208 0.042 266);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.208 0.042 266);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.208 0.042 266);
+  --primary: oklch(0.5 0.19 259);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.968 0.007 248);
+  --secondary-foreground: oklch(0.28 0.035 264);
+  --muted: oklch(0.968 0.007 248);
+  --muted-foreground: oklch(0.554 0.038 257);
+  --accent: oklch(0.955 0.015 252);
+  --accent-foreground: oklch(0.28 0.035 264);
+  --destructive: oklch(0.55 0.21 27);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.929 0.013 256);
+  --input: oklch(0.905 0.015 256);
+  --ring: oklch(0.5 0.19 259);
 
   /* --- Engineering status ---------------------------------------------------
    * Named by what they mean rather than by hue, so a panel says `--status-fault`
    * and a later palette change does not require finding every red in the app.
    */
-  --status-nominal: oklch(0.76 0.15 163);
-  --status-nominal-dim: oklch(0.42 0.09 163);
-  --status-degraded: oklch(0.82 0.15 78);
-  --status-degraded-dim: oklch(0.45 0.1 78);
-  --status-fault: oklch(0.68 0.19 25);
-  --status-fault-dim: oklch(0.4 0.13 25);
-  --status-active: oklch(0.78 0.14 210);
-  --status-active-dim: oklch(0.42 0.09 215);
-  --status-idle: oklch(0.62 0.02 245);
+  --status-nominal: oklch(0.53 0.13 163);
+  --status-nominal-dim: oklch(0.955 0.04 163);
+  --status-degraded: oklch(0.55 0.14 60);
+  --status-degraded-dim: oklch(0.96 0.05 78);
+  --status-fault: oklch(0.55 0.21 27);
+  --status-fault-dim: oklch(0.955 0.035 25);
+  --status-active: oklch(0.5 0.19 259);
+  --status-active-dim: oklch(0.955 0.03 259);
+  --status-idle: oklch(0.52 0.025 256);
 
   /* Privileged data: simulator truth, evaluation, debug-only readouts. */
-  --truth: oklch(0.74 0.15 305);
-  --truth-dim: oklch(0.4 0.11 305);
+  --truth: oklch(0.49 0.2 295);
+  --truth-dim: oklch(0.962 0.03 295);
 
-  /* Panel chrome. A header is a shade above its body so a dense stack of panels
+  /* Panel chrome. A header is a shade below its body so a dense stack of panels
    * reads as panels rather than as one long list. */
-  --panel: oklch(0.178 0.019 250);
-  --panel-header: oklch(0.212 0.02 250);
-  --panel-border: oklch(0.268 0.022 248);
-  --grid-line: oklch(0.3 0.02 248);
-}
-
-/** The Phase 8 light instrument theme, kept for print-style screenshots. */
-.theme-light {
-  --radius: 0.375rem;
-
-  /* A very slightly cool white, so the cyan accent reads as instrumentation
-   * rather than as decoration, and so panel edges are visible without heavy
-   * borders. */
-  --background: oklch(0.992 0.002 240);
-  --foreground: oklch(0.225 0.018 250);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.225 0.018 250);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.225 0.018 250);
-  --primary: oklch(0.52 0.13 235);
-  --primary-foreground: oklch(0.99 0.002 240);
-  --secondary: oklch(0.965 0.004 245);
-  --secondary-foreground: oklch(0.3 0.02 250);
-  --muted: oklch(0.963 0.005 245);
-  --muted-foreground: oklch(0.505 0.022 250);
-  --accent: oklch(0.945 0.018 235);
-  --accent-foreground: oklch(0.28 0.025 245);
-  --destructive: oklch(0.55 0.21 27);
-  --destructive-foreground: oklch(0.99 0.003 247);
-  --border: oklch(0.905 0.007 245);
-  --input: oklch(0.9 0.008 245);
-  --ring: oklch(0.52 0.13 235);
-
-  --status-nominal: oklch(0.55 0.13 163);
-  --status-nominal-dim: oklch(0.88 0.06 163);
-  --status-degraded: oklch(0.6 0.13 70);
-  --status-degraded-dim: oklch(0.92 0.06 80);
-  --status-fault: oklch(0.55 0.21 27);
-  --status-fault-dim: oklch(0.92 0.06 25);
-  --status-active: oklch(0.52 0.13 235);
-  --status-active-dim: oklch(0.9 0.05 230);
-  --status-idle: oklch(0.55 0.02 245);
-
-  --truth: oklch(0.5 0.17 305);
-  --truth-dim: oklch(0.93 0.05 305);
-
   --panel: oklch(1 0 0);
-  --panel-header: oklch(0.975 0.004 245);
-  --panel-border: oklch(0.905 0.007 245);
-  --grid-line: oklch(0.92 0.006 245);
+  --panel-header: oklch(0.975 0.005 250);
+  --panel-border: oklch(0.929 0.013 256);
+  --grid-line: oklch(0.945 0.008 252);
+
+  /* --- Engineering viewports ------------------------------------------------
+   * The two surfaces that stay dark, named so nothing recolours them by
+   * accident. A sensor image on white would be a picture of a sensor image.
+   */
+  --viewport: oklch(0.16 0.014 250);
+  --viewport-sensor: oklch(0.08 0.006 250);
 }
 
 @theme inline {
@@ -158,6 +127,8 @@
   --color-panel-header: var(--panel-header);
   --color-panel-border: var(--panel-border);
   --color-grid-line: var(--grid-line);
+  --color-viewport: var(--viewport);
+  --color-viewport-sensor: var(--viewport-sensor);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

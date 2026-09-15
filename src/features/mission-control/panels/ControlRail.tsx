@@ -254,10 +254,19 @@ export function ControlRail(): React.JSX.Element {
           )}
 
           <div className="mt-2 flex items-center gap-1">
+            {/* A bordered toggle rather than a filled slab. Handing the mount
+                to the tracker is consequential, but two saturated blocks
+                stacked in a control rail is a marketing page, not a console —
+                the state is carried by the word, the border and the colour. */}
             <Button
               size="sm"
-              variant={autonomy ? 'secondary' : 'default'}
-              className="h-7 flex-1 px-2 text-[11px]"
+              variant="outline"
+              className={cn(
+                'h-7 flex-1 px-2 text-[11px] font-semibold',
+                autonomy
+                  ? 'border-status-nominal/50 bg-status-nominal/8 text-status-nominal hover:bg-status-nominal/14'
+                  : 'border-status-active/50 bg-status-active/6 text-status-active hover:bg-status-active/12',
+              )}
               aria-label={autonomy ? 'Disable autonomous PAT' : 'Enable autonomous PAT'}
               onClick={() => {
                 setAutonomy(!autonomy);

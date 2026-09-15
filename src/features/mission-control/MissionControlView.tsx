@@ -272,9 +272,11 @@ export function MissionControlView(): React.JSX.Element {
           maxSize="40"
           className="min-w-0"
         >
-          {/* One scrolling column: at 768px high the four panels do not fit, and
-              scrolling them together is better than shrinking each to nothing. */}
-          <div className="flex h-full min-h-0 flex-col gap-1.5 overflow-y-auto p-1.5">
+          {/* One scrolling column. The panels are `shrink-0` on purpose: as
+              flex children they would otherwise be compressed to fit, which
+              slices each one mid-row and reads as a rendering fault rather
+              than as a list that scrolls. Whole panels, scrolled. */}
+          <div className="flex h-full min-h-0 flex-col gap-1.5 overflow-y-auto p-1.5 [&>section]:shrink-0">
             <DetectorPanel />
             <EstimatorPanel />
             <ControllerPanel />

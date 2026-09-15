@@ -110,7 +110,8 @@ describe('placeholder views', () => {
 
   it('states plainly that the view is not implemented', () => {
     render(<AppShell />);
-    expect(screen.getAllByText('NOT IMPLEMENTED').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/FUTURE WORK/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Not part of this prototype/i)).toBeInTheDocument();
   });
 
   it('lists what the view will do and what it needs first', () => {
@@ -125,15 +126,21 @@ describe('placeholder views', () => {
     }
   });
 
-  it('names the phase that will deliver the view', () => {
+  it('promises no delivery date, because there is no schedule', () => {
+    // A deferred view used to name the phase that would deliver it. That was a
+    // schedule claim about work this prototype has decided not to do, so the
+    // registry now carries `null` and the screen says "deferred" instead.
+    expect(getView(PLACEHOLDER_VIEW).deliveredIn).toBeNull();
+
     render(<AppShell />);
-    expect(screen.getByText(getView(PLACEHOLDER_VIEW).plannedPhase)).toBeInTheDocument();
+    expect(screen.getByText(/Deferred to a later stage/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Phase \d+$/)).not.toBeInTheDocument();
   });
 
   it('does not label an implemented view as unimplemented', () => {
     useNavigationStore.setState({ activeView: 'mission-control', previousView: null });
     render(<AppShell />);
-    expect(screen.queryByText('NOT IMPLEMENTED')).not.toBeInTheDocument();
+    expect(screen.queryByText(/FUTURE WORK/i)).not.toBeInTheDocument();
   });
 });
 

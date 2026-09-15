@@ -67,11 +67,15 @@ export function NavRail(): React.JSX.Element {
                 <span className="text-center text-[8.5px] leading-[1.15] font-semibold tracking-[0.04em] uppercase">
                   {view.label}
                 </span>
+                {/* Future work, marked rather than hidden: an empty tool
+                    presented as operational is worse than an honest label. */}
                 {pending && (
                   <span
                     aria-hidden
-                    className="absolute top-1.5 right-1.5 size-1 rounded-full bg-muted-foreground/60"
-                  />
+                    className="absolute top-1 right-1 rounded-sm border border-panel-border bg-secondary px-0.5 text-[6.5px] font-semibold tracking-[0.04em] text-muted-foreground uppercase"
+                  >
+                    Future
+                  </span>
                 )}
               </button>
             </TooltipTrigger>
@@ -84,7 +88,9 @@ export function NavRail(): React.JSX.Element {
                 </span>
               </span>
               <span className="mt-0.5 block text-muted-foreground">
-                {pending ? `Not implemented — planned for ${view.plannedPhase}.` : view.summary}
+                {pending
+                  ? `Future work — not part of this prototype. ${view.summary}`
+                  : view.summary}
               </span>
             </TooltipContent>
           </Tooltip>

@@ -25,24 +25,16 @@ import {
   StatusBadge,
 } from '@/components/astra';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { useEngineeringView } from '@/app/privileged';
 import { useSimulationStore } from '@/stores/simulation-store';
 
 const urad = (value: number): string => radiansToMicroradians(value as never).toFixed(1);
 const deg = (value: number): string => radiansToDegrees(value as never).toFixed(4);
 
-/** One configured effect, on or off. Off is dimmed rather than hidden. */
-function Effect({ label, active }: { label: string; active: boolean }): React.JSX.Element {
+/** One active effect. */
+function Effect({ label }: { label: string }): React.JSX.Element {
   return (
-    <span
-      className={cn(
-        'rounded-sm px-1 py-px text-[9px] tracking-wider uppercase',
-        active
-          ? 'bg-status-active/18 text-status-active'
-          : 'text-muted-foreground/45 line-through decoration-muted-foreground/30',
-      )}
-    >
+    <span className="rounded-sm border border-status-active/35 bg-status-active/8 px-1 py-px text-[9px] tracking-wider text-status-active uppercase">
       {label}
     </span>
   );
@@ -79,7 +71,8 @@ export function ChannelPanel(): React.JSX.Element {
     { label: 'dropouts', active: config.dropouts.mode !== 'none' },
   ] as const;
 
-  const anyActive = effects.some((effect) => effect.active);
+  const active = effects.filter((effect) => effect.active);
+  const anyActive = active.length > 0;
   const realization = truth?.disturbance ?? null;
   // Measured, not configured: frames the transport actually lost over frames
   // the sensor actually scheduled.
@@ -100,14 +93,25 @@ export function ChannelPanel(): React.JSX.Element {
       />
 
       <Section title="Configured effects">
-        <div className="flex flex-wrap gap-1">
-          {effects.map((effect) => (
-            <Effect key={effect.label} label={effect.label} active={effect.active} />
-          ))}
-        </div>
-        {!anyActive && (
-          <p className="mt-1 text-[9px] text-muted-foreground">
-            Image formation is taking the undisturbed path.
+        {/* Only what is acting is named. Listing ten struck-through effects
+            makes the three that matter harder to find, and the count below
+            says nothing is being hidden. */}
+        {anyActive ? (
+          <>
+            <div className="flex flex-wrap gap-1">
+              {active.map((effect) => (
+                <Effect key={effect.label} label={effect.label} />
+              ))}
+            </div>
+            <p className="mt-1 text-[9px] text-muted-foreground">
+              {String(active.length)} of {String(effects.length)} modelled effects active;{' '}
+              {String(effects.length - active.length)} disabled in this scenario.
+            </p>
+          </>
+        ) : (
+          <p className="text-[10px] text-muted-foreground">
+            None of the {String(effects.length)} modelled effects is enabled. Image formation is
+            taking the undisturbed path.
           </p>
         )}
       </Section>

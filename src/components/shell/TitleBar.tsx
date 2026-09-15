@@ -50,13 +50,20 @@ export function TitleBar(): React.JSX.Element {
   const state = patMode === null ? null : PAT_STATE[patMode];
 
   return (
-    <header className="flex h-10 shrink-0 items-center gap-3 border-b border-panel-border bg-panel-header px-3">
+    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-panel-border bg-panel px-3">
       <span className="flex shrink-0 items-center gap-1.5">
         <Crosshair aria-hidden className="size-4 text-status-active" />
-        <span className="text-[13px] font-semibold tracking-tight">AstraLock-X</span>
+        <span className="flex min-w-0 flex-col leading-none">
+          <span className="text-[13px] font-semibold tracking-tight">AstraLock-X</span>
+          {/* What the product is, once, in the one place every screenshot
+              includes. Small enough that it never competes with the run. */}
+          <span className="hidden text-[8.5px] leading-tight tracking-[0.03em] text-muted-foreground 2xl:inline">
+            Mobile FSOC coarse pointing, acquisition &amp; tracking — development and verification
+          </span>
+        </span>
       </span>
 
-      <span className="h-4 w-px shrink-0 bg-panel-border" />
+      <span className="h-5 w-px shrink-0 bg-panel-border" />
       <h1 className="shrink-0 text-[11px] font-semibold tracking-[0.08em] text-foreground/75 uppercase">
         {view.label}
       </h1>
