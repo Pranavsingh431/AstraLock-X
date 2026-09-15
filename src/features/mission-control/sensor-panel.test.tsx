@@ -41,7 +41,9 @@ beforeEach(() => {
 describe('labelling', () => {
   it('names the two views so they cannot be confused', () => {
     renderView();
-    expect(screen.getByText('3D WORLD — GROUND TRUTH / OBSERVER')).toBeInTheDocument();
+    expect(
+      screen.getByText('3D DIGITAL TWIN — GROUND TRUTH / ENGINEERING OBSERVER'),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Virtual camera — sensor feed/i)).toBeInTheDocument();
   });
 

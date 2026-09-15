@@ -50,12 +50,14 @@ function Section({
   );
 }
 
-export function GroundTruthInspector(): React.JSX.Element {
+export function GroundTruthInspector(): React.JSX.Element | null {
   // Subscribing to the tick alone keeps this panel re-rendering once per
   // advance rather than on every store write.
   const tick = useSimulationStore((state) => state.tick);
   const time = useSimulationStore((state) => state.time);
   const config = useSimulationStore((state) => state.config);
+  const visible = useSimulationStore((state) => state.showGroundTruthInspector);
+  const setVisible = useSimulationStore((state) => state.setGroundTruthInspectorVisible);
 
   const engine = activeEngine();
   const truth = engine.snapshot().truth;
@@ -68,6 +70,8 @@ export function GroundTruthInspector(): React.JSX.Element {
   const candidate = engine.trajectoryAt(0);
   const maneuver = candidate instanceof SeededManeuverTrajectory ? candidate : null;
 
+  if (!visible) return null;
+
   return (
     <aside className="flex w-80 shrink-0 flex-col border-l bg-card/30">
       <header className="flex items-center gap-2 border-b px-3 py-2">
@@ -75,6 +79,16 @@ export function GroundTruthInspector(): React.JSX.Element {
         <h2 className="text-[11px] font-semibold tracking-wider text-amber-400 uppercase">
           Ground truth — debug only
         </h2>
+        <button
+          type="button"
+          aria-label="Hide ground truth inspector"
+          className="ml-auto rounded-sm px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={() => {
+            setVisible(false);
+          }}
+        >
+          Hide
+        </button>
       </header>
 
       <ScrollArea className="min-h-0 flex-1">

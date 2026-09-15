@@ -233,6 +233,8 @@ export interface SimulationStoreState {
   readonly showLiveEvaluation: boolean;
   /** Whether the privileged disturbance realization readout is shown. */
   readonly showDisturbanceTruth: boolean;
+  /** Whether the privileged world-truth inspector column is shown. */
+  readonly showGroundTruthInspector: boolean;
   /** Frames the sensor failed to deliver so far in this run. */
   readonly framesDropped: number;
   /** Live figures from ground truth, or `null` when hidden. Never routed to the algorithm. */
@@ -276,6 +278,7 @@ export interface SimulationStoreState {
   abortExperiment: (reason?: TerminationReason) => Promise<void>;
   setLiveEvaluation: (visible: boolean) => void;
   setDisturbanceTruthVisible: (visible: boolean) => void;
+  setGroundTruthInspectorVisible: (visible: boolean) => void;
   /**
    * Replaces the scenario's disturbances, rebuilding the world.
    *
@@ -630,6 +633,11 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   // Off by default, like the other privileged readouts: an operator should have
   // to ask to see the answer key.
   showDisturbanceTruth: false,
+  // Off by default, like every other privileged readout. It shows the answer
+  // key — true target position, true bearing, random stream cursors — and an
+  // operator should have to ask for it rather than have it on screen while
+  // judging whether the tracker is working.
+  showGroundTruthInspector: false,
   liveEvaluation: null,
   ...snapshotState(initialSession),
 
@@ -999,6 +1007,10 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
 
   setDisturbanceTruthVisible: (visible) => {
     set({ showDisturbanceTruth: visible });
+  },
+
+  setGroundTruthInspectorVisible: (visible) => {
+    set({ showGroundTruthInspector: visible });
   },
 
   setDisturbances: (disturbances) => {

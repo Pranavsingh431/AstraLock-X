@@ -27,12 +27,13 @@ import { confirmIfRecording } from '../recording-guard';
 
 /** How the baseline's three states are presented. */
 const STATE_STYLE: Partial<Record<PATMode, string>> = {
-  scan: 'border-sky-500/40 text-sky-300',
-  acquire: 'border-violet-500/50 text-violet-300',
-  track: 'border-emerald-500/50 text-emerald-300',
-  lost: 'border-amber-500/50 text-amber-300',
-  reacquire: 'border-amber-500/50 text-amber-300',
-  handoff: 'border-cyan-400/60 text-cyan-300',
+  scan: 'border-sky-500/50 bg-sky-500/10 text-sky-300',
+  acquire: 'border-blue-400/60 bg-blue-500/10 text-blue-300',
+  track: 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300',
+  // A real fault, and the only state that earns red.
+  lost: 'border-red-500/60 bg-red-500/10 text-red-300',
+  reacquire: 'border-amber-500/60 bg-amber-500/10 text-amber-300',
+  handoff: 'border-cyan-400/70 bg-cyan-400/10 text-cyan-200',
 };
 
 const STATE_LABEL: Partial<Record<PATMode, string>> = {

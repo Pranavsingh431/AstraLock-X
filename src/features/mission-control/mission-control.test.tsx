@@ -37,6 +37,10 @@ const renderView = (): void => {
 
 beforeEach(() => {
   useSimulationStore.getState().loadScenarioById(DEFAULT_SCENARIO_ID);
+  // The privileged inspector is opt-in from Phase 7's UI pass: it shows the
+  // answer key, so an operator has to ask for it. These tests are about what it
+  // says once open, so they open it.
+  useSimulationStore.getState().setGroundTruthInspectorVisible(true);
 });
 
 describe('labelling', () => {
@@ -45,7 +49,9 @@ describe('labelling', () => {
     // one shows where everything really is, the other shows what the
     // instrument can actually see.
     renderView();
-    expect(screen.getByText('3D WORLD — GROUND TRUTH / OBSERVER')).toBeInTheDocument();
+    expect(
+      screen.getByText('3D DIGITAL TWIN — GROUND TRUTH / ENGINEERING OBSERVER'),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Virtual camera — sensor feed/i)).toBeInTheDocument();
     expect(screen.getByText(/Not the tracking sensor feed/)).toBeInTheDocument();
   });

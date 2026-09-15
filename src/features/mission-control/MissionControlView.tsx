@@ -8,7 +8,7 @@
  */
 
 import { Canvas } from '@react-three/fiber';
-import { Axis3d, Grid3x3, Route } from 'lucide-react';
+import { Axis3d, Eye, Grid3x3, Route } from 'lucide-react';
 import { useState } from 'react';
 
 import { radiansToMicroradians } from '@/core/contracts/units';
@@ -27,8 +27,8 @@ import { SimulationControls } from './components/SimulationControls';
 function Readout({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div className="flex flex-col">
-      <span className="text-[10px] tracking-wider text-muted-foreground uppercase">{label}</span>
-      <span className="tabular text-sm text-foreground/90">{value}</span>
+      <span className="text-[9px] tracking-wider text-muted-foreground uppercase">{label}</span>
+      <span className="tabular text-[13px] leading-tight text-foreground/90">{value}</span>
     </div>
   );
 }
@@ -51,6 +51,8 @@ export function MissionControlView(): React.JSX.Element {
   const time = useSimulationStore((state) => state.time);
   const config = useSimulationStore((state) => state.config);
   const pointingError = useSimulationStore((state) => state.currentFrame.pointingError);
+  const truthVisible = useSimulationStore((state) => state.showGroundTruthInspector);
+  const setTruthVisible = useSimulationStore((state) => state.setGroundTruthInspectorVisible);
   const trajectoryKind = config.targets[0]?.trajectory.kind ?? 'none';
 
   return (
@@ -58,7 +60,7 @@ export function MissionControlView(): React.JSX.Element {
       <div className="flex min-w-0 flex-1 flex-col">
         <SimulationControls />
 
-        <div className="flex flex-wrap items-center gap-5 border-b px-4 py-2">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b bg-card/20 px-4 py-2">
           <Readout label="Tick" value={String(tick)} />
           <Readout label="Sim time" value={`${time.toFixed(3)} s`} />
           <Readout label="Scenario" value={config.name} />
@@ -72,7 +74,25 @@ export function MissionControlView(): React.JSX.Element {
                 : `${radiansToMicroradians(pointingError as never).toFixed(0)} µrad`
             }
           />
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              aria-label={
+                truthVisible ? 'Hide ground truth inspector' : 'Show ground truth inspector'
+              }
+              aria-pressed={truthVisible}
+              className={cn(
+                'h-7 gap-1.5 px-2 text-xs',
+                truthVisible && 'border-amber-500/50 bg-amber-500/10 text-amber-300',
+              )}
+              onClick={() => {
+                setTruthVisible(!truthVisible);
+              }}
+            >
+              <Eye aria-hidden className="size-3" />
+              Truth
+            </Button>
             <ScenarioIoBar />
           </div>
         </div>
@@ -89,11 +109,11 @@ export function MissionControlView(): React.JSX.Element {
           <div className="pointer-events-none absolute top-3 left-3 flex flex-col gap-2">
             <Badge
               variant="outline"
-              className="pointer-events-auto border-amber-500/40 bg-background/80 font-mono text-[10px] tracking-wider text-amber-400 backdrop-blur"
+              className="pointer-events-auto border-amber-500/50 bg-background/85 font-mono text-[10px] font-semibold tracking-wider text-amber-400 backdrop-blur"
             >
-              3D WORLD — GROUND TRUTH / OBSERVER
+              3D DIGITAL TWIN — GROUND TRUTH / ENGINEERING OBSERVER
             </Badge>
-            <span className="pointer-events-auto rounded bg-background/70 px-2 py-1 text-[10px] text-muted-foreground backdrop-blur">
+            <span className="pointer-events-auto rounded-sm border border-border/60 bg-background/75 px-2 py-1 text-[10px] text-muted-foreground backdrop-blur">
               Not the tracking sensor feed. Markers are not to scale.
             </span>
           </div>
@@ -126,7 +146,7 @@ export function MissionControlView(): React.JSX.Element {
             ))}
           </div>
 
-          <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-3 rounded bg-background/70 px-2.5 py-1.5 text-[10px] text-muted-foreground backdrop-blur">
+          <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-3 rounded-sm border border-border/60 bg-background/75 px-2.5 py-1.5 text-[10px] text-muted-foreground backdrop-blur">
             <LegendSwatch color={OBSERVER_COLORS.target} label="Target" />
             <LegendSwatch color={OBSERVER_COLORS.beacon} label="Beacon" />
             <LegendSwatch color={OBSERVER_COLORS.observer} label="Observer" />
