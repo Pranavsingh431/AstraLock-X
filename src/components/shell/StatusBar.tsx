@@ -29,14 +29,14 @@ export function StatusBar(): React.JSX.Element {
       <Field label="tick" value={String(tick)} />
       <Field label="frames" value={String(rasterized)} />
       {dropped > 0 && (
-        <span className="flex items-center gap-1.5 text-amber-400/90">
+        <span className="flex items-center gap-1.5 text-amber-700/90">
           <span className="opacity-70">dropped</span>
           <span className="tabular">{dropped}</span>
         </span>
       )}
 
       {recording && (
-        <span className="ml-auto flex items-center gap-1.5 text-red-400">
+        <span className="ml-auto flex items-center gap-1.5 text-red-700">
           <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-red-500" />
           <span className="tracking-wider uppercase">recording</span>
         </span>

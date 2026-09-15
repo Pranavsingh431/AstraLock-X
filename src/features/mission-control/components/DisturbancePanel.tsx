@@ -55,7 +55,7 @@ function Effect({ label, active }: { label: string; active: boolean }): React.JS
     <span
       className={cn(
         'rounded-sm px-1 py-px text-[9px] tracking-wider uppercase',
-        active ? 'bg-sky-500/20 text-sky-300' : 'text-muted-foreground/40',
+        active ? 'bg-sky-500/20 text-sky-700' : 'text-muted-foreground/60',
       )}
     >
       {label}
@@ -97,8 +97,8 @@ export function DisturbancePanel(): React.JSX.Element | null {
     <div className="space-y-2 border-t px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <Waves aria-hidden className="size-3.5 text-sky-400" />
-          <h3 className="text-[10px] font-semibold tracking-wider text-sky-400 uppercase">
+          <Waves aria-hidden className="size-3.5 text-sky-700" />
+          <h3 className="text-[10px] font-semibold tracking-wider text-sky-700 uppercase">
             Disturbances
           </h3>
           {config.preset !== null && (
@@ -149,10 +149,10 @@ export function DisturbancePanel(): React.JSX.Element | null {
         (visible ? (
           <div className="space-y-1.5 rounded-sm border border-amber-500/30 bg-amber-500/5 p-2">
             <div className="flex items-center gap-1.5">
-              <ShieldAlert aria-hidden className="size-3 text-amber-400" />
+              <ShieldAlert aria-hidden className="size-3 text-amber-700" />
               <Badge
                 variant="outline"
-                className="border-amber-500/40 text-[9px] font-semibold tracking-wider text-amber-400 uppercase"
+                className="border-amber-500/40 text-[9px] font-semibold tracking-wider text-amber-700 uppercase"
               >
                 Disturbance truth — debug only
               </Badge>

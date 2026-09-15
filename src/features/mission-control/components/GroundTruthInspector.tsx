@@ -75,8 +75,8 @@ export function GroundTruthInspector(): React.JSX.Element | null {
   return (
     <aside className="flex w-80 shrink-0 flex-col border-l bg-card/30">
       <header className="flex items-center gap-2 border-b px-3 py-2">
-        <Eye aria-hidden className="size-3.5 text-amber-400" />
-        <h2 className="text-[11px] font-semibold tracking-wider text-amber-400 uppercase">
+        <Eye aria-hidden className="size-3.5 text-amber-700" />
+        <h2 className="text-[11px] font-semibold tracking-wider text-amber-700 uppercase">
           Ground truth — debug only
         </h2>
         <button

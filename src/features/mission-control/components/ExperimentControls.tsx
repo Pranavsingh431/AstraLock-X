@@ -71,10 +71,10 @@ export function ExperimentControls(): React.JSX.Element {
             className={cn(
               'text-[10px] font-semibold tracking-wider uppercase',
               recording
-                ? 'border-red-500/50 text-red-400'
+                ? 'border-red-500/50 text-red-700'
                 : status.state === 'completed'
-                  ? 'border-emerald-500/50 text-emerald-400'
-                  : 'border-amber-500/50 text-amber-400',
+                  ? 'border-emerald-500/50 text-emerald-700'
+                  : 'border-amber-500/50 text-amber-700',
             )}
           >
             {busy ? 'finalising' : recording ? 'recording' : displayStatus(status.state)}
@@ -114,7 +114,7 @@ export function ExperimentControls(): React.JSX.Element {
         <Button
           size="sm"
           variant="outline"
-          className="h-7 border-amber-500/40 text-xs text-amber-400 hover:bg-amber-500/10"
+          className="h-7 border-amber-500/40 text-xs text-amber-700 hover:bg-amber-500/10"
           aria-label="Abort experiment"
           disabled={busy || !recording}
           onClick={() => {
@@ -135,7 +135,7 @@ export function ExperimentControls(): React.JSX.Element {
       {error !== null && (
         <p
           role="alert"
-          className="rounded-sm border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[10px] leading-snug text-red-300"
+          className="rounded-sm border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[10px] leading-snug text-red-700"
         >
           Recording failed — the experiment was not saved as a result: {error}
         </p>
@@ -149,7 +149,7 @@ export function ExperimentControls(): React.JSX.Element {
       ) : (
         <>
           {recording && !autonomyEnabled && (
-            <p className="text-[10px] leading-snug text-amber-300/90">
+            <p className="text-[10px] leading-snug text-amber-700/90">
               Recording. Enable autonomy to begin the measured run.
             </p>
           )}
@@ -188,13 +188,13 @@ export function ExperimentControls(): React.JSX.Element {
       {/* --- The privileged half. Labelled, and switchable. --- */}
       <div className="space-y-1.5 rounded-sm border border-amber-500/30 bg-amber-500/5 px-2 py-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-[9px] font-semibold tracking-wider text-amber-400 uppercase">
+          <span className="text-[9px] font-semibold tracking-wider text-amber-700 uppercase">
             Evaluation — ground truth
           </span>
           <Button
             size="sm"
             variant="ghost"
-            className="h-5 px-1.5 text-[10px] text-amber-400/90 hover:bg-amber-500/10"
+            className="h-5 px-1.5 text-[10px] text-amber-700/90 hover:bg-amber-500/10"
             aria-label={showLive ? 'Hide live evaluation' : 'Show live evaluation'}
             aria-pressed={showLive}
             onClick={() => {

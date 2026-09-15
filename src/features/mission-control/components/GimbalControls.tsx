@@ -27,8 +27,8 @@ const COARSE_STEP = 0.1;
 const toDegrees = (value: number): string => radiansToDegrees(value as never).toFixed(3);
 
 const PHASE_STYLE = {
-  active: 'text-sky-400',
-  settling: 'text-amber-400',
+  active: 'text-sky-700',
+  settling: 'text-amber-700',
   holding: 'text-muted-foreground',
 } as const;
 
@@ -238,7 +238,7 @@ export function GimbalControls(): React.JSX.Element {
           lastCommandClamped) && (
           <Badge
             variant="outline"
-            className="gap-1 border-amber-500/40 text-[10px] font-normal text-amber-400"
+            className="gap-1 border-amber-500/40 text-[10px] font-normal text-amber-700"
           >
             <AlertTriangle aria-hidden className="size-3" />
             {[
@@ -253,7 +253,7 @@ export function GimbalControls(): React.JSX.Element {
           </Badge>
         )}
 
-        <label className="ml-auto flex items-center gap-1.5 text-[11px] text-amber-400/90">
+        <label className="ml-auto flex items-center gap-1.5 text-[11px] text-amber-700/90">
           <input
             type="checkbox"
             aria-label="Ground truth sensor overlay"
@@ -266,7 +266,7 @@ export function GimbalControls(): React.JSX.Element {
           Truth overlay
         </label>
 
-        <label className="flex items-center gap-1.5 text-[11px] text-amber-400/90">
+        <label className="flex items-center gap-1.5 text-[11px] text-amber-700/90">
           <input
             type="checkbox"
             aria-label="Actuator truth debug panel"

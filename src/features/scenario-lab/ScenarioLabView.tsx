@@ -128,7 +128,7 @@ function Group({
 }): React.JSX.Element {
   return (
     <section className="space-y-0.5 rounded-sm border p-3">
-      <h3 className="text-[10px] font-semibold tracking-wider text-sky-400 uppercase">{title}</h3>
+      <h3 className="text-[10px] font-semibold tracking-wider text-sky-700 uppercase">{title}</h3>
       {children}
     </section>
   );
@@ -168,7 +168,7 @@ export function ScenarioLabView(): React.JSX.Element {
   return (
     <div className="h-full overflow-y-auto p-4">
       <header className="mb-3 flex items-center gap-2">
-        <Waves aria-hidden className="size-4 text-sky-400" />
+        <Waves aria-hidden className="size-4 text-sky-700" />
         <h2 className="text-sm font-semibold">Scenario Lab — disturbances</h2>
         <Badge variant="outline" className="text-[10px] uppercase">
           {clean ? 'clean' : 'disturbed'}
@@ -192,7 +192,7 @@ export function ScenarioLabView(): React.JSX.Element {
       </p>
 
       {recording && (
-        <p className="mb-3 rounded-sm border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-300">
+        <p className="mb-3 rounded-sm border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700">
           An experiment is recording. The controls are locked so the physics cannot change under an
           open record.
         </p>

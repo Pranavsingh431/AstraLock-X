@@ -54,7 +54,7 @@ function Flag({ label, active }: { label: string; active: boolean }): React.JSX.
     <span
       className={cn(
         'rounded-sm px-1 py-px text-[9px] tracking-wider uppercase',
-        active ? 'bg-amber-500/20 text-amber-300' : 'text-muted-foreground/40',
+        active ? 'bg-amber-500/20 text-amber-700' : 'text-muted-foreground/60',
       )}
     >
       {label}
@@ -65,7 +65,7 @@ function Flag({ label, active }: { label: string; active: boolean }): React.JSX.
 function AxisBlock({ title, axis }: { title: string; axis: AxisTruth }): React.JSX.Element {
   return (
     <section className="space-y-1">
-      <h4 className="text-[10px] font-semibold tracking-wider text-amber-400/80 uppercase">
+      <h4 className="text-[10px] font-semibold tracking-wider text-amber-700/90 uppercase">
         {title}
       </h4>
       <div className="text-[11px]">
@@ -102,10 +102,10 @@ export function ActuatorTruthPanel(): React.JSX.Element | null {
   return (
     <div className="space-y-2 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
       <div className="flex items-center gap-1.5">
-        <ShieldAlert aria-hidden className="size-3 text-amber-400" />
+        <ShieldAlert aria-hidden className="size-3 text-amber-700" />
         <Badge
           variant="outline"
-          className="border-amber-500/40 text-[9px] font-semibold tracking-wider text-amber-400 uppercase"
+          className="border-amber-500/40 text-[9px] font-semibold tracking-wider text-amber-700 uppercase"
         >
           Actuator truth — debug only
         </Badge>

@@ -50,10 +50,10 @@ import { cn } from '@/lib/utils';
 const storage = createStorage();
 
 const STATUS_STYLE: Record<string, string> = {
-  completed: 'border-emerald-500/50 text-emerald-400',
-  aborted: 'border-amber-500/50 text-amber-400',
-  failed: 'border-red-500/50 text-red-400',
-  incomplete: 'border-red-500/50 text-red-400',
+  completed: 'border-emerald-600/40 bg-emerald-50 text-emerald-700',
+  aborted: 'border-amber-600/40 bg-amber-50 text-amber-700',
+  failed: 'border-red-600/40 bg-red-50 text-red-700',
+  incomplete: 'border-red-600/40 bg-red-50 text-red-700',
 };
 
 /** What a run that is not a result means, said plainly. */
@@ -350,10 +350,15 @@ export function ReportsView(): React.JSX.Element {
   return (
     <div className="flex h-full min-h-0">
       <div className="flex w-[480px] min-w-0 shrink-0 flex-col border-r">
-        <header className="flex items-center justify-between gap-2 border-b px-3 py-2">
+        <header className="flex items-center justify-between gap-2 border-b bg-card/40 px-3 py-2">
           <div className="min-w-0">
-            <h2 className="text-[11px] font-semibold tracking-wider text-foreground/80 uppercase">
+            <h2 className="flex items-center gap-2 text-[11px] font-semibold tracking-wider text-foreground/80 uppercase">
               Saved runs
+              {runs.length > 0 && (
+                <span className="tabular rounded-sm bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+                  {runs.length}
+                </span>
+              )}
             </h2>
             {root !== null && (
               <p className="truncate text-[9px] text-muted-foreground" title={root}>
@@ -405,18 +410,18 @@ export function ReportsView(): React.JSX.Element {
                       setNotice(null);
                     }}
                     className={cn(
-                      'w-full border-b px-3 py-2 text-left transition-colors hover:bg-accent/50',
-                      selected === run.runId && 'bg-accent',
+                      'w-full border-b border-l-2 border-l-transparent px-3 py-2 text-left transition-colors hover:bg-accent/40',
+                      selected === run.runId && 'border-l-primary bg-accent/70',
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="tabular truncate text-[11px] text-foreground/90">
+                      <span className="tabular truncate text-[11px] font-medium text-foreground">
                         {run.runId}
                       </span>
                       {m !== null && <StatusBadge status={m.status} />}
                     </div>
                     {m === null ? (
-                      <p className="mt-0.5 text-[10px] text-red-400">Unreadable: {run.error}</p>
+                      <p className="mt-0.5 text-[10px] text-red-700">Unreadable: {run.error}</p>
                     ) : (
                       <>
                         <div className="mt-0.5 flex flex-wrap gap-x-3 text-[10px] text-muted-foreground">
@@ -474,8 +479,8 @@ export function ReportsView(): React.JSX.Element {
                 className={cn(
                   'rounded-sm border px-2.5 py-1.5 text-[11px] leading-snug break-words',
                   notice.tone === 'ok'
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                    : 'border-red-500/40 bg-red-500/10 text-red-300',
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700'
+                    : 'border-red-500/40 bg-red-500/10 text-red-700',
                 )}
               >
                 {notice.text}
@@ -532,7 +537,7 @@ export function ReportsView(): React.JSX.Element {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="ml-auto h-7 border-red-500/40 text-xs text-red-400 hover:bg-red-500/10"
+                    className="ml-auto h-7 border-red-500/40 text-xs text-red-700 hover:bg-red-500/10"
                     aria-label="Delete run"
                     disabled={busy}
                     onClick={() => {
@@ -547,7 +552,7 @@ export function ReportsView(): React.JSX.Element {
                 {STATUS_NOTE[current.manifest.status] !== undefined && (
                   <p
                     role="note"
-                    className="rounded-sm border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-snug text-amber-300"
+                    className="rounded-sm border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-snug text-amber-700"
                   >
                     {STATUS_NOTE[current.manifest.status]}
                   </p>
@@ -587,7 +592,7 @@ export function ReportsView(): React.JSX.Element {
                         <span className="text-muted-foreground">commit unavailable</span>
                       )}
                       {current.manifest.host.sourceTreeModified === true && (
-                        <span className="text-amber-300"> (uncommitted changes)</span>
+                        <span className="text-amber-700"> (uncommitted changes)</span>
                       )}
                     </Definition>
                     <Definition term="Recorded">

@@ -154,10 +154,10 @@ export function ObserverScene({
           args={[8000, 8000]}
           cellSize={100}
           cellThickness={0.5}
-          cellColor="#22384a"
+          cellColor="#c3d2dc"
           sectionSize={500}
           sectionThickness={1}
-          sectionColor="#2f5a73"
+          sectionColor="#8fa8b8"
           fadeDistance={7000}
           fadeStrength={1.2}
           infiniteGrid={false}
@@ -168,7 +168,7 @@ export function ObserverScene({
       {/* World origin: the scenario datum every position is measured from. */}
       <mesh>
         <sphereGeometry args={[8, 10, 10]} />
-        <meshBasicMaterial color="#6b7f8c" />
+        <meshBasicMaterial color="#5b7386" />
       </mesh>
 
       {/* Renderer axes: +X is East, +Y is Up, -Z is North. See ADR-0006. */}

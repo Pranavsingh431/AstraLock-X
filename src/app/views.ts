@@ -127,8 +127,11 @@ export const VIEWS: readonly ViewDefinition[] = [
     id: 'reports',
     label: 'Reports',
     icon: FileText,
-    status: 'not-implemented',
-    summary: 'Export experiment summaries for use outside the application.',
+    // Built in Phase 5 and in use since: it lists real saved runs, shows their
+    // summaries, opens their offline reports and recomputes them from the raw
+    // files. The flag was simply never cleared.
+    status: 'implemented',
+    summary: 'Browse saved runs and verify their results against the raw files.',
     plannedPhase: 'Phase 5',
     plannedCapabilities: [
       'Export ExperimentSummary records as JSON and CSV',

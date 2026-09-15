@@ -84,7 +84,7 @@ export function MissionControlView(): React.JSX.Element {
               aria-pressed={truthVisible}
               className={cn(
                 'h-7 gap-1.5 px-2 text-xs',
-                truthVisible && 'border-amber-500/50 bg-amber-500/10 text-amber-300',
+                truthVisible && 'border-amber-500/50 bg-amber-500/10 text-amber-700',
               )}
               onClick={() => {
                 setTruthVisible(!truthVisible);
@@ -101,7 +101,7 @@ export function MissionControlView(): React.JSX.Element {
           <Canvas
             camera={{ position: [1100, 700, 900], fov: 45, near: 1, far: 40_000 }}
             gl={{ antialias: true }}
-            className="bg-[#0a1016]"
+            className="bg-[#eef3f7]"
           >
             <ObserverScene showGrid={showGrid} showAxes={showAxes} showPaths={showPaths} />
           </Canvas>
@@ -109,7 +109,7 @@ export function MissionControlView(): React.JSX.Element {
           <div className="pointer-events-none absolute top-3 left-3 flex flex-col gap-2">
             <Badge
               variant="outline"
-              className="pointer-events-auto border-amber-500/50 bg-background/85 font-mono text-[10px] font-semibold tracking-wider text-amber-400 backdrop-blur"
+              className="pointer-events-auto border-amber-500/50 bg-background/85 font-mono text-[10px] font-semibold tracking-wider text-amber-700 backdrop-blur"
             >
               3D DIGITAL TWIN — GROUND TRUTH / ENGINEERING OBSERVER
             </Badge>

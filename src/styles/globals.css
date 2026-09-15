@@ -3,32 +3,38 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * AstraLock-X runs dark by default: it is an instrument panel, and a light
- * shell washes out the imagery and plots it will eventually host. Both themes
- * are defined so the choice stays the user's.
+ * AstraLock-X runs light: a clean instrument shell, closer to laboratory
+ * software and print-ready engineering documentation than to a darkened
+ * cockpit. The one place that stays black is the sensor feed itself, because
+ * that is what the camera actually produces.
+ *
+ * Both themes are defined so the choice stays the user's.
  */
 :root {
   --radius: 0.375rem;
 
-  --background: oklch(0.985 0.002 247);
-  --foreground: oklch(0.208 0.014 253);
+  /* A very slightly cool white, so the cyan accent reads as instrumentation
+   * rather than as decoration, and so panel edges are visible without heavy
+   * borders. */
+  --background: oklch(0.992 0.002 240);
+  --foreground: oklch(0.225 0.018 250);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.208 0.014 253);
+  --card-foreground: oklch(0.225 0.018 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.208 0.014 253);
-  --primary: oklch(0.55 0.16 250);
-  --primary-foreground: oklch(0.984 0.003 247);
-  --secondary: oklch(0.958 0.005 247);
-  --secondary-foreground: oklch(0.279 0.019 253);
-  --muted: oklch(0.958 0.005 247);
-  --muted-foreground: oklch(0.554 0.02 254);
-  --accent: oklch(0.948 0.012 250);
-  --accent-foreground: oklch(0.279 0.019 253);
-  --destructive: oklch(0.577 0.222 27);
-  --destructive-foreground: oklch(0.984 0.003 247);
-  --border: oklch(0.916 0.008 248);
-  --input: oklch(0.916 0.008 248);
-  --ring: oklch(0.55 0.16 250);
+  --popover-foreground: oklch(0.225 0.018 250);
+  --primary: oklch(0.52 0.13 235);
+  --primary-foreground: oklch(0.99 0.002 240);
+  --secondary: oklch(0.965 0.004 245);
+  --secondary-foreground: oklch(0.3 0.02 250);
+  --muted: oklch(0.963 0.005 245);
+  --muted-foreground: oklch(0.505 0.022 250);
+  --accent: oklch(0.945 0.018 235);
+  --accent-foreground: oklch(0.28 0.025 245);
+  --destructive: oklch(0.55 0.21 27);
+  --destructive-foreground: oklch(0.99 0.003 247);
+  --border: oklch(0.905 0.007 245);
+  --input: oklch(0.9 0.008 245);
+  --ring: oklch(0.52 0.13 235);
 }
 
 .dark {

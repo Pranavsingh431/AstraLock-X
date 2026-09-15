@@ -45,8 +45,8 @@ export function SensorPanel(): React.JSX.Element {
   return (
     <section className="flex min-h-0 w-[420px] shrink-0 flex-col border-l bg-card/20">
       <header className="flex items-center gap-2 border-b bg-card/30 px-3 py-2">
-        <Camera aria-hidden className="size-3.5 text-cyan-400" />
-        <h2 className="text-[11px] font-semibold tracking-wider text-cyan-400 uppercase">
+        <Camera aria-hidden className="size-3.5 text-cyan-700" />
+        <h2 className="text-[11px] font-semibold tracking-wider text-cyan-700 uppercase">
           Virtual camera — sensor feed
         </h2>
         <span className="tabular ml-auto text-[10px] text-muted-foreground">
@@ -61,7 +61,7 @@ export function SensorPanel(): React.JSX.Element {
         {showTruthOverlay && (
           <Badge
             variant="outline"
-            className="pointer-events-none absolute top-3 left-3 border-amber-500/40 bg-background/80 font-mono text-[9px] tracking-wider text-amber-400 backdrop-blur"
+            className="pointer-events-none absolute top-3 left-3 border-amber-500/40 bg-background/80 font-mono text-[9px] tracking-wider text-amber-700 backdrop-blur"
           >
             GROUND TRUTH SENSOR OVERLAY — DEBUG ONLY
           </Badge>

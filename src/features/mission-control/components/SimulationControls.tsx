@@ -142,7 +142,7 @@ export function SimulationControls(): React.JSX.Element {
           aria-hidden
           className={cn(
             'size-2 fill-current',
-            isRunning ? 'text-emerald-400' : 'text-muted-foreground',
+            isRunning ? 'text-emerald-700' : 'text-muted-foreground',
           )}
         />
         {status}

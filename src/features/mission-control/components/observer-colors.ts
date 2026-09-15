@@ -5,9 +5,11 @@
  * have to reload the legend, and so the two can never drift apart.
  */
 export const OBSERVER_COLORS = {
-  target: '#4fc3f7',
-  beacon: '#ffd54f',
-  observer: '#e8f4fa',
-  boresight: '#ff7043',
-  path: '#3f7f9f',
+  // Chosen against the light viewport ground: each has to stay legible on a
+  // pale surface, and stay distinguishable from the others in a screenshot.
+  target: '#0277bd',
+  beacon: '#c77800',
+  observer: '#37474f',
+  boresight: '#d84315',
+  path: '#4a7c95',
 } as const;

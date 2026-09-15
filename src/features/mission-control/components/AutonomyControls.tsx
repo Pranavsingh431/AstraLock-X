@@ -27,13 +27,13 @@ import { confirmIfRecording } from '../recording-guard';
 
 /** How the baseline's three states are presented. */
 const STATE_STYLE: Partial<Record<PATMode, string>> = {
-  scan: 'border-sky-500/50 bg-sky-500/10 text-sky-300',
-  acquire: 'border-blue-400/60 bg-blue-500/10 text-blue-300',
-  track: 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300',
+  scan: 'border-sky-500/50 bg-sky-500/10 text-sky-700',
+  acquire: 'border-blue-400/60 bg-blue-500/10 text-blue-700',
+  track: 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700',
   // A real fault, and the only state that earns red.
-  lost: 'border-red-500/60 bg-red-500/10 text-red-300',
-  reacquire: 'border-amber-500/60 bg-amber-500/10 text-amber-300',
-  handoff: 'border-cyan-400/70 bg-cyan-400/10 text-cyan-200',
+  lost: 'border-red-500/60 bg-red-500/10 text-red-700',
+  reacquire: 'border-amber-500/60 bg-amber-500/10 text-amber-700',
+  handoff: 'border-cyan-400/70 bg-cyan-400/10 text-cyan-800',
 };
 
 const STATE_LABEL: Partial<Record<PATMode, string>> = {
@@ -84,8 +84,8 @@ export function AutonomyControls(): React.JSX.Element {
     <div className="space-y-2.5 border-t px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <Bot aria-hidden className="size-3.5 text-emerald-400" />
-          <h3 className="text-[10px] font-semibold tracking-wider text-emerald-400 uppercase">
+          <Bot aria-hidden className="size-3.5 text-emerald-700" />
+          <h3 className="text-[10px] font-semibold tracking-wider text-emerald-700 uppercase">
             Autonomous PAT
           </h3>
         </div>
@@ -129,7 +129,7 @@ export function AutonomyControls(): React.JSX.Element {
         <Button
           size="sm"
           variant="outline"
-          className="h-7 border-red-500/40 text-xs text-red-400 hover:bg-red-500/10"
+          className="h-7 border-red-500/40 text-xs text-red-700 hover:bg-red-500/10"
           aria-label="Emergency stop"
           disabled={!enabled}
           onClick={emergencyStop}
@@ -161,7 +161,7 @@ export function AutonomyControls(): React.JSX.Element {
       {runtimeError !== null && (
         <p
           role="alert"
-          className="rounded-sm border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[10px] leading-snug text-red-300"
+          className="rounded-sm border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[10px] leading-snug text-red-700"
         >
           Control loop stopped: {runtimeError}
         </p>
@@ -215,7 +215,7 @@ export function AutonomyControls(): React.JSX.Element {
           <EstimatorPanel />
 
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-1.5 text-[11px] text-emerald-400/90">
+            <label className="flex items-center gap-1.5 text-[11px] text-emerald-700/90">
               <input
                 type="checkbox"
                 aria-label="Algorithm overlay"
@@ -228,7 +228,7 @@ export function AutonomyControls(): React.JSX.Element {
               Detection overlay
             </label>
 
-            <label className="flex items-center gap-1.5 text-[11px] text-amber-400/90">
+            <label className="flex items-center gap-1.5 text-[11px] text-amber-700/90">
               <input
                 type="checkbox"
                 aria-label="Manual override"
@@ -243,7 +243,7 @@ export function AutonomyControls(): React.JSX.Element {
           </div>
 
           {override && (
-            <p className="text-[10px] leading-snug text-amber-400/90">
+            <p className="text-[10px] leading-snug text-amber-700/90">
               Operator override: your commands and the tracker&apos;s both reach the mount.
             </p>
           )}
@@ -293,7 +293,7 @@ function EstimatorPanel(): React.JSX.Element | null {
   return (
     <div className="space-y-1.5 rounded-sm border border-sky-500/30 bg-sky-500/5 px-2 py-1.5">
       <div className="flex items-baseline justify-between">
-        <span className="text-[9px] font-semibold tracking-wider text-sky-400 uppercase">
+        <span className="text-[9px] font-semibold tracking-wider text-sky-700 uppercase">
           Estimator — IMM
         </span>
         <span className="tabular text-[10px] text-muted-foreground">
@@ -306,7 +306,7 @@ function EstimatorPanel(): React.JSX.Element | null {
 
       <ModelBar cv={cv} />
       <div className="flex justify-between text-[10px]">
-        <span className="tabular text-sky-300">CV {cv.toFixed(2)}</span>
+        <span className="tabular text-sky-700">CV {cv.toFixed(2)}</span>
         <span className="tabular text-orange-300">CA {ca.toFixed(2)}</span>
       </div>
 
@@ -332,13 +332,13 @@ function EstimatorPanel(): React.JSX.Element | null {
       </div>
 
       {robust.localSearchRadius !== null && (
-        <p className="text-[10px] text-amber-400/90">
+        <p className="text-[10px] text-amber-700/90">
           Local search radius {deg(robust.localSearchRadius, 2)}, pattern step{' '}
           {robust.localSearchIndex === null ? '—' : String(robust.localSearchIndex)}
         </p>
       )}
       {robust.handoffDwell !== null && (
-        <p className="text-[10px] text-cyan-300/90">
+        <p className="text-[10px] text-cyan-700/90">
           Handoff dwell {robust.handoffDwell.toFixed(2)} s of{' '}
           {robust.handoffRequiredDwell.toFixed(2)} s
         </p>

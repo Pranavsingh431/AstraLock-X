@@ -92,8 +92,8 @@ export function ResponseTrace({ axis }: { axis: 'pan' | 'tilt' }): React.JSX.Ele
           {axis} response
         </h3>
         <span className="flex items-center gap-2 text-[9px] tracking-wider uppercase">
-          <span className="text-sky-400">command</span>
-          <span className="text-emerald-400">measured</span>
+          <span className="text-sky-700">command</span>
+          <span className="text-emerald-700">measured</span>
         </span>
       </div>
 
@@ -119,7 +119,7 @@ export function ResponseTrace({ axis }: { axis: 'pan' | 'tilt' }): React.JSX.Ele
               d={plot.commandPath}
               fill="none"
               stroke="currentColor"
-              className="text-sky-400"
+              className="text-sky-700"
               strokeWidth={1}
               strokeLinejoin="round"
             />
@@ -127,7 +127,7 @@ export function ResponseTrace({ axis }: { axis: 'pan' | 'tilt' }): React.JSX.Ele
               d={plot.measuredPath}
               fill="none"
               stroke="currentColor"
-              className="text-emerald-400"
+              className="text-emerald-700"
               strokeWidth={1.25}
               strokeLinejoin="round"
             />
