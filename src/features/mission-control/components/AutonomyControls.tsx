@@ -453,6 +453,10 @@ function IdentityPanel(): React.JSX.Element | null {
 
       <div className="grid grid-cols-3 gap-x-3 gap-y-1">
         <Field
+          label="Expecting"
+          value={`${String(debug.expectedSymbols)} sym × ${(debug.expectedSymbolDuration * 1000).toFixed(0)} ms`}
+        />
+        <Field
           label="Correlation"
           value={debug.codeCorrelation === null ? '—' : debug.codeCorrelation.toFixed(3)}
         />

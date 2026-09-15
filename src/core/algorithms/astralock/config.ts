@@ -412,10 +412,17 @@ export const DEFAULT_ASTRALOCK_CONFIG: AstraLockConfig = astraLockConfigSchema.p
     // comparison that wants identity asks for it explicitly.
     enabled: false,
 
-    // The bundled target pattern and the timing the bundled camera can resolve:
+    // A default, not an assumption. A terminal is configured with the pattern
+    // its partner will send, so this field has to hold something; what it holds
+    // is the bundled pattern at the timing the bundled camera can resolve —
     // four frames per symbol at 60 fps, fifteen symbols, one second per period.
-    // See docs/BEACON_IDENTITY.md for why two frames per symbol is the floor and
-    // four is the default.
+    //
+    // Nothing in the algorithm refers to this sequence by name or depends on
+    // its contents. The application sets it from the scenario the operator
+    // loaded, and every test that enables identity sets it explicitly, so a
+    // terminal pointed at a different beacon is a configuration change and not
+    // a code change. See docs/BEACON_IDENTITY.md for why two frames per symbol
+    // is the floor and four is the default.
     expectedSequence: [...CODE_A],
     symbolDuration: 4 / 60,
 

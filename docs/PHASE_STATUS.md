@@ -1518,7 +1518,8 @@ recognition within a bounded wait, and an established track is never ended
 because the evidence ran out — a beacon that stops signalling is reported as
 unconfirmable, not as wrong.
 
-Eight coded scenarios cover a clean coded target, an uncoded intruder, an
+Nine coded scenarios cover a clean coded target, an uncoded intruder, an obvious
+decoy well off the predicted path, an
 intruder sending a different code, the Phase 7 hard decoy with both sources
 coded, an intruder replaying a rotation of the beacon's code, an intruder
 sending the identical code at the identical phase, a beacon that stops
@@ -1533,6 +1534,7 @@ same evaluator from the same recorded files.
 | -------------------- | ------------------------- | ------------------ | ------------------- |
 | `code-clean`         | 315 → 315                 | 1.000 → 1.000      | 0 → 0               |
 | `code-decoy-uncoded` | 370 → 2 683               | 1.000 → 0.921      | 1 → **0**           |
+| `code-decoy-easy`    | 315 → 315                 | 1.000 → 1.000      | 0 → 0               |
 | `code-decoy-wrong`   | 498 → 2 905               | 0.975 → 0.919      | 1 → **0**           |
 | `code-decoy-hard`    | 361 636 → **2 435**       | 0.235 → **0.922**  | 3 (24.4 s) → **0**  |
 | `code-ambiguous`     | 361 636 → 15 574          | 0.235 → 0.831      | 24.4 s → 0.4 s      |
@@ -1575,29 +1577,74 @@ with run length.
 
 ### Local Phase 8 verification
 
-| Evidence                                                     | Result                                             |
-| ------------------------------------------------------------ | -------------------------------------------------- |
-| Whole TypeScript suite, type tests included                  | 78 files, 1 539 tests passed                       |
-| Performance suites (run separately)                          | 5 files, 27 tests passed                           |
-| Code waveform, code library and correlator unit tests        | 92 passed                                          |
-| Image-level identity, through the real sensor                | 10 passed                                          |
-| Identity ON/OFF ablation over eight scenarios and five seeds | 18 passed                                          |
-| Anti-cheat and isolation, including identity                 | 23 passed                                          |
-| Clean-mode regression, including "identity off is Phase 7"   | 15 passed                                          |
-| TypeScript format, lint, typecheck and production build      | passed locally                                     |
-| Rust `fmt --check`, Clippy `-D warnings`, and tests          | passed locally; 5 Rust tests                       |
-| Manual validation in the running application                 | performed against the dev view at `localhost:1420` |
+| Evidence                                                          | Result                                                |
+| ----------------------------------------------------------------- | ----------------------------------------------------- |
+| Whole TypeScript suite, type tests included                       | 79 files, 1 559 tests passed                          |
+| Performance suites (run separately)                               | 5 files, 27 tests passed                              |
+| Code waveform, code library and correlator unit tests             | 92 passed                                             |
+| Image-level identity, through the real sensor                     | 10 passed                                             |
+| Identity ON/OFF ablation over nine scenarios and five seeds       | 21 passed                                             |
+| Camera timing: 30/60/90 fps, and exposures that straddle symbols  | 3 passed                                              |
+| Recording, cold recomputation and report rendering of a coded run | 11 passed                                             |
+| Anti-cheat and isolation, including identity                      | 23 passed                                             |
+| Clean-mode regression, including "identity off is Phase 7"        | 15 passed                                             |
+| TypeScript format, lint, typecheck and production build           | passed locally                                        |
+| Rust `fmt --check`, Clippy `-D warnings`, and tests               | passed locally; 5 Rust tests                          |
+| Manual validation in the running application                      | performed against the dev view at `localhost:1420`    |
+| Native macOS build                                                | **blocked**: Xcode licence not agreed on this machine |
 
-Manual validation exercised the identity panel on `code-decoy-hard` end to end:
-SEARCH shows IDLE with "no candidate is being watched"; TRACK shows MATCH with
-correlation 0.931, a recovered code phase of 50 ms against a true 37 ms — one
-search step — and 121 observations over 2.0 s; the sensor overlay marks the
-selected blob in the match colour; switching identity off removes the panel and
-states that the tracker is choosing on motion alone; and a scenario with no
-coded beacon offers no identity control at all. The same caveat as Phase 7
-applies: experiment recording cannot run in a browser, so the record → finalise
-→ report chain was validated headlessly against `NodeFileStorage` and by the
-automated report suite.
+The correlator was measured against camera timing it was not tuned for: at 30,
+60 and 90 frames per second with symbols scaled to four frames each it reaches
+MATCH at 0.932, 0.931 and 0.931 — nothing in the receiver counts frames, and a
+design that had assumed 60 fps would have failed two of the three. A scenario
+whose symbols are shorter than two frame periods is refused at load. With the
+shutter open for 16 ms against a 33 ms symbol, so that a large share of
+exposures span a transition, the score falls from 1.000 to 0.964 and the verdict
+holds: smearing costs contrast, and a design that sampled the code at the
+capture instant rather than integrating it would not have shown that fall.
+
+Manual validation walked the identity feature end to end in the running
+application, with the ground-truth overlay off:
+
+- `code-clean`: SEARCH shows IDLE with "no candidate is being watched"; ACQUIRE
+  is reached at 9.7 s and waits with NO EVIDENCE on six observations; TRACK is
+  reached at 10.2 s with MATCH on 36 observations over 0.6 s, correlation 0.942.
+- `code-decoy-uncoded`: the decoy enters at 17 s and the panel goes to two
+  watched sources while staying MATCH on the beacon; at the crossing the merged
+  blob is refused (one refusal, RECOVER), and the beacon is picked back up at
+  23 s at 0.931.
+- `code-decoy-wrong`: the sensor overlay marks the two sources simultaneously in
+  the match and mismatch colours — the tracker is visibly refusing the decoy
+  while holding the beacon.
+- `code-decoy-hard`, same physics, 30 s in: identity **off** leaves the tracker
+  in TRACK with a true pointing error of 323 250 µrad — following the decoy —
+  and identity **on** leaves it at 51 µrad.
+- `code-identical` reports AMBIGUOUS during the crossing rather than claiming to
+  have separated two identical signals; `code-insufficient` reports NO EVIDENCE
+  after the beacon stops signalling, never MATCH.
+- With the evaluation panel hidden — "hidden, and not computed" — the tracker
+  still acquires and holds with MATCH, so nothing in the demonstration depends
+  on truth being on screen.
+- A scenario with no coded beacon offers no identity control at all.
+- The browser console carries no errors: a deprecation notice from the 3D
+  library, dev-server chatter, and a canvas hint provoked by the validation
+  script's own pixel readback.
+
+Two steps could not be completed on this machine, and neither is a code
+problem:
+
+- **Experiment recording in the browser.** The application refuses it and says
+  why — "Experiment recording needs the desktop application: a browser tab has
+  nowhere durable to write run artifacts." The record → finalise → report →
+  recompute chain was therefore validated headlessly against `NodeFileStorage`,
+  which exercises the same recorder, metrics, report and recompute code the
+  desktop uses, and by the automated report and reproducibility suites.
+- **The native macOS build.** `pnpm tauri build` fails at the link step with
+  "You have not agreed to the Xcode license agreements", after an Xcode update
+  on this machine. The fix is `sudo xcodebuild -license`, which needs the
+  machine owner's password. Rust formatting, Clippy with warnings denied and the
+  Rust tests all pass locally, and CI builds and uploads the desktop bundle on
+  Linux, macOS and Windows.
 
 The model, the codes, the correlator, the measured results and the limits are in
 [BEACON_IDENTITY.md](BEACON_IDENTITY.md); the decisions are

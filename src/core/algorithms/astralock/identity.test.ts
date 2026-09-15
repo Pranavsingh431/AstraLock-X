@@ -546,6 +546,73 @@ describe('tracking candidates across frames', () => {
   });
 });
 
+describe('several candidates at once', () => {
+  const PIXEL = 0.20943951 / 640;
+  const rule = {
+    associationAngle: 12 * PIXEL,
+    historyWindow: 4,
+    historyCapacity: 512,
+    maxCandidates: 8,
+  };
+  const seen = (time: number, u: number, v: number, intensity = 500): IdentitySample => ({
+    time,
+    exposure: EXPOSURE,
+    u,
+    v,
+    azimuth: (u - 320) * PIXEL,
+    elevation: -(v - 240) * PIXEL,
+    intensity,
+  });
+
+  it('keeps three separated sources in three histories', () => {
+    const tracker = new CandidateTracker(rule);
+    for (let frame = 0; frame < 60; frame += 1) {
+      const t = frame * FRAME_PERIOD;
+      tracker.observe([seen(t, 100 + frame, 150), seen(t, 320, 240), seen(t, 520 - frame, 330)], t);
+    }
+
+    expect(tracker.candidates).toHaveLength(3);
+    for (const candidate of tracker.candidates) expect(candidate.history.length).toBe(60);
+  });
+
+  it('picks a returning source back up while its history is still alive', () => {
+    // A source that blinks out for a few frames — a dropout, a dip below the
+    // detector threshold — comes back to the history it left, because the
+    // history is retired on age rather than on a missed frame.
+    const tracker = new CandidateTracker(rule);
+    for (let frame = 0; frame < 30; frame += 1) {
+      const t = frame * FRAME_PERIOD;
+      tracker.observe([seen(t, 300, 240), seen(t, 500, 240)], t);
+    }
+    // The second source disappears for half a second, well inside the window.
+    for (let frame = 30; frame < 60; frame += 1) {
+      tracker.observe([seen(frame * FRAME_PERIOD, 300, 240)], frame * FRAME_PERIOD);
+    }
+    for (let frame = 60; frame < 90; frame += 1) {
+      const t = frame * FRAME_PERIOD;
+      tracker.observe([seen(t, 300, 240), seen(t, 500, 240)], t);
+    }
+
+    expect(tracker.candidates).toHaveLength(2);
+    const returned = tracker.candidates.find((c) => Math.abs(c.u - 500) < 1)!;
+    // Thirty before the gap and thirty after: the gap cost evidence, it did not
+    // reset it, and nothing was invented to fill it.
+    expect(returned.history.length).toBe(60);
+  });
+
+  it('does not resurrect a history for a source that reappears too late', () => {
+    // The mirror of the case above, and the reason the window exists: a blob
+    // that turns up where another used to be, long afterwards, is a new source
+    // as far as anything observable is concerned.
+    const tracker = new CandidateTracker(rule);
+    tracker.observe([seen(0, 300, 240)], 0);
+    tracker.observe([seen(10, 300, 240)], 10);
+
+    expect(tracker.candidates).toHaveLength(1);
+    expect(tracker.candidates[0]!.history.length).toBe(1);
+  });
+});
+
 describe('memory bounds', () => {
   // A tracker that watches for an hour must not hold an hour of anything. Both
   // bounds are asserted on the same run, because either one alone is escapable:

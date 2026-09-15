@@ -191,6 +191,31 @@ export interface AstraLockDebug {
   readonly identityCandidates: number;
   /** Candidates turned down this frame on identity rather than geometry. */
   readonly identityRejected: number;
+  /**
+   * The expected signalling pattern, as configured. Length and symbol duration
+   * only: enough for an operator to see *which* profile the terminal is set to,
+   * with nothing in it that names a source.
+   */
+  readonly expectedSymbols: number;
+  readonly expectedSymbolDuration: number;
+  /**
+   * This frame's candidates, for the sensor overlay.
+   *
+   * Everything a detector produced from these pixels — a position, a strength,
+   * and the tracker's own verdict about the light it has been watching there.
+   * Bounded, because a noisy frame can contain hundreds of components and a
+   * debug field that grew with them would be a memory leak with a view.
+   *
+   * There is no label and no name. `selected` says which one the tracker took
+   * this frame, which is a fact about the tracker, not about the world.
+   */
+  readonly candidates: readonly {
+    readonly u: number;
+    readonly v: number;
+    readonly score: number;
+    readonly identity: IdentityState | null;
+    readonly selected: boolean;
+  }[];
 }
 
 let observationCounter = 0;
@@ -200,6 +225,15 @@ const nextObservationId = (): ObservationId => {
 };
 const TRACK_ID = 'astralock-0' as TrackId;
 const ELLIPSE_SIGMAS = 2;
+
+/**
+ * Most candidates reported to the overlay in one frame.
+ *
+ * The same order of magnitude as the correlator's own candidate cap. A frame
+ * with more blobs than this is one nobody is going to read markers off anyway,
+ * and an unbounded list would grow with the noise.
+ */
+const OVERLAY_CANDIDATE_LIMIT = 16;
 
 interface FrameWork {
   association: Association | null;
@@ -255,6 +289,8 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
   private lockedPhase: number | null = null;
   /** The identity verdict on the candidate actually taken this frame. */
   private lastIdentity: IdentityReading | null = null;
+  /** Every verdict from this frame, so the overlay can mark the ones not taken. */
+  private lastReadings: Map<CandidateBearing, IdentityReading> | null = null;
   /** When the current ACQUIRE began waiting for identity evidence. */
   private acquireStart = 0;
 
@@ -376,25 +412,54 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
     // identity, and the tracker says so rather than picking one.
     const matched = [...readings.entries()].filter(([, reading]) => reading.state === 'match');
     if (matched.length > 1) {
-      for (const [candidate, reading] of matched) {
-        readings.set(candidate, { ...reading, state: 'ambiguous' });
-      }
-      // Identity abstains for this frame: every remaining candidate is demoted
-      // out of `match`, so the choice falls back entirely to the motion gate.
+      // Identity abstains for this frame: nothing is left in `match`, so the
+      // choice falls back entirely to the motion gate.
       //
       // Abstaining matters more than it sounds. Left ranking, the verdicts
       // flicker between `match` and `ambiguous` as each history gains and loses
       // a sample, and the rank-1 preference then drags selection back and forth
       // between two sources it cannot actually tell apart. Measured on the
-      // rotated-code control that produced twenty false-lock episodes where
+      // rotated-code control, that produced twenty false-lock episodes where
       // identity-off produced two: not a limitation being reported, a tracker
       // being made worse by evidence that does not discriminate.
-      for (const [candidate, reading] of readings) {
-        if (reading.state === 'match') readings.set(candidate, { ...reading, state: 'ambiguous' });
+      for (const [candidate, reading] of matched) {
+        readings.set(candidate, { ...reading, state: 'ambiguous' });
       }
     }
 
     return readings;
+  }
+
+  /**
+   * Whether a track may not be *started* on a candidate.
+   *
+   * Two separate reasons, and neither is "the tracker does not know yet".
+   *
+   * A settled refusal — `mismatch`, or `ambiguous` — says the evidence is
+   * against this source or cannot separate it from another.
+   *
+   * A source that has been watched long enough to produce a verdict and has not
+   * varied at all is the second reason. Its correlation is undefined or decided
+   * by noise, so it is not a mismatch and is never reported as one; but it
+   * carries no identity, and a terminal cannot confirm a partner that is not
+   * signalling. Without this, an unmodulated source that happens to be the
+   * brightest thing in the sky is offered to ACQUIRE for ever: ACQUIRE gives up
+   * on it after the bounded wait, SEARCH immediately offers the same source
+   * again, and the real beacon never gets a turn.
+   *
+   * This bears only on *starting* a track. An established track is never ended
+   * because its beacon went quiet — see `associate`, which refuses a candidate
+   * only on `mismatch`.
+   */
+  private refusedForAcquisition(reading: IdentityReading | null): boolean {
+    if (reading === null) return false;
+    if (reading.state === 'mismatch' || reading.state === 'ambiguous') return true;
+
+    const identity = this.config.identity;
+    const watched =
+      reading.samples >= identity.minSamples &&
+      reading.span >= identity.minSpanSymbols * identity.symbolDuration;
+    return watched && reading.modulation < identity.minModulation;
   }
 
   /**
@@ -467,6 +532,7 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
         : this.profiler.time('identity', () =>
             this.evaluateIdentity(candidates, captureTime, frame.exposure as number),
           );
+    this.lastReadings = identityReadings;
     const identityOf =
       identityReadings === null
         ? null
@@ -477,7 +543,13 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
 
     switch (this.state) {
       case 'search': {
-        const best = strongestCandidate(candidates, c.acquisition.minCandidateScore, identityOf);
+        const best = strongestCandidate(
+          candidates,
+          c.acquisition.minCandidateScore,
+          identityReadings === null
+            ? null
+            : (candidate) => this.refusedForAcquisition(identityReadings.get(candidate) ?? null),
+        );
         if (best !== null) {
           this.imm.initialise(best.azimuth, best.elevation, captureTime);
           this.evidence.start(captureTime);
@@ -544,8 +616,7 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
         // unmodulated source, or one seen too briefly — is abandoned rather than
         // waited on for ever.
         const identitySatisfied = identityReadings === null || acquireIdentity?.state === 'match';
-        const identityRefused =
-          acquireIdentity?.state === 'mismatch' || acquireIdentity?.state === 'ambiguous';
+        const identityRefused = this.refusedForAcquisition(acquireIdentity);
         const waitedTooLong =
           identityReadings !== null &&
           captureTime - this.acquireStart > c.identity.maxAcquireSeconds;
@@ -943,6 +1014,15 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
       identitySpan: this.lastIdentity?.span ?? null,
       identityCandidates: this.tracker?.candidates.length ?? 0,
       identityRejected: work.association?.identityRejected ?? 0,
+      expectedSymbols: this.config.identity.expectedSequence.length,
+      expectedSymbolDuration: this.config.identity.symbolDuration,
+      candidates: (candidates ?? []).slice(0, OVERLAY_CANDIDATE_LIMIT).map((candidate) => ({
+        u: candidate.u,
+        v: candidate.v,
+        score: candidate.score,
+        identity: this.lastReadings?.get(candidate)?.state ?? null,
+        selected: candidate === work.accepted,
+      })),
     };
 
     return {
@@ -1040,12 +1120,19 @@ export const astraLockXPat = defineAlgorithm({
   manifest: {
     id: 'astralock-x',
     name: 'AstraLock-X Reference PAT',
-    version: '1.0.0',
+    // Minor, not major: every Phase 6 and 7 guarantee is intact and the
+    // configuration still parses. What is new is an optional stage, off unless
+    // a terminal is configured with a pattern to expect. A run records this
+    // string, so a report can say which tracker produced it.
+    version: '1.1.0',
     description:
       'Robust reference PAT: validated acquisition, NCV/NCA interacting-multiple-model estimation, ' +
       'chi-square gated association, latency-aware feedback plus feed-forward pointing, ' +
       'predictive recovery with covariance-scaled local search, and coarse-to-fine handoff readiness. ' +
-      'No beacon identity: a plausible decoy inside the gate can still capture it.',
+      'Optional coded beacon identity: recognises the signalling pattern it is configured to expect, ' +
+      'and refuses a source that is sending something else. Recognition, not authentication — a decoy ' +
+      'that knows the pattern can send it. With identity disabled, a plausible decoy inside the gate ' +
+      'can still capture the track.',
     configSchema: astraLockConfigSchema,
     defaultConfig: DEFAULT_ASTRALOCK_CONFIG,
   },

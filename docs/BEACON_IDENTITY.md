@@ -134,9 +134,11 @@ dims the source further (range, attenuation, a noisy frame) would eat. **0.55 is
 the default**: score 0.163, a comfortable margin, and still a 3.0x contrast in
 integrated intensity between a one and a zero.
 
-Full on-off keying remains expressible by setting `offIntensity` to zero. The
-consequences above are then the scenario author's to accept, and one of the
-bundled negative controls does exactly that on purpose.
+Full on-off keying remains expressible: the schema requires only
+`offIntensity < onIntensity`, so zero is allowed. No bundled scenario uses it,
+because every bundled scenario needs its beacon to stay trackable while it
+signals. The consequences above are the scenario author's to accept, and they
+are stated here rather than prevented.
 
 ## The code
 
@@ -316,6 +318,15 @@ So the ambiguity is real at acquisition and absent during track, which is what
 intruder sending the identical code at the identical phase — the same signal
 from a different object — and that is what `code-identical` exists for.
 
+One presentational consequence is worth knowing about before it confuses
+somebody. `code-insufficient` expresses "signal for twenty seconds, then stop"
+as a non-repeating sequence of twenty passes of the code spliced end to end, and
+the terminal is configured with exactly what its partner transmits — so the
+identity panel reads "expecting 300 symbols" on that scenario rather than 15.
+The receiver still works, because the transmitted signal is periodic at one
+second throughout the signalling window, but the number in the panel is the
+concatenation, not the repeating unit.
+
 Resolution is a configured step count rather than anything adaptive. A sweep
 finer than the camera's own sampling buys nothing — observations cannot
 distinguish phases closer together than an exposure — and cost is linear in
@@ -341,12 +352,86 @@ either side of one edge fit any monotone pattern — and only the sample and spa
 requirements stop that becoming a MATCH. There is a test named after exactly
 that trap.
 
+## How identity enters the state machine
+
+Identity is evaluated once per frame for every candidate, in every state. The
+evidence has to accumulate while the tracker is still searching, or a source
+would have to be watched all over again after acquisition.
+
+What the machine then does with a verdict differs by state, and the rule behind
+the difference is one sentence: **starting a track needs more than continuing
+one.**
+
+### SEARCH
+
+The strongest candidate above the score floor wins, as it has since Phase 6 —
+with one addition. A source identity has settled against is skipped: a
+`mismatch`, an `ambiguous`, or one that has been watched long enough to produce
+a verdict and has not varied at all.
+
+The last of those is not fussiness. An unmodulated source that happens to be the
+brightest thing in the sky would otherwise be handed to ACQUIRE for ever:
+ACQUIRE gives up on it after its bounded wait, SEARCH immediately offers the
+same source again, and the real beacon — dimmer, and never ranked first — never
+gets a turn. `code-decoy-easy` is that case, and it is why SEARCH has a memory.
+
+A source identity has _not yet_ judged is still eligible. Refusing to start on an
+unjudged source would mean never starting at all, because the evidence only
+exists once something has been watched.
+
+### ACQUIRE
+
+Motion evidence and identity evidence are both required, and neither substitutes
+for the other. Phase 6's persistence and innovation checks still have to pass;
+with identity enabled the candidate must also have been positively recognised,
+which takes about half a second of watching at the bundled timing.
+
+The wait is bounded by `maxAcquireSeconds`. A candidate that never produces a
+verdict is abandoned rather than waited on for ever, and the machine returns to
+SEARCH — which, by the rule above, will now look past it.
+
+### TRACK
+
+The staged rule: the motion gate decides what is admissible and is never
+overridden; a candidate the correlator has positively refused is not taken, even
+when it is the only one admitted; among what remains a `match` outranks a
+non-match, and within one identity class the smallest innovation wins.
+
+Only `mismatch` removes a candidate. `unconfirmed`, `insufficient-evidence` and
+`ambiguous` do not, because none of them is evidence _against_ a source — a
+beacon that has gone quiet is not a beacon that is lying, and ending a track on
+that basis would be worse than keeping it and saying so. `code-insufficient` is
+the scenario that holds this to the line: the beacon stops signalling twenty
+seconds in and the track survives at 0.96 retention with the verdict reported
+honestly as unconfirmable.
+
+Refusing the only admitted candidate does mean coasting, and coasting is the
+intended failure. It is what happens at the centre of a decoy crossing, where
+the two sources merge into one blob carrying two superimposed codes: the
+correlation collapses, the merged detection is declined, and the estimator
+coasts through rather than accepting a measurement it cannot attribute.
+
+### RECOVER
+
+Identity survives a short RECOVER by construction rather than by special case.
+Histories are bounded by time, not cleared on a state change, so a gap shorter
+than the window leaves the evidence intact and reacquisition is checked against
+the same code the tracker was following. A longer gap expires it, and the
+verdict has to be earned again.
+
+The same association rule applies as in TRACK, with RECOVER's wider gates. A
+decoy sitting in a wide recovery gate is refused on identity frame after frame
+while the real beacon is looked for — visible in the telemetry as a rising
+`identity_rejected` count with no measurement accepted.
+
 ## Measured results
 
-Eight scenarios, 45 seconds each, identity switched on and off with nothing else
+Nine scenarios, 45 seconds each, identity switched on and off with nothing else
 changed. Both arms are scored by the same evaluator from the same recorded
-files; the harness is `identity-ablation.test.ts` and the figures below are
-reproduced by `__probe` runs of it.
+files. The harness is `identity-ablation.test.ts`, which asserts the conclusions
+below rather than the exact numbers — a test that pinned 2 435 µrad would fail
+on the next legitimate improvement, and a conclusion that only holds at one
+value was never a conclusion.
 
 | scenario             | arm    | RMS error (µrad) | retention | false-lock episodes | false-lock (s) | wrong recognitions |
 | -------------------- | ------ | ---------------: | --------: | ------------------: | -------------: | -----------------: |
@@ -354,6 +439,8 @@ reproduced by `__probe` runs of it.
 | `code-clean`         | **on** |              315 |     1.000 |                   0 |              0 |                  0 |
 | `code-decoy-uncoded` | off    |              370 |     1.000 |                   1 |            0.1 |                  — |
 | `code-decoy-uncoded` | **on** |            2 683 |     0.921 |               **0** |          **0** |                  0 |
+| `code-decoy-easy`    | off    |              315 |     1.000 |                   0 |              0 |                  — |
+| `code-decoy-easy`    | **on** |              315 |     1.000 |                   0 |              0 |                  0 |
 | `code-decoy-wrong`   | off    |              498 |     0.975 |                   1 |            0.1 |                  — |
 | `code-decoy-wrong`   | **on** |            2 905 |     0.919 |               **0** |          **0** |                  0 |
 | `code-decoy-hard`    | off    |          361 636 |     0.235 |                   3 |           24.4 |                  — |
@@ -369,6 +456,12 @@ reproduced by `__probe` runs of it.
 
 Read across the whole table rather than at the headline row, because three
 different things are happening in it.
+
+**Where gating already worked, nothing changes.** `code-decoy-easy` puts a
+brighter, uncoded decoy three and a half degrees off the beacon's bearing — far
+outside the track gate. Phase 6's gating already rejected it, the two arms are
+identical to the digit, and a phase that claimed credit for this case would be
+overstating what a code buys.
 
 **Where it works, it works decisively.** On `code-decoy-hard` — the Phase 7
 geometry that defeated motion gating — identity turns a run that loses the
@@ -394,6 +487,24 @@ identity OFF produce the same numbers to five significant figures. The 1 271
 was holding is sending the expected pattern, and that claim was _true_ of the
 decoy. There is no information in the light that separates them, and the design
 does not invent any.
+
+### Timing the receiver was not tuned for
+
+Nothing in the receiver counts frames; it works in timestamps, exposures and
+seconds. Retiming `code-clean` to 30, 60 and 90 frames per second, with symbols
+scaled to four frames each, reaches MATCH at 0.932, 0.931 and 0.931
+respectively. A design that had assumed the bundled 60 fps would have failed two
+of the three and looked perfectly correct on the one it was written against.
+
+Exposure length is the other axis, and it is where "integrate, do not sample"
+becomes measurable. At two frames per symbol — the Nyquist floor — a 2 ms
+exposure lands squarely inside symbols and scores 1.000. Opening the shutter to
+16 ms against a 33 ms symbol makes a large share of exposures span a transition,
+and the score falls to 0.964. The verdict holds, and the _fall itself_ is the
+evidence: a receiver that evaluated the code at the capture instant would have
+shown no change at all.
+
+### Cost
 
 Identity costs between 0.02 and 0.16 ms per frame against a 16.67 ms budget,
 measured per stage with its own profiler entry. Measured a second way, as the

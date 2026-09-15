@@ -35,14 +35,27 @@ interface OverlayDebug {
    */
   readonly identityState?: string | null;
   readonly identityEnabled?: boolean;
+  /**
+   * Every candidate the detector found this frame, for a tracker that reports
+   * them. Positions and strengths computed from these pixels, plus the
+   * tracker's own identity verdict — never a name, and never a label saying
+   * which one is the target, because the tracker does not know.
+   */
+  readonly candidates?: readonly {
+    readonly u: number;
+    readonly v: number;
+    readonly score: number;
+    readonly identity?: string | null;
+    readonly selected: boolean;
+  }[];
 }
 
 /** Colour and short caption for each identity verdict drawn on the image. */
 const IDENTITY_MARK: Record<string, { colour: string; caption: string }> = {
-  match: { colour: '#34d399', caption: 'CODE OK' },
-  mismatch: { colour: '#f87171', caption: 'CODE X' },
-  ambiguous: { colour: '#fbbf24', caption: 'CODE ?' },
-  unconfirmed: { colour: '#cbd5e1', caption: 'CODE ~' },
+  match: { colour: '#34d399', caption: 'MATCH' },
+  mismatch: { colour: '#f87171', caption: 'MISMATCH' },
+  ambiguous: { colour: '#fbbf24', caption: 'AMBIGUOUS' },
+  unconfirmed: { colour: '#cbd5e1', caption: 'UNCONFIRMED' },
   'insufficient-evidence': { colour: '#cbd5e1', caption: 'WATCHING' },
 };
 import type { CameraSensorFrame } from '@/core/contracts/sensors';
@@ -160,6 +173,28 @@ function drawAlgorithmOverlay(
       ? IDENTITY_MARK[debug.identityState]
       : undefined;
 
+  // Every other candidate the detector found. An operator watching a decoy
+  // cross needs to see that the tracker knows it is there and has judged it;
+  // showing only the selected blob hides exactly the moment that matters.
+  //
+  // The marks say SELECTED, MATCH or MISMATCH — statements about this tracker's
+  // evidence. None of them says TARGET, because nothing here knows which one is.
+  for (const candidate of debug.candidates ?? []) {
+    if (candidate.selected) continue;
+    const other =
+      debug.identityEnabled === true && typeof candidate.identity === 'string'
+        ? IDENTITY_MARK[candidate.identity]
+        : undefined;
+    context.strokeStyle = other?.colour ?? 'rgba(148, 163, 184, 0.75)';
+    context.beginPath();
+    context.arc(candidate.u, candidate.v, 5, 0, Math.PI * 2);
+    context.stroke();
+    if (other !== undefined) {
+      context.fillStyle = other.colour;
+      context.fillText(other.caption, candidate.u + 7, candidate.v + 4);
+    }
+  }
+
   if (debug.boundingBox !== null) {
     context.strokeStyle = mark?.colour ?? '#34d399';
     context.strokeRect(
@@ -180,10 +215,12 @@ function drawAlgorithmOverlay(
       context.fillText(debug.candidateScore.toFixed(2), debug.centroidX + 8, debug.centroidY - 6);
     }
 
-    if (mark !== undefined) {
-      context.fillStyle = mark.colour;
-      context.fillText(mark.caption, debug.centroidX + 8, debug.centroidY + 12);
-    }
+    context.fillStyle = mark?.colour ?? '#34d399';
+    context.fillText(
+      mark === undefined ? 'SELECTED' : `SELECTED · ${mark.caption}`,
+      debug.centroidX + 8,
+      debug.centroidY + 12,
+    );
   }
 
   context.restore();

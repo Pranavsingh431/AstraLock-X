@@ -38,6 +38,25 @@ Acceptance is **staged**, and the stages are ordered by what they can prove.
 
 No arithmetic combines the two quantities at any point.
 
+**Starting a track needs more than continuing one.** ACQUIRE requires a positive
+recognition within a bounded wait; TRACK requires only that identity has not
+positively refused. The asymmetry is deliberate and it is where most of the
+behaviour lives:
+
+- A beacon that stops signalling is reported as unconfirmable and keeps its
+  track. Evidence that has expired is not evidence against.
+- A source that has been watched long enough to produce a verdict and has not
+  varied at all cannot be _started_ on, because a terminal cannot confirm a
+  partner that is not signalling. It is still never called a mismatch: its
+  correlation is undefined or decided by noise, and calling that a wrong code
+  would be manufacturing a finding.
+- SEARCH carries that refusal, not only ACQUIRE. Without it the machine
+  oscillates: SEARCH ranks by brightness and hands the brightest source to
+  ACQUIRE, ACQUIRE gives up on it after the bounded wait, SEARCH offers the same
+  source again, and a dimmer real beacon never gets a turn. This was found by
+  building the scenario the specification asked for — an obvious, bright,
+  uncoded decoy — and watching the tracker fail to acquire at all.
+
 Verdicts are named for the **evidence**, never for the world:
 `insufficient-evidence`, `unconfirmed`, `match`, `mismatch`, `ambiguous`. There
 is no `TRUE_TARGET` or `FALSE_TARGET`, because the tracker cannot know either
@@ -82,6 +101,13 @@ evidence does not contain.
 ## Alternatives rejected
 
 - **A weighted score.** The incommensurability above.
+- **Letting a low correlation on a flat series count as a mismatch.** Pearson's
+  `r` divides by the observed standard deviation, so a source that has stopped
+  signalling correlates at random and looks like positive evidence of a wrong
+  code about half the time. A verdict either way now requires the observations
+  to have carried some modulation. Measured: without that floor,
+  `code-insufficient` fell from full retention to 0.26, because noise on a flat
+  series was periodically scored as a mismatch and the track thrown away.
 - **Identity as a veto only, with no ranking.** It would decline decoys but never
   prefer the correct source when two are admitted, which is most of the hard
   decoy case.

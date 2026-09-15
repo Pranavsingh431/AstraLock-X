@@ -58,31 +58,27 @@ export function candidateBearings(
  * Ranking for SEARCH: strongest integrated intensity above a score floor,
  * skipping anything identity has already turned down.
  *
- * The brightness ranking is Phase 6's and is unchanged when `identityOf` is
+ * The brightness ranking is Phase 6's and is unchanged when `refused` is
  * absent. What it adds is memory: identity evidence accumulates on every frame
  * whatever state the machine is in, so by the time SEARCH looks at a source it
- * has often been watched long enough to know it is the wrong one. Ignoring that
- * would make the machine oscillate — SEARCH hands the brightest source to
- * ACQUIRE, ACQUIRE refuses it on identity, SEARCH offers the same source again
+ * has often been watched long enough to know a track cannot be started on it.
+ * Ignoring that would make the machine oscillate — SEARCH hands the brightest
+ * source to ACQUIRE, ACQUIRE turns it down, SEARCH offers the same source again
  * — and the real beacon, being dimmer, would never get a turn.
  *
- * Only settled refusals are skipped. A source identity has not yet judged is
- * still eligible, because refusing to start on an unjudged source would mean
- * never starting at all: the evidence only exists once something has been
- * watched.
+ * A source identity has not yet judged is still eligible, because refusing to
+ * start on an unjudged source would mean never starting at all: the evidence
+ * only exists once something has been watched.
  */
 export function strongestCandidate(
   candidates: readonly CandidateBearing[],
   minScore: number,
-  identityOf: ((candidate: CandidateBearing) => IdentityState | null) | null = null,
+  refused: ((candidate: CandidateBearing) => boolean) | null = null,
 ): CandidateBearing | null {
   let best: CandidateBearing | null = null;
   for (const c of candidates) {
     if (c.score < minScore) continue;
-    if (identityOf !== null) {
-      const state = identityOf(c);
-      if (state === 'mismatch' || state === 'ambiguous') continue;
-    }
+    if (refused !== null && refused(c)) continue;
     if (best === null || c.blob.integratedIntensity > best.blob.integratedIntensity) best = c;
   }
   return best;

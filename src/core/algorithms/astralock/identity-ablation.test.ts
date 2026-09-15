@@ -135,6 +135,32 @@ describe('a coded target on its own', () => {
   });
 });
 
+describe('an obvious decoy well off the predicted path', () => {
+  it('was already rejected by motion gating, and identity does not spoil that', async () => {
+    // Worth having precisely because it is not a success for identity. Gating
+    // solved this one in Phase 6, and a phase that quietly claimed credit for
+    // it would be overstating what a code buys. The only thing to check is that
+    // adding identity does not make a solved case worse.
+    const { off, on } = await pair('code-decoy-easy');
+
+    expect(off.falseLockEpisodes).toBe(0);
+    expect(on.falseLockEpisodes).toBe(0);
+    expect(on.acquired).toBe(true);
+    expect(on.retention).toBeGreaterThan(0.9);
+  });
+
+  it('is not allowed to hold acquisition hostage for being the brightest', async () => {
+    // The decoy carries no code at all, and it outshines the beacon. SEARCH
+    // ranks by brightness, so without memory it would hand the decoy to ACQUIRE
+    // for ever: ACQUIRE gives up after the bounded wait, SEARCH offers the same
+    // source again, and the beacon never gets a turn. The tracker acquires, so
+    // it moved on.
+    const { on } = await pair('code-decoy-easy');
+    expect(on.acquired).toBe(true);
+    expect(on.wrongCodeAssociations).toBe(0);
+  });
+});
+
 describe('a bright intruder carrying no code', () => {
   it('stops being locked onto', async () => {
     const { off, on } = await pair('code-decoy-uncoded');
@@ -267,6 +293,47 @@ describe('what identity costs', () => {
     // and an absent stage is absent rather than present at zero.
     const { off } = await pair('code-clean');
     expect(off.identityMeanMs).toBeNull();
+  });
+});
+
+describe('the comparison as a whole', () => {
+  it('prints the table the documentation quotes', async () => {
+    // docs/BEACON_IDENTITY.md quotes measured figures, and a document quoting
+    // numbers nobody can regenerate is a document asking to be trusted. Every
+    // pair above is already computed and cached by the time this runs, so
+    // printing them costs nothing and makes the table auditable.
+    const scenarios: ScenarioId[] = [
+      'code-clean',
+      'code-decoy-uncoded',
+      'code-decoy-easy',
+      'code-decoy-wrong',
+      'code-decoy-hard',
+      'code-ambiguous',
+      'code-identical',
+      'code-insufficient',
+      'code-frame-loss',
+    ];
+
+    const rows: string[] = [];
+    for (const scenario of scenarios) {
+      const { off, on } = await pair(scenario);
+      for (const [label, result] of [
+        ['off', off],
+        ['on ', on],
+      ] as const) {
+        rows.push(
+          `  ${scenario.padEnd(20)} ${label}  ` +
+            `rms ${String(result.rmsUrad === null ? '—' : Math.round(result.rmsUrad)).padStart(7)} µrad  ` +
+            `retention ${result.retention.toFixed(3)}  ` +
+            `false lock ${String(result.falseLockEpisodes)} ep / ${result.falseLockSeconds.toFixed(1)} s  ` +
+            `wrong ${label === 'off' ? '—' : String(result.wrongCodeAssociations)}`,
+        );
+      }
+    }
+
+    // eslint-disable-next-line no-console -- the measured figures are the point
+    console.log(`identity ON/OFF over ${String(SECONDS)} s per arm:\n${rows.join('\n')}`);
+    expect(rows).toHaveLength(scenarios.length * 2);
   });
 });
 

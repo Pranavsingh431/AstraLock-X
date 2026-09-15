@@ -19,8 +19,10 @@ import { join } from 'node:path';
 
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
+import { DEFAULT_ASTRALOCK_CONFIG, astraLockXPat } from '@/core/algorithms';
 import { parseBaselinePatConfig } from '@/core/algorithms/baseline/config';
 import { parseSimulationConfig } from '@/core/contracts/simulation';
+import { loadScenario } from '@/scenarios';
 
 import { NodeFileStorage } from './node-storage.node';
 import { readManifest, recomputeSummary } from './recompute';
@@ -195,5 +197,86 @@ describe('a long recorded run', () => {
       `long run: ${String(frames)} frames, ${(full / 1e6).toFixed(2)} MB raw ` +
         `(${(full / frames).toFixed(0)} B/frame), peak queue ${String(Math.max(first.maxPendingBytes, second.maxPendingBytes))} B`,
     );
+  });
+});
+
+describe('a recorded coded-beacon run', () => {
+  it('recomputes cold from its files, identity verdicts included', async () => {
+    // The identity columns and the identity summary block have to survive the
+    // round trip through CSV and back, like every other measurement. A metric
+    // that could only be produced live would mean the artifacts were missing
+    // something, which is a defect in what gets recorded.
+    const root = await temporaryRoot();
+    const scenario = loadScenario('code-decoy-hard');
+    const code = scenario.targets[0]!.beacon!.identityCode!;
+
+    const rig = buildRig({
+      scenario,
+      storage: new NodeFileStorage(root),
+      runId: 'run-coded',
+      plugin: astraLockXPat,
+      algorithmConfig: {
+        ...DEFAULT_ASTRALOCK_CONFIG,
+        identity: {
+          ...DEFAULT_ASTRALOCK_CONFIG.identity,
+          enabled: true,
+          expectedSequence: code.sequence,
+          symbolDuration: code.symbolDuration as number,
+        },
+      },
+    });
+    await rig.recorder!.start({ autonomyActive: true });
+    drive(rig, 30);
+    const live = await rig.recorder!.complete();
+
+    const storage = new NodeFileStorage(root);
+    const { stored, recomputed, differences } = await recomputeSummary(storage, 'run-coded');
+
+    expect(differences).toEqual([]);
+    expect(stored.beaconIdentity).not.toBeNull();
+    expect(recomputed.beaconIdentity).toEqual(live.beaconIdentity);
+    // Not a vacuous pass: the run really did produce verdicts to compare.
+    expect(recomputed.beaconIdentity!.correctCodeAssociations).toBeGreaterThan(0);
+    expect(recomputed.beaconIdentity!.identityChallenges).toBeGreaterThan(0);
+  });
+
+  it('stores the expected pattern the tracker was configured with', async () => {
+    // The ON and OFF arms of a comparison differ only in the tracker's
+    // configuration. A record that did not say which arm it was would be
+    // unusable, so the sequence and the enable flag are part of algorithm.json.
+    const root = await temporaryRoot();
+    const scenario = loadScenario('code-clean');
+    const code = scenario.targets[0]!.beacon!.identityCode!;
+
+    const rig = buildRig({
+      scenario,
+      storage: new NodeFileStorage(root),
+      runId: 'run-coded-config',
+      plugin: astraLockXPat,
+      algorithmConfig: {
+        ...DEFAULT_ASTRALOCK_CONFIG,
+        identity: {
+          ...DEFAULT_ASTRALOCK_CONFIG.identity,
+          enabled: true,
+          expectedSequence: code.sequence,
+          symbolDuration: code.symbolDuration as number,
+        },
+      },
+    });
+    await rig.recorder!.start({ autonomyActive: true });
+    drive(rig, 12);
+    await rig.recorder!.complete();
+
+    const storage = new NodeFileStorage(root);
+    const algorithm = JSON.parse(
+      await storage.readFile('run-coded-config', RUN_FILES.algorithm),
+    ) as { identity: { enabled: boolean; expectedSequence: number[] } };
+    expect(algorithm.identity.enabled).toBe(true);
+    expect(algorithm.identity.expectedSequence).toEqual([...code.sequence]);
+
+    const saved = parseSimulationConfig(
+      JSON.parse(await storage.readFile('run-coded-config', RUN_FILES.scenario)),
+    );
+    expect(saved.targets[0]!.beacon!.identityCode).toEqual(code);
   });
 });

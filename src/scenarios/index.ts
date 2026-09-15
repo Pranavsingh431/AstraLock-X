@@ -23,6 +23,7 @@ import circular from './circular.json';
 import codeAmbiguous from './code-ambiguous.json';
 import codeClean from './code-clean.json';
 import codeDecoyHard from './code-decoy-hard.json';
+import codeDecoyEasy from './code-decoy-easy.json';
 import codeDecoyUncoded from './code-decoy-uncoded.json';
 import codeIdentical from './code-identical.json';
 import codeDecoyWrong from './code-decoy-wrong.json';
@@ -76,6 +77,7 @@ export const SCENARIO_IDS = [
   'dist-combined',
   'code-clean',
   'code-decoy-uncoded',
+  'code-decoy-easy',
   'code-decoy-wrong',
   'code-decoy-hard',
   'code-ambiguous',
@@ -115,6 +117,7 @@ const RAW_SCENARIOS: Record<ScenarioId, unknown> = {
   'dist-combined': distCombined,
   'code-clean': codeClean,
   'code-decoy-uncoded': codeDecoyUncoded,
+  'code-decoy-easy': codeDecoyEasy,
   'code-decoy-wrong': codeDecoyWrong,
   'code-decoy-hard': codeDecoyHard,
   'code-ambiguous': codeAmbiguous,

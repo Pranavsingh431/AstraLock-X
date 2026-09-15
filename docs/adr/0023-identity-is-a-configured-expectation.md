@@ -85,3 +85,25 @@ problem, and it can still get it wrong.
 - **Deriving the expected code from the brightest source at start-up.** It
   reduces to "follow the brightest thing", which is the baseline's rule and the
   behaviour being fixed.
+
+## How the pattern actually reaches the tracker
+
+Worth stating, because "configured with a pattern" can hide a channel.
+
+In the application, the store reads the designated beacon's `identityCode` from
+the scenario the operator loaded and puts the sequence and the symbol duration
+into the algorithm's configuration when the runtime is built. In tests and the
+ablation harness, the test does the same thing. Both are playing the part a
+mission plan plays for a real terminal: you are told what your partner will
+transmit before you attempt the link.
+
+Two properties make that a configuration path rather than a channel. It happens
+**once**, when the tracker is constructed, and never per frame — so nothing
+about the running world can reach the algorithm through it. And what crosses is
+two numbers that would be written on a mission card: a sequence of ones and
+zeros, and a symbol duration. No position, no brightness, no phase, no
+identifier, and nothing at all about any other source in the scene.
+
+The anti-cheat suite holds the line where it matters: the same world with its
+entities renamed produces a bit-identical run, and blank pixels produce no
+verdict at all rather than a default one.
