@@ -42,6 +42,7 @@ import {
   type RunListing,
   type SummaryStatistics,
 } from '@/core/experiments';
+import { EngineeringTable, Rh, TableBody, TableHead, Td, Th, Tr } from '@/components/astra';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -50,10 +51,10 @@ import { cn } from '@/lib/utils';
 const storage = createStorage();
 
 const STATUS_STYLE: Record<string, string> = {
-  completed: 'border-emerald-600/40 bg-emerald-50 text-emerald-700',
-  aborted: 'border-amber-600/40 bg-amber-50 text-amber-700',
-  failed: 'border-red-600/40 bg-red-50 text-red-700',
-  incomplete: 'border-red-600/40 bg-red-50 text-red-700',
+  completed: 'border-status-nominal/40 bg-status-nominal/10 text-status-nominal',
+  aborted: 'border-status-degraded/40 bg-status-degraded/10 text-status-degraded',
+  failed: 'border-status-fault/40 bg-status-fault/10 text-status-fault',
+  incomplete: 'border-status-fault/40 bg-status-fault/10 text-status-fault',
 };
 
 /** What a run that is not a result means, said plainly. */
@@ -116,32 +117,30 @@ function StatsTable({
   rows: readonly (readonly [string, SummaryStatistics])[];
 }): React.JSX.Element {
   return (
-    <table className="w-full text-[11px]">
-      <thead>
-        <tr className="text-left text-[9px] tracking-wider text-muted-foreground uppercase">
-          <th className="py-1 pr-2 font-medium">{title}</th>
-          <th className="px-1 font-medium">n</th>
-          <th className="px-1 font-medium">Mean</th>
-          <th className="px-1 font-medium">RMS</th>
-          <th className="px-1 font-medium">Median</th>
-          <th className="px-1 font-medium">P95</th>
-          <th className="px-1 font-medium">Max</th>
-        </tr>
-      </thead>
-      <tbody className="tabular">
+    <EngineeringTable>
+      <TableHead>
+        <Th>{title}</Th>
+        <Th numeric>n</Th>
+        <Th numeric>Mean</Th>
+        <Th numeric>RMS</Th>
+        <Th numeric>Median</Th>
+        <Th numeric>P95</Th>
+        <Th numeric>Max</Th>
+      </TableHead>
+      <TableBody>
         {rows.map(([label, stats]) => (
-          <tr key={label} className="border-t border-border/50">
-            <td className="py-0.5 pr-2 text-muted-foreground">{label}</td>
-            <td className="px-1">{stats.count}</td>
-            <td className="px-1">{value(stats.mean, 3)}</td>
-            <td className="px-1">{value(stats.rms, 3)}</td>
-            <td className="px-1">{value(stats.median, 3)}</td>
-            <td className="px-1">{value(stats.p95, 3)}</td>
-            <td className="px-1">{value(stats.max, 3)}</td>
-          </tr>
+          <Tr key={label}>
+            <Rh>{label}</Rh>
+            <Td numeric>{stats.count}</Td>
+            <Td numeric>{value(stats.mean, 3)}</Td>
+            <Td numeric>{value(stats.rms, 3)}</Td>
+            <Td numeric>{value(stats.median, 3)}</Td>
+            <Td numeric>{value(stats.p95, 3)}</Td>
+            <Td numeric>{value(stats.max, 3)}</Td>
+          </Tr>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </EngineeringTable>
   );
 }
 
@@ -349,8 +348,8 @@ export function ReportsView(): React.JSX.Element {
 
   return (
     <div className="flex h-full min-h-0">
-      <div className="flex w-[480px] min-w-0 shrink-0 flex-col border-r">
-        <header className="flex items-center justify-between gap-2 border-b bg-card/40 px-3 py-2">
+      <div className="flex w-[440px] min-w-0 shrink-0 flex-col border-r border-panel-border">
+        <header className="flex items-center justify-between gap-2 border-b border-panel-border bg-panel-header px-3 py-2">
           <div className="min-w-0">
             <h2 className="flex items-center gap-2 text-[11px] font-semibold tracking-wider text-foreground/80 uppercase">
               Saved runs
@@ -421,7 +420,9 @@ export function ReportsView(): React.JSX.Element {
                       {m !== null && <StatusBadge status={m.status} />}
                     </div>
                     {m === null ? (
-                      <p className="mt-0.5 text-[10px] text-red-700">Unreadable: {run.error}</p>
+                      <p className="mt-0.5 text-[10px] text-status-fault">
+                        Unreadable: {run.error}
+                      </p>
                     ) : (
                       <>
                         <div className="mt-0.5 flex flex-wrap gap-x-3 text-[10px] text-muted-foreground">
@@ -465,10 +466,15 @@ export function ReportsView(): React.JSX.Element {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b px-4 py-2">
-          <h2 className="truncate text-[11px] font-semibold tracking-wider text-foreground/80 uppercase">
+        <header className="flex items-center gap-2 border-b border-panel-border bg-panel-header px-3 py-2">
+          <h2 className="truncate text-[11px] font-semibold tracking-[0.08em] text-foreground/80 uppercase">
             {current === null ? 'Run details' : current.runId}
           </h2>
+          {current?.manifest != null && (
+            <span className="ml-auto shrink-0">
+              <StatusBadge status={current.manifest.status} />
+            </span>
+          )}
         </header>
 
         <ScrollArea className="min-h-0 flex-1">
@@ -479,8 +485,8 @@ export function ReportsView(): React.JSX.Element {
                 className={cn(
                   'rounded-sm border px-2.5 py-1.5 text-[11px] leading-snug break-words',
                   notice.tone === 'ok'
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700'
-                    : 'border-red-500/40 bg-red-500/10 text-red-700',
+                    ? 'border-status-nominal/40 bg-status-nominal/10 text-status-nominal'
+                    : 'border-status-fault/40 bg-status-fault/10 text-status-fault',
                 )}
               >
                 {notice.text}
@@ -537,7 +543,7 @@ export function ReportsView(): React.JSX.Element {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="ml-auto h-7 border-red-500/40 text-xs text-red-700 hover:bg-red-500/10"
+                    className="ml-auto h-7 border-status-fault/40 text-xs text-status-fault hover:bg-status-fault/10"
                     aria-label="Delete run"
                     disabled={busy}
                     onClick={() => {
@@ -552,7 +558,7 @@ export function ReportsView(): React.JSX.Element {
                 {STATUS_NOTE[current.manifest.status] !== undefined && (
                   <p
                     role="note"
-                    className="rounded-sm border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[11px] leading-snug text-amber-700"
+                    className="rounded-sm border border-status-degraded/40 bg-status-degraded/10 px-2.5 py-1.5 text-[11px] leading-snug text-status-degraded"
                   >
                     {STATUS_NOTE[current.manifest.status]}
                   </p>
@@ -592,7 +598,7 @@ export function ReportsView(): React.JSX.Element {
                         <span className="text-muted-foreground">commit unavailable</span>
                       )}
                       {current.manifest.host.sourceTreeModified === true && (
-                        <span className="text-amber-700"> (uncommitted changes)</span>
+                        <span className="text-status-degraded"> (uncommitted changes)</span>
                       )}
                     </Definition>
                     <Definition term="Recorded">

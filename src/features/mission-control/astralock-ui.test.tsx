@@ -6,7 +6,7 @@
  * middle of a recording, which would splice two experiments into one record.
  */
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -43,6 +43,11 @@ const renderView = (): void => {
     </TooltipProvider>,
   );
 };
+
+/** The identity panel, addressed by its heading rather than by position. */
+function identityPanel(): HTMLElement {
+  return screen.getByRole('heading', { name: /Beacon identity/i }).closest('section')!;
+}
 
 function stepFor(seconds: number): void {
   const ticks = Math.round(seconds * useSimulationStore.getState().config.tickRate);
@@ -83,6 +88,7 @@ describe('choosing an algorithm', () => {
     const user = userEvent.setup();
     renderView();
 
+    await user.click(screen.getByRole('button', { name: 'Experiment' }));
     await user.click(screen.getByRole('button', { name: 'Start experiment' }));
     await waitFor(() => {
       expect(useSimulationStore.getState().recorderStatus?.state).toBe('running');
@@ -194,7 +200,10 @@ describe('the robust states on screen', () => {
     stepFor(20);
 
     expect(useSimulationStore.getState().patMode).toBe('handoff');
-    expect(screen.getByText('HANDOFF READY')).toBeInTheDocument();
+    // Scoped to the sensor feed: the state also names itself on the timeline
+    // below, which is the point of having one presentation table for both.
+    const feed = within(screen.getByRole('region', { name: 'Virtual camera sensor feed' }));
+    expect(feed.getByText(/handoff ready/i)).toBeInTheDocument();
     // The claim is about readiness. No fine-pointing actuator exists.
     expect(screen.queryByText(/FINE TRACKING/i)).not.toBeInTheDocument();
   });
@@ -220,8 +229,8 @@ describe('the estimator panel', () => {
     stepFor(15);
 
     expect(screen.getByText(/Estimator — IMM/i)).toBeInTheDocument();
-    expect(screen.getByText(/^CV /)).toBeInTheDocument();
-    expect(screen.getByText(/^CA /)).toBeInTheDocument();
+    expect(screen.getByText(/^CV$/)).toBeInTheDocument();
+    expect(screen.getByText(/^CA$/)).toBeInTheDocument();
   });
 
   it('reports the prediction horizon it is actually using', () => {
@@ -271,7 +280,7 @@ describe('demonstrating without truth on screen', () => {
     stepFor(20);
 
     expect(useSimulationStore.getState().showLiveEvaluation).toBe(false);
-    expect(screen.queryByText(/GROUND TRUTH SENSOR OVERLAY/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sensor overlay — debug only/i)).not.toBeInTheDocument();
     // Either tracking or ready to hand off — both mean it found and is holding
     // the target with no privileged number on screen.
     expect(['track', 'handoff']).toContain(useSimulationStore.getState().patMode);
@@ -305,11 +314,14 @@ describe('the beacon identity panel', () => {
     });
     stepFor(12);
 
+    const panel = within(identityPanel());
     expect(screen.getByText(/Beacon identity — coded/i)).toBeInTheDocument();
-    expect(screen.getByText('MATCH')).toBeInTheDocument();
+    expect(panel.getByText(/^match$/i)).toBeInTheDocument();
     // The correlation is shown as a coefficient on [-1, 1], never as a percent.
-    expect(screen.getByText('Correlation')).toBeInTheDocument();
-    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+    // Scoped to this panel: elsewhere a percentage is the right unit, and the
+    // claim being made here is about how a correlation is reported.
+    expect(panel.getByText('Correlation')).toBeInTheDocument();
+    expect(panel.queryByText(/%/)).not.toBeInTheDocument();
     expect(screen.getByText(/Not a probability/i)).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Expected beacon code' })).toHaveValue(
       'code-a-15-66ms',
@@ -347,7 +359,7 @@ describe('the beacon identity panel', () => {
       useSimulationStore.getState().setExpectedBeaconProfile('code-a-15-66ms');
     });
     stepFor(12);
-    expect(screen.getByText('MATCH')).toBeInTheDocument();
+    expect(within(identityPanel()).getByText(/^match$/i)).toBeInTheDocument();
   });
 
   it('names no emitter, because the tracker knows none', () => {
@@ -360,10 +372,9 @@ describe('the beacon identity panel', () => {
     });
     stepFor(12);
 
-    const panel = screen.getByText(/Beacon identity — coded/i).closest('div')!.parentElement!;
     // The scenario's own labels for its emitters. A tracker that displayed one
     // would be displaying something it was never given.
-    expect(panel.textContent).not.toMatch(/Coded beacon|Plausible intruder|target-\d/);
+    expect(identityPanel().textContent).not.toMatch(/Coded beacon|Plausible intruder|target-\d/);
   });
 
   it('can be switched off, which is the control arm of the comparison', async () => {
@@ -379,7 +390,7 @@ describe('the beacon identity panel', () => {
 
     await user.click(screen.getByRole('checkbox', { name: 'Beacon identity' }));
     expect(useSimulationStore.getState().identityEnabled).toBe(false);
-    expect(screen.getByText(/choosing on motion alone/i)).toBeInTheDocument();
+    expect(within(identityPanel()).getByText(/choosing on motion alone/i)).toBeInTheDocument();
 
     stepFor(12);
     // With identity off the tracker still works; it simply stops claiming to

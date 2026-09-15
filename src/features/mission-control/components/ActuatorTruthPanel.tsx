@@ -20,6 +20,7 @@ import type { AxisTruth } from '@/core/gimbal';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { usePrivilegedVisible } from '@/app/privileged';
 import { useSimulationStore } from '@/stores/simulation-store';
 
 const deg = (value: number): string => `${radiansToDegrees(value as never).toFixed(4)}°`;
@@ -54,7 +55,7 @@ function Flag({ label, active }: { label: string; active: boolean }): React.JSX.
     <span
       className={cn(
         'rounded-sm px-1 py-px text-[9px] tracking-wider uppercase',
-        active ? 'bg-amber-500/20 text-amber-700' : 'text-muted-foreground/60',
+        active ? 'bg-truth/25 text-truth' : 'text-muted-foreground/60',
       )}
     >
       {label}
@@ -65,9 +66,7 @@ function Flag({ label, active }: { label: string; active: boolean }): React.JSX.
 function AxisBlock({ title, axis }: { title: string; axis: AxisTruth }): React.JSX.Element {
   return (
     <section className="space-y-1">
-      <h4 className="text-[10px] font-semibold tracking-wider text-amber-700/90 uppercase">
-        {title}
-      </h4>
+      <h4 className="text-[10px] font-semibold tracking-wider text-truth/90 uppercase">{title}</h4>
       <div className="text-[11px]">
         <Row label="Setpoint" value={deg(axis.setpoint)} />
         <Row label="Motor angle" value={deg(axis.motorAngle)} />
@@ -94,18 +93,18 @@ function AxisBlock({ title, axis }: { title: string; axis: AxisTruth }): React.J
 }
 
 export function ActuatorTruthPanel(): React.JSX.Element | null {
-  const visible = useSimulationStore((state) => state.showActuatorTruth);
+  const visible = usePrivilegedVisible(useSimulationStore((state) => state.showActuatorTruth));
   const truth = useSimulationStore((state) => state.actuatorTruth);
 
   if (!visible) return null;
 
   return (
-    <div className="space-y-2 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
+    <div className="space-y-2 border-t border-truth/40 bg-truth/8 px-3 py-2.5">
       <div className="flex items-center gap-1.5">
-        <ShieldAlert aria-hidden className="size-3 text-amber-700" />
+        <ShieldAlert aria-hidden className="size-3 text-truth" />
         <Badge
           variant="outline"
-          className="border-amber-500/40 text-[9px] font-semibold tracking-wider text-amber-700 uppercase"
+          className="border-truth/40 text-[9px] font-semibold tracking-wider text-truth uppercase"
         >
           Actuator truth — debug only
         </Badge>
@@ -119,9 +118,9 @@ export function ActuatorTruthPanel(): React.JSX.Element | null {
       ) : (
         <>
           <AxisBlock title="Pan" axis={truth.pan} />
-          <Separator className="bg-amber-500/20" />
+          <Separator className="bg-truth/25" />
           <AxisBlock title="Tilt" axis={truth.tilt} />
-          <Separator className="bg-amber-500/20" />
+          <Separator className="bg-truth/25" />
           <div className="text-[11px]">
             <Row label="Truth time" value={`${truth.time.toFixed(3)} s`} />
             <Row label="Commands in flight" value={String(truth.pendingCommands.length)} />

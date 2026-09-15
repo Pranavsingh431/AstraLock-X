@@ -136,13 +136,46 @@ export interface LiveEvaluationReadout {
   readonly framesProcessed: number | null;
 }
 
-/** One point of the command-versus-measured trace. */
+/**
+ * One point of the telemetry trace the interface plots.
+ *
+ * Everything the charts draw comes from here, sampled once per displayed frame
+ * from what the store already holds. Nothing is computed for the charts that is
+ * not also shown as a number somewhere, so there is no route by which a plot can
+ * disagree with the readout beside it.
+ *
+ * `pointingError` is the one privileged field: it is the evaluator's true error
+ * and is only populated while the operator has the evaluation readout switched
+ * on, which is also the only condition under which the chart that draws it is
+ * offered.
+ */
 export interface ResponseSample {
   readonly time: number;
   readonly commandedPan: number;
   readonly measuredPan: number;
   readonly commandedTilt: number;
   readonly measuredTilt: number;
+  /** IMM model probabilities, or `null` for a tracker without an IMM. */
+  readonly immCv: number | null;
+  readonly immCa: number | null;
+  /** Normalised code correlation, or `null` when identity is not running. */
+  readonly codeCorrelation: number | null;
+  /** **Privileged.** True angular pointing error, radians. Evaluation only. */
+  readonly pointingError: number | null;
+}
+
+/**
+ * One interval the tracker spent in a PAT mode.
+ *
+ * Recorded as the mode changes rather than sampled, so the timeline shows real
+ * durations — a two-frame excursion into RECOVER is two frames wide, not a tick
+ * of whatever the sampling rate happened to be. The last entry is open: its
+ * `until` is `null` until the mode changes again.
+ */
+export interface PatInterval {
+  readonly mode: PATMode;
+  readonly from: number;
+  readonly until: number | null;
 }
 
 /**
@@ -152,6 +185,14 @@ export interface ResponseSample {
  * unbounded history is a leak that only shows up after a long run.
  */
 const RESPONSE_HISTORY_LIMIT = 600;
+
+/**
+ * Mode intervals kept for the PAT timeline.
+ *
+ * A long run can change mode many times; this is a display, not a record, and
+ * the experiment event log is where the full history lives.
+ */
+const PAT_TIMELINE_LIMIT = 200;
 
 export interface SimulationStoreState {
   /** Scenario id when a bundled scenario is loaded, `null` after a file import. */
@@ -206,6 +247,13 @@ export interface SimulationStoreState {
   readonly actuatorTruth: ActuatorTruth | null;
   readonly showActuatorTruth: boolean;
   readonly responseHistory: readonly ResponseSample[];
+  /**
+   * What the tracker's state machine actually did, as intervals.
+   *
+   * Built from mode changes as they happen. It is deliberately not derivable
+   * from `patMode`, which only ever says where the tracker is now.
+   */
+  readonly patTimeline: readonly PatInterval[];
 
   /** Whether the tracking algorithm is flying the mount. */
   readonly autonomyEnabled: boolean;
@@ -223,6 +271,14 @@ export interface SimulationStoreState {
   readonly detectionSnr: Measurement | null;
   /** Draw the algorithm's detections on the sensor feed. */
   readonly showAlgorithmOverlay: boolean;
+  /**
+   * Draw the boresight reticle on the sensor feed.
+   *
+   * Interface geometry rather than data — it marks the principal point, which
+   * is where the controller is trying to put the target — so it is separately
+   * switchable from the overlays that draw what the run produced.
+   */
+  readonly showReticle: boolean;
   /**
    * Whether the tracker is configured to recognise the beacon by its code.
    *
@@ -300,6 +356,7 @@ export interface SimulationStoreState {
   /** Immediately disengages autonomy and pauses the run. */
   emergencyStop: () => void;
   setAlgorithmOverlay: (visible: boolean) => void;
+  setReticle: (visible: boolean) => void;
   /** Chooses which tracker flies the mount. Ends any recording in progress. */
   setAlgorithm: (id: string) => void;
   setManualOverride: (enabled: boolean) => void;
@@ -660,12 +717,23 @@ function actuatorState(
   };
 }
 
-/** Appends a point to the bounded command-versus-measured trace. */
+/**
+ * Appends a point to the bounded telemetry trace.
+ *
+ * Once per displayed frame, from values the store already has. The diagnostics
+ * are read defensively — `in` rather than a cast — because the two trackers
+ * report different debug shapes and the baseline has no IMM at all; a missing
+ * field becomes `null`, which the charts draw as a gap rather than as zero.
+ */
 function appendResponse(
   history: readonly ResponseSample[],
   active: Session,
   state: ReturnType<typeof actuatorState>,
+  debug: BaselineDebug | AstraLockDebug | null,
+  evaluation: LiveEvaluationReadout | null,
 ): readonly ResponseSample[] {
+  const robust = debug !== null && 'immCvProbability' in debug ? debug : null;
+
   const next = [
     ...history,
     {
@@ -674,11 +742,42 @@ function appendResponse(
       measuredPan: state.measuredPan,
       commandedTilt: state.commandedTilt,
       measuredTilt: state.measuredTilt,
+      immCv: robust?.immCvProbability ?? null,
+      immCa: robust?.immCaProbability ?? null,
+      codeCorrelation: robust?.codeCorrelation ?? null,
+      pointingError: evaluation?.angularPointingErrorRad ?? null,
     },
   ];
   return next.length > RESPONSE_HISTORY_LIMIT
     ? next.slice(next.length - RESPONSE_HISTORY_LIMIT)
     : next;
+}
+
+/**
+ * Extends the PAT timeline with the mode the tracker is in now.
+ *
+ * Closes the open interval and opens a new one when the mode changes, and
+ * otherwise returns the history untouched — which matters, because this runs
+ * once per displayed frame and a new array every frame would re-render every
+ * consumer sixty times a second for no new information.
+ */
+function appendPatInterval(
+  timeline: readonly PatInterval[],
+  mode: PATMode | null,
+  time: number,
+): readonly PatInterval[] {
+  if (mode === null) return timeline;
+
+  const open = timeline[timeline.length - 1];
+  if (open !== undefined && open.mode === mode && open.until === null) return timeline;
+
+  const closed =
+    open === undefined || open.until !== null
+      ? timeline
+      : [...timeline.slice(0, -1), { ...open, until: time }];
+
+  const next = [...closed, { mode, from: time, until: null }];
+  return next.length > PAT_TIMELINE_LIMIT ? next.slice(next.length - PAT_TIMELINE_LIMIT) : next;
 }
 
 const initialConfig = loadScenario(DEFAULT_SCENARIO_ID);
@@ -693,12 +792,14 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   showTruthOverlay: false,
   showActuatorTruth: false,
   responseHistory: [],
+  patTimeline: [],
   autonomyEnabled: false,
   algorithmId: baselineKfPidPat.manifest.id,
   patMode: null,
   algorithmDebug: null,
   detectionSnr: null,
   showAlgorithmOverlay: true,
+  showReticle: true,
   identityEnabled: initialSession.identityEnabled,
   expectedBeaconProfileId: initialSession.expectedBeaconProfileId,
   manualOverride: false,
@@ -748,6 +849,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       runtimeError: null,
       ...liveEvaluation(session, get().showLiveEvaluation, null),
       responseHistory: [],
+      patTimeline: [],
       patMode: null,
       algorithmDebug: null,
       detectionSnr: null,
@@ -813,6 +915,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       ...liveEvaluation(active, get().showLiveEvaluation, null),
       runtimeError: null,
       responseHistory: [],
+      patTimeline: [],
       patMode: null,
       algorithmDebug: null,
       detectionSnr: null,
@@ -862,6 +965,13 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     const actuator = actuatorState(active);
     checkRecorderHealth(active);
 
+    // Read once and reuse: the evaluation readout is computed here anyway, the
+    // telemetry trace wants the same value, and calling it twice would run the
+    // evaluator twice per frame.
+    const mode = sensorUpdate.patMode ?? get().patMode;
+    const debug = sensorUpdate.algorithmDebug ?? get().algorithmDebug;
+    const evaluation = liveEvaluation(active, get().showLiveEvaluation, mode);
+
     set({
       tick: active.engine.tick,
       time: active.engine.time,
@@ -876,9 +986,16 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       framesDropped: active.sensor.framesDropped,
       ...sensorUpdate,
       ...actuator,
-      ...liveEvaluation(active, get().showLiveEvaluation, sensorUpdate.patMode ?? get().patMode),
+      ...evaluation,
       recorderStatus: active.recorder?.status ?? get().recorderStatus,
-      responseHistory: appendResponse(get().responseHistory, active, actuator),
+      responseHistory: appendResponse(
+        get().responseHistory,
+        active,
+        actuator,
+        debug,
+        evaluation.liveEvaluation,
+      ),
+      patTimeline: appendPatInterval(get().patTimeline, mode, active.engine.time),
     });
   },
 
@@ -978,6 +1095,10 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
 
   setAlgorithmOverlay: (visible) => {
     set({ showAlgorithmOverlay: visible });
+  },
+
+  setReticle: (visible) => {
+    set({ showReticle: visible });
   },
 
   setIdentityEnabled: (enabled) => {
@@ -1215,6 +1336,11 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
 
     const actuator = actuatorState(active);
 
+    // As in `advance`: read once, reuse for both the readout and the trace.
+    const mode = sensorUpdate.patMode ?? get().patMode;
+    const debug = sensorUpdate.algorithmDebug ?? get().algorithmDebug;
+    const evaluation = liveEvaluation(active, get().showLiveEvaluation, mode);
+
     set({
       tick: active.engine.tick,
       time: active.engine.time,
@@ -1227,9 +1353,16 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       framesDropped: active.sensor.framesDropped,
       ...sensorUpdate,
       ...actuator,
-      ...liveEvaluation(active, get().showLiveEvaluation, sensorUpdate.patMode ?? get().patMode),
+      ...evaluation,
       recorderStatus: active.recorder?.status ?? get().recorderStatus,
-      responseHistory: appendResponse(get().responseHistory, active, actuator),
+      responseHistory: appendResponse(
+        get().responseHistory,
+        active,
+        actuator,
+        debug,
+        evaluation.liveEvaluation,
+      ),
+      patTimeline: appendPatInterval(get().patTimeline, mode, active.engine.time),
     });
 
     checkRecorderHealth(active);

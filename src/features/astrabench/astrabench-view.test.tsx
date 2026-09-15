@@ -88,7 +88,9 @@ describe('the AstraBench workspace', () => {
 
   it('states the fairness rule on the screen, not only in the docs', () => {
     renderView();
-    expect(screen.getByText(/identical physics/i)).toBeInTheDocument();
+    // Said twice on purpose: once in the panel subtitle, which survives being
+    // scrolled past, and once in full beneath it.
+    expect(screen.getAllByText(/identical physics/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/no overall score/i)).toBeInTheDocument();
   });
 });

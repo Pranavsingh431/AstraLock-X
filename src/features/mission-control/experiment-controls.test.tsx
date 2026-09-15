@@ -50,6 +50,20 @@ const renderView = (): void => {
   );
 };
 
+/**
+ * Opens the rail's Experiment group.
+ *
+ * It is collapsed on load, like every group an operator does not need to start
+ * a run. Recording lives behind one click rather than permanently occupying
+ * the rail, so the tests take that click too.
+ */
+const openExperiment = async (): Promise<void> => {
+  const group = screen.getByRole('button', { name: 'Experiment' });
+  if (group.getAttribute('aria-expanded') !== 'true') {
+    await userEvent.setup().click(group);
+  }
+};
+
 const store = () => useSimulationStore.getState();
 
 function stepFor(seconds: number): void {
@@ -91,8 +105,9 @@ beforeEach(async () => {
 });
 
 describe('before a recording starts', () => {
-  it('shows no run and no counters, and asks for recording before autonomy', () => {
+  it('shows no run and no counters, and asks for recording before autonomy', async () => {
     renderView();
+    await openExperiment();
     expect(screen.getByText(/Not recording/i)).toBeInTheDocument();
     expect(screen.queryByText('Run ID')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Stop and finalise experiment' })).toBeDisabled();
@@ -104,6 +119,7 @@ describe('recording a real run', () => {
   it('creates a run, counts real rows, and finalises it from the files', async () => {
     const user = userEvent.setup();
     renderView();
+    await openExperiment();
 
     await user.click(screen.getByRole('button', { name: 'Start experiment' }));
     await waitFor(() => {
@@ -156,6 +172,7 @@ describe('recording a real run', () => {
   it('aborts only after confirmation, leaving no result', async () => {
     const user = userEvent.setup();
     renderView();
+    await openExperiment();
     const runId = await startRecording();
     stepFor(1);
 
@@ -176,6 +193,7 @@ describe('every way a recording can end', () => {
   it('reset asks first, and if confirmed aborts with the reason recorded', async () => {
     const user = userEvent.setup();
     renderView();
+    await openExperiment();
     const runId = await startRecording();
     act(() => {
       store().setAutonomy(true);
@@ -270,6 +288,7 @@ describe('every way a recording can end', () => {
   it('a storage that refuses to start shows the error and records nothing', async () => {
     vi.spyOn(storage, 'createRun').mockRejectedValueOnce(new Error('read-only volume'));
     renderView();
+    await openExperiment();
     await act(async () => {
       await store().startExperiment();
     });
@@ -280,6 +299,7 @@ describe('every way a recording can end', () => {
 
   it('a writer that fails mid-run detaches the recorder, and the tracker carries on', async () => {
     renderView();
+    await openExperiment();
     const runId = await startRecording();
     act(() => {
       store().setAutonomy(true);
@@ -300,8 +320,9 @@ describe('every way a recording can end', () => {
 });
 
 describe('the live evaluation readout', () => {
-  it('is labelled as ground truth', () => {
+  it('is labelled as ground truth', async () => {
     renderView();
+    await openExperiment();
     expect(screen.getByText(/Evaluation — ground truth/i)).toBeInTheDocument();
   });
 
@@ -352,6 +373,7 @@ describe('the live evaluation readout', () => {
   it('can be hidden — then it is not computed — and the tracker still acquires', async () => {
     const user = userEvent.setup();
     renderView();
+    await openExperiment();
 
     await user.click(screen.getByRole('button', { name: 'Hide live evaluation' }));
     expect(store().showLiveEvaluation).toBe(false);
@@ -371,8 +393,9 @@ describe('the live evaluation readout', () => {
 });
 
 describe('unmodelled values', () => {
-  it('show as not modelled, never as a number', () => {
+  it('show as not modelled, never as a number', async () => {
     renderView();
+    await openExperiment();
     act(() => {
       store().setAutonomy(true);
     });
@@ -386,8 +409,9 @@ describe('unmodelled values', () => {
 });
 
 describe('what the operator cannot type', () => {
-  it('offers no editable field for any measured value', () => {
+  it('offers no editable field for any measured value', async () => {
     renderView();
+    await openExperiment();
     expect(screen.queryAllByRole('textbox')).toEqual([]);
     expect(screen.queryAllByRole('spinbutton')).toEqual([]);
   });

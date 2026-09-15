@@ -1,43 +1,29 @@
 @import 'tailwindcss';
 
-@custom-variant dark (&:is(.dark *));
-
 /*
- * AstraLock-X runs light: a clean instrument shell, closer to laboratory
- * software and print-ready engineering documentation than to a darkened
- * cockpit. The one place that stays black is the sensor feed itself, because
- * that is what the camera actually produces.
+ * AstraLock-X runs dark: a deep-navy instrument shell, the ground a black
+ * sensor image sits inside without disappearing into. Phase 8 ran it light —
+ * closer to print-ready laboratory documentation — and Phase 10 moved it to the
+ * console aesthetic the application is actually for. Both themes are still
+ * defined, and `.theme-light` on the root restores the other one.
  *
- * Both themes are defined so the choice stays the user's.
+ * ## The palette, and what each colour is allowed to mean
+ *
+ * Colour is a second channel here, never the only one: every state that has a
+ * colour also spells its own name, because a screenshot has to be readable in
+ * grayscale and by someone who has not learned the palette.
+ *
+ *   cyan / primary   live instrumentation, the selected thing, the active view
+ *   emerald          confirmed, healthy, verified — a positive engineering fact
+ *   amber            degraded, recovering, or waiting on evidence
+ *   red              a genuine fault or a wrong answer
+ *   violet           privileged: ground truth, evaluation, debug-only
+ *
+ * The violet is the important one. Anything drawn from simulator truth is
+ * violet-bordered and labelled, so that a reader can tell at a glance whether a
+ * panel is showing what the tracker knows or what only the simulator knows.
  */
 :root {
-  --radius: 0.375rem;
-
-  /* A very slightly cool white, so the cyan accent reads as instrumentation
-   * rather than as decoration, and so panel edges are visible without heavy
-   * borders. */
-  --background: oklch(0.992 0.002 240);
-  --foreground: oklch(0.225 0.018 250);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.225 0.018 250);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.225 0.018 250);
-  --primary: oklch(0.52 0.13 235);
-  --primary-foreground: oklch(0.99 0.002 240);
-  --secondary: oklch(0.965 0.004 245);
-  --secondary-foreground: oklch(0.3 0.02 250);
-  --muted: oklch(0.963 0.005 245);
-  --muted-foreground: oklch(0.505 0.022 250);
-  --accent: oklch(0.945 0.018 235);
-  --accent-foreground: oklch(0.28 0.025 245);
-  --destructive: oklch(0.55 0.21 27);
-  --destructive-foreground: oklch(0.99 0.003 247);
-  --border: oklch(0.905 0.007 245);
-  --input: oklch(0.9 0.008 245);
-  --ring: oklch(0.52 0.13 235);
-}
-
-.dark {
   /*
    * An instrument panel, not a web page. The ground is a deep navy that a black
    * sensor image sits inside without disappearing into, borders are low-contrast
@@ -63,6 +49,77 @@
   --border: oklch(0.268 0.022 248);
   --input: oklch(0.285 0.022 248);
   --ring: oklch(0.78 0.14 210);
+
+  /* --- Engineering status ---------------------------------------------------
+   * Named by what they mean rather than by hue, so a panel says `--status-fault`
+   * and a later palette change does not require finding every red in the app.
+   */
+  --status-nominal: oklch(0.76 0.15 163);
+  --status-nominal-dim: oklch(0.42 0.09 163);
+  --status-degraded: oklch(0.82 0.15 78);
+  --status-degraded-dim: oklch(0.45 0.1 78);
+  --status-fault: oklch(0.68 0.19 25);
+  --status-fault-dim: oklch(0.4 0.13 25);
+  --status-active: oklch(0.78 0.14 210);
+  --status-active-dim: oklch(0.42 0.09 215);
+  --status-idle: oklch(0.62 0.02 245);
+
+  /* Privileged data: simulator truth, evaluation, debug-only readouts. */
+  --truth: oklch(0.74 0.15 305);
+  --truth-dim: oklch(0.4 0.11 305);
+
+  /* Panel chrome. A header is a shade above its body so a dense stack of panels
+   * reads as panels rather than as one long list. */
+  --panel: oklch(0.178 0.019 250);
+  --panel-header: oklch(0.212 0.02 250);
+  --panel-border: oklch(0.268 0.022 248);
+  --grid-line: oklch(0.3 0.02 248);
+}
+
+/** The Phase 8 light instrument theme, kept for print-style screenshots. */
+.theme-light {
+  --radius: 0.375rem;
+
+  /* A very slightly cool white, so the cyan accent reads as instrumentation
+   * rather than as decoration, and so panel edges are visible without heavy
+   * borders. */
+  --background: oklch(0.992 0.002 240);
+  --foreground: oklch(0.225 0.018 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.225 0.018 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.225 0.018 250);
+  --primary: oklch(0.52 0.13 235);
+  --primary-foreground: oklch(0.99 0.002 240);
+  --secondary: oklch(0.965 0.004 245);
+  --secondary-foreground: oklch(0.3 0.02 250);
+  --muted: oklch(0.963 0.005 245);
+  --muted-foreground: oklch(0.505 0.022 250);
+  --accent: oklch(0.945 0.018 235);
+  --accent-foreground: oklch(0.28 0.025 245);
+  --destructive: oklch(0.55 0.21 27);
+  --destructive-foreground: oklch(0.99 0.003 247);
+  --border: oklch(0.905 0.007 245);
+  --input: oklch(0.9 0.008 245);
+  --ring: oklch(0.52 0.13 235);
+
+  --status-nominal: oklch(0.55 0.13 163);
+  --status-nominal-dim: oklch(0.88 0.06 163);
+  --status-degraded: oklch(0.6 0.13 70);
+  --status-degraded-dim: oklch(0.92 0.06 80);
+  --status-fault: oklch(0.55 0.21 27);
+  --status-fault-dim: oklch(0.92 0.06 25);
+  --status-active: oklch(0.52 0.13 235);
+  --status-active-dim: oklch(0.9 0.05 230);
+  --status-idle: oklch(0.55 0.02 245);
+
+  --truth: oklch(0.5 0.17 305);
+  --truth-dim: oklch(0.93 0.05 305);
+
+  --panel: oklch(1 0 0);
+  --panel-header: oklch(0.975 0.004 245);
+  --panel-border: oklch(0.905 0.007 245);
+  --grid-line: oklch(0.92 0.006 245);
 }
 
 @theme inline {
@@ -85,6 +142,22 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-status-nominal: var(--status-nominal);
+  --color-status-nominal-dim: var(--status-nominal-dim);
+  --color-status-degraded: var(--status-degraded);
+  --color-status-degraded-dim: var(--status-degraded-dim);
+  --color-status-fault: var(--status-fault);
+  --color-status-fault-dim: var(--status-fault-dim);
+  --color-status-active: var(--status-active);
+  --color-status-active-dim: var(--status-active-dim);
+  --color-status-idle: var(--status-idle);
+  --color-truth: var(--truth);
+  --color-truth-dim: var(--truth-dim);
+  --color-panel: var(--panel);
+  --color-panel-header: var(--panel-header);
+  --color-panel-border: var(--panel-border);
+  --color-grid-line: var(--grid-line);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -135,5 +208,65 @@
 
   ::selection {
     background-color: color-mix(in oklch, var(--primary) 30%, transparent);
+  }
+
+  /*
+   * One place where motion is switched off, rather than each component
+   * remembering to ask. An operator who has told the system they do not want
+   * animation should not have to tell it again per panel.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* A visible focus ring everywhere, including on panel bodies a keyboard user
+   * can scroll. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+}
+
+@layer utilities {
+  /*
+   * The slow pulse a genuinely abnormal state uses — RECOVER, an open
+   * recording. Deliberately slow and low-contrast: something that pulses fast
+   * reads as an alarm, and most of what it marks is not one.
+   */
+  @keyframes astra-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  .astra-pulse {
+    animation: astra-pulse 1.8s ease-in-out infinite;
+  }
+
+  /* Panel entrance. Short enough to feel like the panel was already there. */
+  @keyframes astra-rise {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .astra-rise {
+    animation: astra-rise 160ms ease-out both;
   }
 }

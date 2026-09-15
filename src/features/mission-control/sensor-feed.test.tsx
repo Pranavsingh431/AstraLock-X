@@ -1,9 +1,14 @@
 /**
- * The sensor panel shows the real frame.
+ * The sensor feed shows the real frame.
  *
  * jsdom has no WebGL, so the 3D scene is stubbed; the sensor monitor is not,
  * because it draws to a 2D canvas and that is the thing worth testing — the
  * pixels on screen have to be the sensor's, not a substitute.
+ *
+ * Mission Control is a workstation rather than one long panel, so several of
+ * these tests have to open a control group or select a telemetry tab first.
+ * That navigation is deliberately explicit: a test that could not say where a
+ * reading lives would not be describing the interface an operator uses.
  */
 
 import { act, render, screen, within } from '@testing-library/react';
@@ -12,6 +17,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useSimulationStore } from '@/stores/simulation-store';
+import { selectTab } from '@/test/setup';
 
 import { MissionControlView } from './MissionControlView';
 
@@ -34,6 +40,17 @@ const renderView = (): void => {
   );
 };
 
+/** Expands one collapsed group in the left control rail. */
+const openGroup = async (user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> => {
+  const group = screen.getByRole('button', { name });
+  if (group.getAttribute('aria-expanded') !== 'true') await user.click(group);
+};
+
+/** Selects one tab in the bottom telemetry dock. */
+const openTab = (name: string): void => {
+  selectTab(screen.getByRole('tab', { name }));
+};
+
 beforeEach(() => {
   useSimulationStore.getState().loadScenarioById('camera-boresight');
 });
@@ -42,7 +59,7 @@ describe('labelling', () => {
   it('names the two views so they cannot be confused', () => {
     renderView();
     expect(
-      screen.getByText('3D DIGITAL TWIN — GROUND TRUTH / ENGINEERING OBSERVER'),
+      screen.getByText(/3D digital twin — ground truth \/ engineering observer/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/Virtual camera — sensor feed/i)).toBeInTheDocument();
   });
@@ -66,7 +83,7 @@ describe('labelling', () => {
 describe('sensor metadata', () => {
   it('reports what a real camera reports about itself', () => {
     renderView();
-    const panel = within(screen.getByLabelText('Virtual camera sensor feed').closest('section')!);
+    const panel = within(screen.getByRole('region', { name: 'Virtual camera sensor feed' }));
 
     expect(panel.getByText('Frame')).toBeInTheDocument();
     expect(panel.getByText('Capture time')).toBeInTheDocument();
@@ -78,8 +95,13 @@ describe('sensor metadata', () => {
 
   it('shows the configured resolution and rate', () => {
     renderView();
-    expect(screen.getByText('640×480')).toBeInTheDocument();
-    expect(screen.getByText('60 Hz')).toBeInTheDocument();
+    const panel = within(screen.getByRole('region', { name: 'Virtual camera sensor feed' }));
+
+    expect(panel.getByText('640×480')).toBeInTheDocument();
+    // Value and unit are separate elements so the number is tabular and the
+    // unit is not; both have to be present for the reading to mean anything.
+    expect(panel.getByText('60')).toBeInTheDocument();
+    expect(panel.getByText('Hz')).toBeInTheDocument();
   });
 });
 
@@ -118,6 +140,7 @@ describe('commanding the mount', () => {
   it('moves the mount through the on-screen controls', async () => {
     const user = userEvent.setup();
     renderView();
+    await openGroup(user, 'Mount');
 
     const before = useSimulationStore.getState().commandedPan;
     await user.click(screen.getByRole('button', { name: 'Pan right' }));
@@ -142,6 +165,8 @@ describe('commanding the mount', () => {
     const user = userEvent.setup();
     renderView();
 
+    await openGroup(user, 'Mount');
+
     const configured = useSimulationStore.getState().config.gimbal.pan.initialAngle;
     useSimulationStore.getState().nudgeCamera(0.3, 0.1);
     await user.click(screen.getByRole('button', { name: 'Home the mount' }));
@@ -162,8 +187,10 @@ describe('commanding the mount', () => {
     expect(useSimulationStore.getState().commandsPending).toBeGreaterThanOrEqual(0);
   });
 
-  it('labels the servo state from real actuator state', () => {
+  it('labels the servo state from real actuator state', async () => {
+    const user = userEvent.setup();
     renderView();
+    await openGroup(user, 'Mount');
     expect(screen.getByText('holding')).toBeInTheDocument();
 
     useSimulationStore.getState().nudgeCamera(0.4, 0);
@@ -178,6 +205,8 @@ describe('the actuator truth panel', () => {
     const user = userEvent.setup();
     renderView();
 
+    await openGroup(user, 'Mount');
+    openTab('Mount');
     expect(screen.queryByText('Backlash take-up')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('checkbox', { name: 'Actuator truth debug panel' }));
@@ -191,6 +220,8 @@ describe('the actuator truth panel', () => {
 describe('the response trace', () => {
   it('says it is empty rather than drawing an invented curve', () => {
     renderView();
+    openTab('Mount');
+
     expect(screen.getByTestId('response-trace-pan-empty')).toBeInTheDocument();
   });
 
@@ -200,6 +231,7 @@ describe('the response trace', () => {
       useSimulationStore.getState().nudgeCamera(0.2, 0);
       for (let index = 0; index < 50; index += 1) useSimulationStore.getState().stepOnce();
     });
+    openTab('Mount');
 
     expect(useSimulationStore.getState().responseHistory.length).toBeGreaterThan(1);
     expect(screen.getByTestId('response-trace-pan')).toBeInTheDocument();
@@ -210,16 +242,16 @@ describe('truth overlay', () => {
   it('is off by default', () => {
     renderView();
     expect(useSimulationStore.getState().showTruthOverlay).toBe(false);
-    expect(screen.queryByText(/GROUND TRUTH SENSOR OVERLAY/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sensor overlay — debug only/i)).not.toBeInTheDocument();
   });
 
   it('is labelled as debug-only when enabled', async () => {
     const user = userEvent.setup();
     renderView();
 
-    await user.click(screen.getByRole('checkbox', { name: 'Ground truth sensor overlay' }));
+    await user.click(screen.getByRole('button', { name: 'Ground truth sensor overlay' }));
 
-    expect(screen.getByText('GROUND TRUTH SENSOR OVERLAY — DEBUG ONLY')).toBeInTheDocument();
+    expect(screen.getByText(/Ground truth sensor overlay — debug only/i)).toBeInTheDocument();
   });
 
   it('draws from the evaluation record, not from the frame', () => {

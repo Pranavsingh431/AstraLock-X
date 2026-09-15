@@ -69,14 +69,24 @@ serves a test, the interactive UI and a future headless benchmark runner
 
 ## Views
 
-| View            | Purpose                                       | Status                                      |
-| --------------- | --------------------------------------------- | ------------------------------------------- |
-| Mission Control | Live view of a running experiment             | Disturbance status added (Phase 7)          |
-| Scenario Lab    | Author and validate experiment configurations | Physical disturbance editor added (Phase 7) |
-| AstraBench      | Compare algorithms across scenarios and seeds | Not implemented (Phase 5)                   |
-| Replay          | Step through a completed run                  | Not implemented (Phase 5)                   |
-| Calibration     | Estimate intrinsics and gimbal alignment      | Not implemented (Phase 4)                   |
-| Reports         | Export experiment summaries                   | Not implemented (Phase 5)                   |
+| Workspace       | Purpose                                       | Status                                          |
+| --------------- | --------------------------------------------- | ----------------------------------------------- |
+| Mission Control | Fly a scenario and watch the tracker work     | The operator's workstation (Phase 10)           |
+| Scenario Lab    | Author and validate experiment configurations | Scenario summary and disturbance editor         |
+| AstraBench      | Compare algorithms across scenarios and seeds | Deterministic benchmarking (Phase 9)            |
+| Replay          | Step through a completed run                  | Not implemented — the view says what it will do |
+| Calibration     | Estimate intrinsics and gimbal alignment      | Not implemented — the view says what it will do |
+| Reports         | Inspect and verify recorded runs              | Reads runs back and recomputes them (Phase 5)   |
+
+The interface has two modes. **Engineering view** — the default — may draw
+privileged simulator state: ground truth, the 3D twin, the actuator interior,
+the true pointing error. Every one of those is violet-edged and labelled.
+**Flight-representative view** removes all of them at once, leaving only what a
+real terminal's own software could compute. It changes what is drawn and nothing
+else: the same run produces the same numbers either way.
+
+See [docs/UI_GUIDE.md](docs/UI_GUIDE.md) for the design rules the workstation
+follows.
 
 ## Getting started
 
@@ -117,6 +127,7 @@ pnpm verify
 - [docs/BEACON_IDENTITY.md](docs/BEACON_IDENTITY.md) — coded optical beacon identity: why a camera cannot read a fast carrier, the codes, exposure integration, the correlator, measured results and what it cannot do
 - [docs/ASTRABENCH.md](docs/ASTRABENCH.md) — deterministic algorithm benchmarking: fairness fingerprints, paired seeds, aggregation, the offline benchmark report and its limits
 - [docs/ALGORITHM_PLUGIN.md](docs/ALGORITHM_PLUGIN.md) — writing a tracking algorithm: the contract, what arrives, what it cannot reach, and how to register one
+- [docs/UI_GUIDE.md](docs/UI_GUIDE.md) — the workstation: colour and its meanings, the design primitives, the two view modes, overlay semantics, and the rules for adding a panel
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — setup, commands, conventions
 - [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md) — what works, what does not
 - [docs/adr/](docs/adr/) — why things are the way they are

@@ -50,7 +50,7 @@ describe('labelling', () => {
     // instrument can actually see.
     renderView();
     expect(
-      screen.getByText('3D DIGITAL TWIN — GROUND TRUTH / ENGINEERING OBSERVER'),
+      screen.getByText(/3D digital twin — ground truth \/ engineering observer/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/Virtual camera — sensor feed/i)).toBeInTheDocument();
     expect(screen.getByText(/Not the tracking sensor feed/)).toBeInTheDocument();
@@ -63,7 +63,7 @@ describe('labelling', () => {
 
   it('says the markers are not to scale', () => {
     renderView();
-    expect(screen.getByText(/Markers are not to scale/)).toBeInTheDocument();
+    expect(screen.getByText(/markers are not to scale/i)).toBeInTheDocument();
   });
 });
 

@@ -11,9 +11,10 @@
  * animated bar that is not tracking anything, and no estimated time that is not
  * derived from runs that have actually completed.
  *
- * It is deliberately a functional workspace rather than a designed one. The
- * interface redesign is a later phase, and dressing this up now would be
- * spending effort on the part that is going to be replaced.
+ * The design rule the screen follows is that the *preflight* is as prominent as
+ * the result. A benchmark is only worth reading if you know what it ran, so the
+ * suite, its arms, its seeds and its run count are on screen before the button
+ * is pressed, and the fairness fingerprints are on screen after.
  */
 
 import { AlertTriangle, CircleStop, Play, RefreshCw, ShieldCheck } from 'lucide-react';
@@ -33,6 +34,7 @@ import {
 } from '@/core/benchmark';
 import { createBenchmarkStorage, createStorage, isTauri } from '@/core/experiments';
 import { readAppInfo } from '@/lib/app-info';
+import { EmptyState, Panel, PanelHeader, StatusBadge, WarningBanner } from '@/components/astra';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -162,28 +164,37 @@ export function AstraBenchView(): React.JSX.Element {
   const remaining = progress === null ? null : estimateRemaining(progress);
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4">
-      <header className="space-y-1">
-        <p className="max-w-3xl text-[11px] leading-snug text-muted-foreground">
+    <div className="flex h-full min-h-0 flex-col gap-2 p-2">
+      <Panel>
+        <PanelHeader
+          icon={ShieldCheck}
+          title="AstraBench — deterministic comparison"
+          subtitle="Identical physics per case, identical evaluator, fairness checked by fingerprint"
+          actions={
+            <StatusBadge
+              status={running ? 'active' : aggregate === null ? 'idle' : 'nominal'}
+              label={running ? 'Running' : aggregate === null ? 'No results' : 'Complete'}
+              pulse={running}
+            />
+          }
+        />
+        <p className="max-w-4xl px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
           Every arm of a case is flown against identical physics — same scenario, same seed, same
           disturbance realization — and scored by the same evaluator. Both facts are checked by
           fingerprint, and a case whose arms disagree is reported as invalid rather than reduced to
           a winner. There is no overall score: seconds, microradians and a retention fraction have
           no exchange rate.
         </p>
-      </header>
+      </Panel>
 
       {unavailable && (
-        <p className="flex items-start gap-2 rounded-sm border border-amber-500/40 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-          <AlertTriangle className="mt-px size-3.5 shrink-0" />
-          <span>
-            Benchmarks write run artifacts, so they need the desktop application. A browser tab has
-            nowhere durable to put them.
-          </span>
-        </p>
+        <WarningBanner tone="warning" icon={AlertTriangle}>
+          Benchmarks write run artifacts, so they need the desktop application. A browser tab has
+          nowhere durable to put them.
+        </WarningBanner>
       )}
 
-      <section className="rounded-sm border border-border/70 bg-card/40 p-3">
+      <section className="rounded-sm border border-panel-border bg-panel-header p-3">
         <div className="flex flex-wrap items-end gap-4">
           <label className="flex flex-col gap-1 text-[10px] tracking-wider text-muted-foreground uppercase">
             Suite
@@ -194,7 +205,7 @@ export function AstraBenchView(): React.JSX.Element {
               onChange={(event) => {
                 setSuiteId(event.target.value);
               }}
-              className="w-72 rounded-sm border border-border bg-background px-2 py-1 text-[12px] text-foreground"
+              className="w-72 rounded-sm border border-panel-border bg-background px-2 py-1 text-[12px] text-foreground"
             >
               {BENCHMARK_SUITES.map((entry) => (
                 <option key={entry.suiteId} value={entry.suiteId}>
@@ -233,11 +244,11 @@ export function AstraBenchView(): React.JSX.Element {
 
       {progress !== null && (
         <section
-          className="rounded-sm border border-sky-500/40 bg-sky-50/60 p-3"
+          className="rounded-sm border border-status-active/40 bg-status-active/10 p-3"
           aria-label="Benchmark progress"
         >
           <div className="flex flex-wrap items-center gap-4 text-[11px]">
-            <span className="font-semibold tracking-wider text-sky-800 uppercase">
+            <span className="font-semibold tracking-wider text-status-active uppercase">
               {running ? 'Running' : 'Finished'}
             </span>
             <Field
@@ -253,9 +264,9 @@ export function AstraBenchView(): React.JSX.Element {
             )}
           </div>
 
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-sm bg-sky-200">
+          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-sm bg-status-active/10">
             <div
-              className="h-full bg-sky-600 transition-[width] duration-200"
+              className="h-full bg-status-active transition-[width] duration-200"
               style={{
                 width: `${String(
                   Math.round(
@@ -268,7 +279,7 @@ export function AstraBenchView(): React.JSX.Element {
             />
           </div>
 
-          <p className="mt-1.5 text-[11px] text-sky-900">
+          <p className="mt-1.5 text-[11px] text-status-active">
             {progress.current === null
               ? 'Between runs.'
               : `${progress.current.caseId} · seed ${String(progress.current.seed)} · ${progress.current.armId} (${progress.current.algorithmId})`}
@@ -276,19 +287,14 @@ export function AstraBenchView(): React.JSX.Element {
         </section>
       )}
 
-      {error !== null && (
-        <p className="rounded-sm border border-red-500/40 bg-red-50 px-3 py-2 text-[11px] text-red-800">
-          {error}
-        </p>
-      )}
+      {error !== null && <WarningBanner tone="fault">{error}</WarningBanner>}
 
       <ScrollArea className="min-h-0 flex-1">
         {aggregate === null ? (
-          <p className="p-3 text-[11px] text-muted-foreground">
-            No results yet. Results appear after a suite finishes, read back from the
-            <code className="mx-1 rounded-sm bg-muted px-1">aggregate.json</code> it wrote — not
-            accumulated here while it ran.
-          </p>
+          <EmptyState
+            title="No results yet."
+            hint="Results appear after a suite finishes, read back from the aggregate.json it wrote — not accumulated here while it ran."
+          />
         ) : (
           <Results
             aggregate={aggregate}
@@ -335,7 +341,7 @@ function Results({
 
   return (
     <div className="space-y-4 p-1">
-      <section className="flex flex-wrap items-center gap-4 rounded-sm border border-border/70 bg-card/40 px-3 py-2 text-[11px]">
+      <section className="flex flex-wrap items-center gap-4 rounded-sm border border-panel-border bg-panel-header px-3 py-2 text-[11px]">
         <Badge variant="outline" className="h-5 px-2 text-[10px] tracking-wider uppercase">
           {aggregate.status}
         </Badge>
@@ -349,7 +355,7 @@ function Results({
       </section>
 
       {verification !== null && (
-        <p className="rounded-sm border border-emerald-500/40 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
+        <p className="rounded-sm border border-status-nominal/40 bg-status-nominal/10 px-3 py-2 text-[11px] text-status-nominal">
           <RefreshCw className="mr-1 inline size-3" />
           {verification}
         </p>
@@ -369,27 +375,27 @@ function Results({
           <table className="w-full border-collapse text-[11px]">
             <thead>
               <tr className="bg-muted/60 text-left">
-                <th className="border border-border/60 px-2 py-1">Case</th>
-                <th className="border border-border/60 px-2 py-1">Seed</th>
-                <th className="border border-border/60 px-2 py-1">Arm</th>
-                <th className="border border-border/60 px-2 py-1">Status</th>
-                <th className="border border-border/60 px-2 py-1">Run</th>
-                <th className="border border-border/60 px-2 py-1">Detail</th>
+                <th className="border border-panel-border/60 px-2 py-1">Case</th>
+                <th className="border border-panel-border/60 px-2 py-1">Seed</th>
+                <th className="border border-panel-border/60 px-2 py-1">Arm</th>
+                <th className="border border-panel-border/60 px-2 py-1">Status</th>
+                <th className="border border-panel-border/60 px-2 py-1">Run</th>
+                <th className="border border-panel-border/60 px-2 py-1">Detail</th>
               </tr>
             </thead>
             <tbody>
               {failures.map((run) => (
                 <tr key={run.runId}>
-                  <td className="border border-border/60 px-2 py-1">{run.caseId}</td>
-                  <td className="tabular border border-border/60 px-2 py-1">{run.seed}</td>
-                  <td className="border border-border/60 px-2 py-1">{run.armId}</td>
-                  <td className="border border-border/60 px-2 py-1 font-semibold text-red-700">
+                  <td className="border border-panel-border/60 px-2 py-1">{run.caseId}</td>
+                  <td className="tabular border border-panel-border/60 px-2 py-1">{run.seed}</td>
+                  <td className="border border-panel-border/60 px-2 py-1">{run.armId}</td>
+                  <td className="border border-panel-border/60 px-2 py-1 font-semibold text-status-fault">
                     {run.status}
                   </td>
-                  <td className="border border-border/60 px-2 py-1 font-mono text-[10px]">
+                  <td className="border border-panel-border/60 px-2 py-1 font-mono text-[10px]">
                     {run.runId}
                   </td>
-                  <td className="border border-border/60 px-2 py-1">{run.error ?? '—'}</td>
+                  <td className="border border-panel-border/60 px-2 py-1">{run.error ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -409,7 +415,7 @@ function CaseTable({ entry }: { entry: CaseAggregate }): React.JSX.Element {
       </p>
 
       {!entry.comparison.valid && (
-        <p className="mb-1 rounded-sm border border-red-500/40 bg-red-50 px-2 py-1 text-[11px] text-red-800">
+        <p className="mb-1 rounded-sm border border-status-fault/40 bg-status-fault/10 px-2 py-1 text-[11px] text-status-fault">
           <strong>{entry.comparison.reason}</strong> — {entry.comparison.detail} No comparison is
           drawn.
         </p>
@@ -418,48 +424,52 @@ function CaseTable({ entry }: { entry: CaseAggregate }): React.JSX.Element {
       <table className="w-full border-collapse text-[11px]">
         <thead>
           <tr className="bg-muted/60 text-left">
-            <th className="border border-border/60 px-2 py-1">Arm</th>
-            <th className="border border-border/60 px-2 py-1">Comp.</th>
-            <th className="border border-border/60 px-2 py-1">Fail</th>
-            <th className="border border-border/60 px-2 py-1">Success</th>
-            <th className="border border-border/60 px-2 py-1">Median acq (s)</th>
-            <th className="border border-border/60 px-2 py-1">Median RMS (µrad)</th>
-            <th className="border border-border/60 px-2 py-1">P95 RMS (µrad)</th>
-            <th className="border border-border/60 px-2 py-1">Median retention</th>
-            <th className="border border-border/60 px-2 py-1">False-lock runs</th>
-            <th className="border border-border/60 px-2 py-1">Handoff runs</th>
+            <th className="border border-panel-border/60 px-2 py-1">Arm</th>
+            <th className="border border-panel-border/60 px-2 py-1">Comp.</th>
+            <th className="border border-panel-border/60 px-2 py-1">Fail</th>
+            <th className="border border-panel-border/60 px-2 py-1">Success</th>
+            <th className="border border-panel-border/60 px-2 py-1">Median acq (s)</th>
+            <th className="border border-panel-border/60 px-2 py-1">Median RMS (µrad)</th>
+            <th className="border border-panel-border/60 px-2 py-1">P95 RMS (µrad)</th>
+            <th className="border border-panel-border/60 px-2 py-1">Median retention</th>
+            <th className="border border-panel-border/60 px-2 py-1">False-lock runs</th>
+            <th className="border border-panel-border/60 px-2 py-1">Handoff runs</th>
           </tr>
         </thead>
         <tbody>
           {entry.arms.map((arm) => (
             <tr key={arm.armId}>
-              <td className="border border-border/60 px-2 py-1">{arm.label}</td>
-              <td className="tabular border border-border/60 px-2 py-1">{arm.completed}</td>
+              <td className="border border-panel-border/60 px-2 py-1">{arm.label}</td>
+              <td className="tabular border border-panel-border/60 px-2 py-1">{arm.completed}</td>
               <td
                 className={cn(
-                  'tabular border border-border/60 px-2 py-1',
-                  arm.failed > 0 && 'font-semibold text-red-700',
+                  'tabular border border-panel-border/60 px-2 py-1',
+                  arm.failed > 0 && 'font-semibold text-status-fault',
                 )}
               >
                 {arm.failed}
               </td>
-              <td className="tabular border border-border/60 px-2 py-1">
+              <td className="tabular border border-panel-border/60 px-2 py-1">
                 {percent(arm.successRate)}
               </td>
-              <td className="tabular border border-border/60 px-2 py-1">
+              <td className="tabular border border-panel-border/60 px-2 py-1">
                 {number(arm.metrics['acquisitionTimeS']?.median ?? null, 2)}
               </td>
-              <td className="tabular border border-border/60 px-2 py-1">
+              <td className="tabular border border-panel-border/60 px-2 py-1">
                 {number(arm.metrics['rmsPointingErrorUrad']?.median ?? null, 0)}
               </td>
-              <td className="tabular border border-border/60 px-2 py-1">
+              <td className="tabular border border-panel-border/60 px-2 py-1">
                 {number(arm.metrics['rmsPointingErrorUrad']?.p95 ?? null, 0)}
               </td>
-              <td className="tabular border border-border/60 px-2 py-1">
+              <td className="tabular border border-panel-border/60 px-2 py-1">
                 {number(arm.metrics['lockRetentionRate']?.median ?? null, 3)}
               </td>
-              <td className="tabular border border-border/60 px-2 py-1">{arm.falseLockRuns}</td>
-              <td className="tabular border border-border/60 px-2 py-1">{arm.handoffReadyRuns}</td>
+              <td className="tabular border border-panel-border/60 px-2 py-1">
+                {arm.falseLockRuns}
+              </td>
+              <td className="tabular border border-panel-border/60 px-2 py-1">
+                {arm.handoffReadyRuns}
+              </td>
             </tr>
           ))}
         </tbody>

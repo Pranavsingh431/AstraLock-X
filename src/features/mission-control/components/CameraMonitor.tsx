@@ -29,6 +29,16 @@ interface OverlayDebug {
   readonly predictedImageX: number | null;
   readonly predictedImageY: number | null;
   /**
+   * The filter's own one-sigma angular uncertainty, in radians, for a tracker
+   * that reports one. Optional because the baseline does not.
+   *
+   * It is drawn as a ring around the prediction, projected to pixels through
+   * the believed calibration — so the ring grows while the tracker coasts and
+   * shrinks when it gets a detection, which is the filter's actual belief
+   * rather than a fixed decoration.
+   */
+  readonly angularSigma?: number | null;
+  /**
    * The identity verdict on the selected candidate, for a tracker that has a
    * correlator. Optional because the baseline has none, and absent is not the
    * same as "no verdict": one algorithm cannot answer, the other has not.
@@ -60,6 +70,7 @@ const IDENTITY_MARK: Record<string, { colour: string; caption: string }> = {
 };
 import type { CameraSensorFrame } from '@/core/contracts/sensors';
 import type { SensorEvaluationTruth } from '@/core/sensors/sensor-truth';
+import { usePrivilegedVisible } from '@/app/privileged';
 import { useSimulationStore } from '@/stores/simulation-store';
 
 /** Expands single-channel intensity into the canvas's RGBA layout. */
@@ -121,6 +132,68 @@ function drawTruthOverlay(
 }
 
 /**
+ * The boresight reticle.
+ *
+ * Interface geometry, not data: it marks where the principal point is on the
+ * image, which is where the controller is trying to put the target. Drawn thin
+ * and broken at the centre so it frames the beacon rather than covering it —
+ * the one pixel that matters most on this image is the one directly under the
+ * crosshair.
+ */
+function drawReticle(context: CanvasRenderingContext2D, width: number, height: number): void {
+  const cx = width / 2;
+  const cy = height / 2;
+
+  context.save();
+  context.strokeStyle = 'rgba(148, 178, 200, 0.42)';
+  context.lineWidth = 1;
+
+  // A broken crosshair: the gap in the middle is the point.
+  context.beginPath();
+  for (const [from, to] of [
+    [10, 26],
+    [-26, -10],
+  ] as const) {
+    context.moveTo(cx + from, cy);
+    context.lineTo(cx + to, cy);
+    context.moveTo(cx, cy + from);
+    context.lineTo(cx, cy + to);
+  }
+  context.stroke();
+
+  // Two reference circles, for judging offset at a glance.
+  context.beginPath();
+  context.arc(cx, cy, 34, 0, Math.PI * 2);
+  context.stroke();
+  context.globalAlpha = 0.45;
+  context.beginPath();
+  context.arc(cx, cy, 68, 0, Math.PI * 2);
+  context.stroke();
+  context.globalAlpha = 1;
+
+  // Frame corners, so the sensor's edges are legible against a black scene.
+  const inset = 6;
+  const arm = 14;
+  context.strokeStyle = 'rgba(148, 178, 200, 0.3)';
+  context.beginPath();
+  for (const [x, sx] of [
+    [inset, 1],
+    [width - inset, -1],
+  ] as const) {
+    for (const [y, sy] of [
+      [inset, 1],
+      [height - inset, -1],
+    ] as const) {
+      context.moveTo(x + sx * arm, y);
+      context.lineTo(x, y);
+      context.lineTo(x, y + sy * arm);
+    }
+  }
+  context.stroke();
+  context.restore();
+}
+
+/**
  * Draws what the **algorithm** believes, from its own safe output.
  *
  * Nothing here comes from `SensorEvaluationTruth`. The centroid is the one the
@@ -136,6 +209,8 @@ function drawAlgorithmOverlay(
   debug: OverlayDebug,
   width: number,
   height: number,
+  /** Radians per pixel, from the configured horizontal field of view. */
+  radiansPerPixel: number,
 ): void {
   context.save();
   context.lineWidth = 1;
@@ -162,6 +237,22 @@ function drawAlgorithmOverlay(
     context.beginPath();
     context.arc(debug.predictedImageX, debug.predictedImageY, 10, 0, Math.PI * 2);
     context.stroke();
+
+    // One sigma, in pixels, from the estimator's own covariance. Drawn only
+    // when it is large enough to be distinguishable from the marker itself and
+    // small enough to still be a statement about this frame; outside that range
+    // a ring would be decoration rather than information.
+    const sigmaPx =
+      debug.angularSigma == null ? null : debug.angularSigma / Math.max(radiansPerPixel, 1e-12);
+    if (sigmaPx !== null && sigmaPx > 12 && sigmaPx < Math.max(width, height)) {
+      context.save();
+      context.setLineDash([3, 3]);
+      context.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+      context.beginPath();
+      context.arc(debug.predictedImageX, debug.predictedImageY, sigmaPx, 0, Math.PI * 2);
+      context.stroke();
+      context.restore();
+    }
   }
 
   // The identity verdict rides on the selection box, because that is what the
@@ -231,10 +322,13 @@ export function CameraMonitor(): React.JSX.Element {
   const imageRef = useRef<ImageData | null>(null);
 
   const frame = useSimulationStore((state) => state.sensorFrame);
+  const horizontalFov = useSimulationStore((state) => state.config.camera.horizontalFov);
   const truth = useSimulationStore((state) => state.sensorTruth);
-  const showTruthOverlay = useSimulationStore((state) => state.showTruthOverlay);
+  const truthToggle = useSimulationStore((state) => state.showTruthOverlay);
+  const showTruthOverlay = usePrivilegedVisible(truthToggle);
   const algorithmDebug = useSimulationStore((state) => state.algorithmDebug);
   const showAlgorithmOverlay = useSimulationStore((state) => state.showAlgorithmOverlay);
+  const showReticle = useSimulationStore((state) => state.showReticle);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -263,17 +357,29 @@ export function CameraMonitor(): React.JSX.Element {
     writeGrayToImageData(frame, image);
     context.putImageData(image, 0, 0);
 
-    // The algorithm's own view goes on first; the privileged overlay, when it
+    // Interface geometry first, under everything the run produced, so a
+    // detection is never hidden behind a reference marking.
+    if (showReticle) drawReticle(context, width, height);
+
+    // The algorithm's own view goes on next; the privileged overlay, when it
     // is on at all, goes on top so the two can be compared without either
     // being mistaken for the other.
     if (showAlgorithmOverlay && algorithmDebug !== null) {
-      drawAlgorithmOverlay(context, algorithmDebug, width, height);
+      drawAlgorithmOverlay(context, algorithmDebug, width, height, horizontalFov / width);
     }
 
     if (showTruthOverlay && truth !== null) {
       drawTruthOverlay(context, truth, 1);
     }
-  }, [frame, truth, showTruthOverlay, algorithmDebug, showAlgorithmOverlay]);
+  }, [
+    frame,
+    truth,
+    showTruthOverlay,
+    algorithmDebug,
+    showAlgorithmOverlay,
+    showReticle,
+    horizontalFov,
+  ]);
 
   return (
     <canvas

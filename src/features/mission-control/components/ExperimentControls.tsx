@@ -26,6 +26,7 @@ import { displayStatus } from '@/core/experiments';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useEngineeringView } from '@/app/privileged';
 import { useSimulationStore } from '@/stores/simulation-store';
 
 function Field({ label, value }: { label: string; value: string }): React.JSX.Element {
@@ -45,6 +46,7 @@ export function ExperimentControls(): React.JSX.Element {
   const error = useSimulationStore((state) => state.recorderError);
   const autonomyEnabled = useSimulationStore((state) => state.autonomyEnabled);
   const showLive = useSimulationStore((state) => state.showLiveEvaluation);
+  const engineering = useEngineeringView();
   const live = useSimulationStore((state) => state.liveEvaluation);
   const time = useSimulationStore((state) => state.time);
 
@@ -59,8 +61,8 @@ export function ExperimentControls(): React.JSX.Element {
     <div className="space-y-2.5 border-t px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <FlaskConical aria-hidden className="size-3.5 text-violet-400" />
-          <h3 className="text-[10px] font-semibold tracking-wider text-violet-400 uppercase">
+          <FlaskConical aria-hidden className="size-3.5 text-truth" />
+          <h3 className="text-[10px] font-semibold tracking-wider text-truth uppercase">
             Experiment
           </h3>
         </div>
@@ -71,10 +73,10 @@ export function ExperimentControls(): React.JSX.Element {
             className={cn(
               'text-[10px] font-semibold tracking-wider uppercase',
               recording
-                ? 'border-red-500/50 text-red-700'
+                ? 'border-status-fault/50 text-status-fault'
                 : status.state === 'completed'
-                  ? 'border-emerald-500/50 text-emerald-700'
-                  : 'border-amber-500/50 text-amber-700',
+                  ? 'border-status-nominal/50 text-status-nominal'
+                  : 'border-status-degraded/50 text-status-degraded',
             )}
           >
             {busy ? 'finalising' : recording ? 'recording' : displayStatus(status.state)}
@@ -93,7 +95,7 @@ export function ExperimentControls(): React.JSX.Element {
             void startExperiment();
           }}
         >
-          <span className="size-2 rounded-full bg-red-500" aria-hidden />
+          <span className="size-2 rounded-full bg-status-fault" aria-hidden />
           Record
         </Button>
 
@@ -114,7 +116,7 @@ export function ExperimentControls(): React.JSX.Element {
         <Button
           size="sm"
           variant="outline"
-          className="h-7 border-amber-500/40 text-xs text-amber-700 hover:bg-amber-500/10"
+          className="h-7 border-status-degraded/40 text-xs text-status-degraded hover:bg-status-degraded/10"
           aria-label="Abort experiment"
           disabled={busy || !recording}
           onClick={() => {
@@ -135,7 +137,7 @@ export function ExperimentControls(): React.JSX.Element {
       {error !== null && (
         <p
           role="alert"
-          className="rounded-sm border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[10px] leading-snug text-red-700"
+          className="rounded-sm border border-status-fault/40 bg-status-fault/10 px-2 py-1.5 text-[10px] leading-snug text-status-fault"
         >
           Recording failed — the experiment was not saved as a result: {error}
         </p>
@@ -149,7 +151,7 @@ export function ExperimentControls(): React.JSX.Element {
       ) : (
         <>
           {recording && !autonomyEnabled && (
-            <p className="text-[10px] leading-snug text-amber-700/90">
+            <p className="text-[10px] leading-snug text-status-degraded/90">
               Recording. Enable autonomy to begin the measured run.
             </p>
           )}
@@ -185,72 +187,76 @@ export function ExperimentControls(): React.JSX.Element {
         </>
       )}
 
-      {/* --- The privileged half. Labelled, and switchable. --- */}
-      <div className="space-y-1.5 rounded-sm border border-amber-500/30 bg-amber-500/5 px-2 py-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-[9px] font-semibold tracking-wider text-amber-700 uppercase">
-            Evaluation — ground truth
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-5 px-1.5 text-[10px] text-amber-700/90 hover:bg-amber-500/10"
-            aria-label={showLive ? 'Hide live evaluation' : 'Show live evaluation'}
-            aria-pressed={showLive}
-            onClick={() => {
-              setLiveEvaluation(!showLive);
-            }}
-          >
-            {showLive ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
-            {showLive ? 'Hide' : 'Show'}
-          </Button>
-        </div>
+      {/* --- The privileged half. Labelled, switchable, and absent entirely
+              in the flight-representative view. --- */}
+      {engineering && (
+        <div className="space-y-1.5 rounded-sm border border-truth/40 bg-truth/8 px-2 py-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] font-semibold tracking-wider text-truth uppercase">
+              Evaluation — ground truth
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-5 px-1.5 text-[10px] text-truth hover:bg-truth/12"
+              aria-label={showLive ? 'Hide live evaluation' : 'Show live evaluation'}
+              aria-pressed={showLive}
+              onClick={() => {
+                setLiveEvaluation(!showLive);
+              }}
+            >
+              {showLive ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
+              {showLive ? 'Hide' : 'Show'}
+            </Button>
+          </div>
 
-        {showLive && live !== null ? (
-          <>
-            <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
-              <Field
-                label="Pointing error"
-                value={
-                  live.angularPointingErrorRad === null
-                    ? 'N/A'
-                    : `${(live.angularPointingErrorRad * 1e6).toFixed(0)} µrad`
-                }
-              />
-              <Field
-                label="Image error"
-                value={
-                  live.imagePointingErrorPx === null
-                    ? 'N/A — not in image'
-                    : `${live.imagePointingErrorPx.toFixed(1)} px`
-                }
-              />
-              <Field label="Lock condition" value={live.lockConditionMet ? 'met' : 'not met'} />
-              <Field
-                label="Coarse lock"
-                value={live.locked === null ? 'N/A' : live.locked ? 'LOCKED' : 'not locked'}
-              />
-              <Field
-                label="Retention"
-                value={live.retention === null ? 'N/A' : `${(live.retention * 100).toFixed(1)} %`}
-              />
-              <Field
-                label="Frames"
-                value={live.framesProcessed === null ? 'N/A' : String(live.framesProcessed)}
-              />
-            </div>
-            <p className="text-[9px] leading-snug text-muted-foreground">
-              {live.source === 'recording'
-                ? 'From this recording’s evaluation samples, with the lock dwell and grace applied.'
-                : 'Instantaneous. Confirmed lock and retention need a recording.'}
+          {showLive && live !== null ? (
+            <>
+              <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
+                <Field
+                  label="Pointing error"
+                  value={
+                    live.angularPointingErrorRad === null
+                      ? 'N/A'
+                      : `${(live.angularPointingErrorRad * 1e6).toFixed(0)} µrad`
+                  }
+                />
+                <Field
+                  label="Image error"
+                  value={
+                    live.imagePointingErrorPx === null
+                      ? 'N/A — not in image'
+                      : `${live.imagePointingErrorPx.toFixed(1)} px`
+                  }
+                />
+                <Field label="Lock condition" value={live.lockConditionMet ? 'met' : 'not met'} />
+                <Field
+                  label="Coarse lock"
+                  value={live.locked === null ? 'N/A' : live.locked ? 'LOCKED' : 'not locked'}
+                />
+                <Field
+                  label="Retention"
+                  value={live.retention === null ? 'N/A' : `${(live.retention * 100).toFixed(1)} %`}
+                />
+                <Field
+                  label="Frames"
+                  value={live.framesProcessed === null ? 'N/A' : String(live.framesProcessed)}
+                />
+              </div>
+              <p className="text-[9px] leading-snug text-muted-foreground">
+                {live.source === 'recording'
+                  ? 'From this recording’s evaluation samples, with the lock dwell and grace applied.'
+                  : 'Instantaneous. Confirmed lock and retention need a recording.'}
+              </p>
+            </>
+          ) : (
+            <p className="text-[10px] leading-snug text-muted-foreground">
+              Hidden, and not computed. The tracker runs on pixels alone and is unaffected either
+              way.
             </p>
-          </>
-        ) : (
-          <p className="text-[10px] leading-snug text-muted-foreground">
-            Hidden, and not computed. The tracker runs on pixels alone and is unaffected either way.
-          </p>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

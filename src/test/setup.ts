@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup } from '@testing-library/react';
+import { cleanup, fireEvent } from '@testing-library/react';
 import { afterEach } from 'vitest';
 
 // React Testing Library does not unmount between tests on its own when globals
@@ -42,4 +42,24 @@ if (!('ResizeObserver' in globalThis)) {
  */
 if (typeof HTMLCanvasElement !== 'undefined') {
   HTMLCanvasElement.prototype.getContext = (): null => null;
+}
+
+/**
+ * Selecting a tab, in a workstation built out of resizable panels.
+ *
+ * `react-resizable-panels` installs a capture-phase `pointerdown` listener that
+ * calls `preventDefault()` when the pointer lands inside a separator's hit band,
+ * so that starting a drag does not also select text. It decides that from
+ * `getBoundingClientRect`, and in jsdom every rect is 0×0 at the origin — so
+ * every separator's band contains every click, and `preventDefault` fires on
+ * everything. `userEvent` then correctly suppresses the `mousedown` that would
+ * have followed.
+ *
+ * Buttons survive this, because a `click` still arrives. Radix tabs do not:
+ * they select on `mousedown`. Dispatching that event directly is the narrowest
+ * way around a measurement artefact that does not exist in a real browser,
+ * where a tab twelve pixels from a divider is nowhere near its hit band.
+ */
+export function selectTab(tab: HTMLElement): void {
+  fireEvent.mouseDown(tab, { button: 0 });
 }

@@ -1,164 +1,290 @@
 /**
- * Mission Control: the observer view of a running simulation.
+ * Mission Control: the operator's workstation.
  *
- * This is a ground-truth engineering view, and it is labelled as one. The
- * camera sensor feed a tracker will eventually see is a different thing
- * entirely and arrives with the sensor models in Phase 2; conflating the two is
- * exactly the confusion the banner exists to prevent.
+ * ## Layout
+ *
+ * Four resizable regions. The sensor feed is the largest by default because it
+ * is the only thing on the screen a tracking algorithm actually receives — the
+ * 3D twin beside it is privileged, and the diagnostics around it are derived.
+ *
+ * ```
+ *   ┌────────┬──────────────────────┬─────────────┐
+ *   │        │  sensor feed         │ estimator   │
+ *   │controls├──────────────────────┤ controller  │
+ *   │        │  3D digital twin     │ identity    │
+ *   │        ├──────────────────────┤ channel     │
+ *   │        │  telemetry           │             │
+ *   └────────┴──────────────────────┴─────────────┘
+ * ```
+ *
+ * Every region declares a minimum size, so dragging cannot reduce the sensor
+ * feed to a sliver that is technically present and practically useless, and
+ * every panel scrolls internally rather than pushing its neighbours off screen
+ * — which is what makes this usable at 1366×768 as well as at 1920×1080.
+ *
+ * ## Layout presets
+ *
+ * Three, and they change **layout only**. A preset moves dividers; it does not
+ * touch the simulation, the algorithm, the telemetry or what is hidden. That is
+ * a property worth stating because the temptation with a "presentation mode" is
+ * to quietly hide the failures, and this one cannot: nothing it changes is
+ * connected to anything that produces a number.
  */
 
-import { Canvas } from '@react-three/fiber';
-import { Axis3d, Eye, Grid3x3, Route } from 'lucide-react';
-import { useState } from 'react';
+import { Columns3, Maximize2, Presentation, RotateCcw } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { radiansToMicroradians } from '@/core/contracts/units';
-import { Badge } from '@/components/ui/badge';
+import { ResizeHandle, SplitGroup, SplitPanel, StatusBadge, useGroupRef } from '@/components/astra';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useSimulationStore } from '@/stores/simulation-store';
 
-import { ObserverScene } from './components/ObserverScene';
-import { SensorPanel } from './components/SensorPanel';
-import { OBSERVER_COLORS } from './components/observer-colors';
+import { useEngineeringView } from '@/app/privileged';
+
+import { ChannelPanel } from './panels/ChannelPanel';
+import { ControlRail } from './panels/ControlRail';
+import { ControllerPanel } from './panels/ControllerPanel';
+import { DetectorPanel } from './panels/DetectorPanel';
+import { DigitalTwin } from './panels/DigitalTwin';
+import { EstimatorPanel } from './panels/EstimatorPanel';
+import { IdentityPanel } from './panels/IdentityPanel';
+import { SensorFeed } from './panels/SensorFeed';
+import { TelemetryDock } from './panels/TelemetryDock';
 import { GroundTruthInspector } from './components/GroundTruthInspector';
-import { ScenarioIoBar } from './components/ScenarioIoBar';
-import { SimulationControls } from './components/SimulationControls';
 
-function Readout({ label, value }: { label: string; value: string }): React.JSX.Element {
-  return (
-    <div className="flex flex-col">
-      <span className="text-[9px] tracking-wider text-muted-foreground uppercase">{label}</span>
-      <span className="tabular text-[13px] leading-tight text-foreground/90">{value}</span>
-    </div>
-  );
-}
+/**
+ * The three layouts, as column and row splits.
+ *
+ * `operations` is the working default. `analysis` trades sensor area for
+ * telemetry and diagnostics. `presentation` gives almost everything to the
+ * sensor feed and the twin, for a screenshot or a demonstration — it keeps the
+ * diagnostics visible, because a presentation that hid them would be showing a
+ * different product from the one that exists.
+ */
+const PRESETS = {
+  operations: {
+    columns: { 'mc-rail': 17, 'mc-centre': 58, 'mc-diagnostics': 25 },
+    centre: { 'mc-sensor': 46, 'mc-twin': 32, 'mc-telemetry': 22 },
+  },
+  analysis: {
+    columns: { 'mc-rail': 15, 'mc-centre': 52, 'mc-diagnostics': 33 },
+    centre: { 'mc-sensor': 32, 'mc-twin': 26, 'mc-telemetry': 42 },
+  },
+  presentation: {
+    columns: { 'mc-rail': 0, 'mc-centre': 74, 'mc-diagnostics': 26 },
+    centre: { 'mc-sensor': 56, 'mc-twin': 34, 'mc-telemetry': 10 },
+  },
+} as const;
 
-function LegendSwatch({ color, label }: { color: string; label: string }): React.JSX.Element {
-  return (
-    <span className="flex items-center gap-1.5">
-      <span aria-hidden className="size-2 rounded-full" style={{ backgroundColor: color }} />
-      {label}
-    </span>
-  );
-}
+type PresetName = keyof typeof PRESETS;
+
+const PRESET_META: Record<PresetName, { label: string; icon: typeof Columns3; hint: string }> = {
+  operations: {
+    label: 'Operations',
+    icon: Columns3,
+    hint: 'The working layout: controls, sensor feed, diagnostics.',
+  },
+  analysis: {
+    label: 'Analysis',
+    icon: Maximize2,
+    hint: 'More telemetry and diagnostics, less sensor area.',
+  },
+  presentation: {
+    label: 'Presentation',
+    icon: Presentation,
+    hint: 'Maximises the sensor feed and the twin. Layout only — nothing is hidden and nothing changes.',
+  },
+};
 
 export function MissionControlView(): React.JSX.Element {
-  const [showGrid, setShowGrid] = useState(true);
-  const [showAxes, setShowAxes] = useState(true);
-  const [showPaths, setShowPaths] = useState(true);
+  const [preset, setPreset] = useState<PresetName>('operations');
+  const columnsRef = useGroupRef();
+  const centreRef = useGroupRef();
+  // The rail is collapsed by the presentation preset rather than removed, so
+  // its state is layout and nothing depends on it.
+  const railCollapsed = useRef(false);
 
-  const tick = useSimulationStore((state) => state.tick);
-  const time = useSimulationStore((state) => state.time);
-  const config = useSimulationStore((state) => state.config);
-  const pointingError = useSimulationStore((state) => state.currentFrame.pointingError);
-  const truthVisible = useSimulationStore((state) => state.showGroundTruthInspector);
-  const setTruthVisible = useSimulationStore((state) => state.setGroundTruthInspectorVisible);
-  const trajectoryKind = config.targets[0]?.trajectory.kind ?? 'none';
+  const engineering = useEngineeringView();
+  const truthOverlay = useSimulationStore((state) => state.showTruthOverlay);
+  const disturbanceTruth = useSimulationStore((state) => state.showDisturbanceTruth);
+
+  const apply = useCallback(
+    (name: PresetName) => {
+      setPreset(name);
+      const layout = PRESETS[name];
+      railCollapsed.current = layout.columns['mc-rail'] === 0;
+      columnsRef.current?.setLayout({ ...layout.columns });
+
+      // In the flight-representative view the twin is not mounted, so its share
+      // goes to the sensor feed rather than to a panel that is not there.
+      const centre = engineering
+        ? { ...layout.centre }
+        : {
+            'mc-sensor': layout.centre['mc-sensor'] + layout.centre['mc-twin'],
+            'mc-telemetry': layout.centre['mc-telemetry'],
+          };
+      centreRef.current?.setLayout(centre);
+    },
+    [columnsRef, centreRef, engineering],
+  );
+
+  // Re-apply after the centre group remounts on a view-mode change, so the
+  // chosen preset survives it.
+  useEffect(() => {
+    const layout = PRESETS[preset];
+    centreRef.current?.setLayout(
+      engineering
+        ? { ...layout.centre }
+        : {
+            'mc-sensor': layout.centre['mc-sensor'] + layout.centre['mc-twin'],
+            'mc-telemetry': layout.centre['mc-telemetry'],
+          },
+    );
+  }, [engineering, preset, centreRef]);
+
+  const anyTruthVisible = engineering && (truthOverlay || disturbanceTruth);
 
   return (
-    <div className="flex h-full min-h-0">
-      <div className="flex min-w-0 flex-1 flex-col">
-        <SimulationControls />
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Layout controls. Deliberately small and out of the way: they change
+          nothing an engineer would be measuring. */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-panel-border bg-panel-header/60 px-2 py-1">
+        <span className="mr-1 text-[9px] tracking-[0.08em] text-muted-foreground uppercase">
+          Layout
+        </span>
+        {(Object.keys(PRESETS) as PresetName[]).map((name) => {
+          const meta = PRESET_META[name];
+          const Icon = meta.icon;
+          return (
+            <Tooltip key={name}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`${meta.label} layout`}
+                  aria-pressed={preset === name}
+                  onClick={() => {
+                    apply(name);
+                  }}
+                  className={cn(
+                    'flex h-6 items-center gap-1 rounded-sm border px-1.5 text-[9px] font-semibold tracking-wider uppercase transition-colors',
+                    preset === name
+                      ? 'border-status-active/50 bg-status-active/12 text-status-active'
+                      : 'border-panel-border text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Icon aria-hidden className="size-3" />
+                  {meta.label}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{meta.hint}</TooltipContent>
+            </Tooltip>
+          );
+        })}
 
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b bg-card/20 px-4 py-2">
-          <Readout label="Tick" value={String(tick)} />
-          <Readout label="Sim time" value={`${time.toFixed(3)} s`} />
-          <Readout label="Scenario" value={config.name} />
-          <Readout label="Root seed" value={String(config.seed)} />
-          <Readout label="Trajectory" value={trajectoryKind} />
-          <Readout
-            label="True pointing error"
-            value={
-              pointingError === null
-                ? '—'
-                : `${radiansToMicroradians(pointingError as never).toFixed(0)} µrad`
-            }
-          />
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              aria-label={
-                truthVisible ? 'Hide ground truth inspector' : 'Show ground truth inspector'
-              }
-              aria-pressed={truthVisible}
-              className={cn(
-                'h-7 gap-1.5 px-2 text-xs',
-                truthVisible && 'border-amber-500/50 bg-amber-500/10 text-amber-700',
-              )}
-              onClick={() => {
-                setTruthVisible(!truthVisible);
-              }}
-            >
-              <Eye aria-hidden className="size-3" />
-              Truth
-            </Button>
-            <ScenarioIoBar />
-          </div>
-        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[9px]"
+          aria-label="Reset layout"
+          onClick={() => {
+            apply('operations');
+          }}
+        >
+          <RotateCcw className="size-3" />
+          Reset
+        </Button>
 
-        <div className="relative min-h-0 flex-1">
-          <Canvas
-            camera={{ position: [1100, 700, 900], fov: 45, near: 1, far: 40_000 }}
-            gl={{ antialias: true }}
-            className="bg-[#eef3f7]"
-          >
-            <ObserverScene showGrid={showGrid} showAxes={showAxes} showPaths={showPaths} />
-          </Canvas>
-
-          <div className="pointer-events-none absolute top-3 left-3 flex flex-col gap-2">
-            <Badge
-              variant="outline"
-              className="pointer-events-auto border-amber-500/50 bg-background/85 font-mono text-[10px] font-semibold tracking-wider text-amber-700 backdrop-blur"
-            >
-              3D DIGITAL TWIN — GROUND TRUTH / ENGINEERING OBSERVER
-            </Badge>
-            <span className="pointer-events-auto rounded-sm border border-border/60 bg-background/75 px-2 py-1 text-[10px] text-muted-foreground backdrop-blur">
-              Not the tracking sensor feed. Markers are not to scale.
-            </span>
-          </div>
-
-          <div className="pointer-events-auto absolute top-3 right-3 flex gap-1">
-            {(
-              [
-                ['Grid', showGrid, setShowGrid, Grid3x3],
-                ['Axes', showAxes, setShowAxes, Axis3d],
-                ['Paths', showPaths, setShowPaths, Route],
-              ] as const
-            ).map(([label, value, setValue, Icon]) => (
-              <Button
-                key={label}
-                size="sm"
-                variant="outline"
-                aria-label={label}
-                aria-pressed={value}
-                className={cn(
-                  'h-7 gap-1.5 bg-background/80 px-2 text-xs backdrop-blur',
-                  value && 'bg-accent',
-                )}
-                onClick={() => {
-                  setValue(!value);
-                }}
-              >
-                <Icon aria-hidden className="size-3" />
-                {label}
-              </Button>
-            ))}
-          </div>
-
-          <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-3 rounded-sm border border-border/60 bg-background/75 px-2.5 py-1.5 text-[10px] text-muted-foreground backdrop-blur">
-            <LegendSwatch color={OBSERVER_COLORS.target} label="Target" />
-            <LegendSwatch color={OBSERVER_COLORS.beacon} label="Beacon" />
-            <LegendSwatch color={OBSERVER_COLORS.observer} label="Observer" />
-            <LegendSwatch color={OBSERVER_COLORS.boresight} label="Boresight" />
-            <LegendSwatch color={OBSERVER_COLORS.path} label="Path" />
-            <span className="opacity-70">+X East · +Y Up · −Z North</span>
-          </div>
+        <div className="ml-auto flex items-center gap-1.5">
+          {preset === 'presentation' && <StatusBadge status="active" label="Presentation view" />}
+          {anyTruthVisible && (
+            <StatusBadge
+              status="idle"
+              label="Ground truth visible"
+              className="border-truth/50 bg-truth/12 text-truth"
+            />
+          )}
         </div>
       </div>
 
-      <SensorPanel />
-      <GroundTruthInspector />
+      <SplitGroup
+        groupRef={columnsRef}
+        orientation="horizontal"
+        className="min-h-0 flex-1"
+        id="mission-control-columns"
+      >
+        <SplitPanel
+          id="mc-rail"
+          defaultSize="17"
+          minSize="13"
+          maxSize="30"
+          collapsible
+          collapsedSize="0"
+          className="min-w-0"
+        >
+          <ControlRail />
+        </SplitPanel>
+
+        <ResizeHandle direction="horizontal" />
+
+        <SplitPanel id="mc-centre" defaultSize="58" minSize="34" className="min-w-0">
+          {/* Keyed on the view mode. A resizable group registers its panels
+              once, so adding or removing one under a live group leaves its
+              constraint table stale; remounting is both simpler and more
+              honest, since the panel set genuinely differs between the two
+              views. The preset is re-applied below so the remount does not
+              throw away a layout the operator chose. */}
+          <SplitGroup
+            key={engineering ? 'with-twin' : 'sensor-only'}
+            groupRef={centreRef}
+            orientation="vertical"
+            className="h-full"
+            id="mission-control-centre"
+          >
+            <SplitPanel id="mc-sensor" defaultSize="46" minSize="22">
+              <SensorFeed />
+            </SplitPanel>
+
+            <ResizeHandle direction="vertical" />
+
+            {engineering && (
+              <>
+                <SplitPanel id="mc-twin" defaultSize="32" minSize="14">
+                  <DigitalTwin />
+                </SplitPanel>
+
+                <ResizeHandle direction="vertical" />
+              </>
+            )}
+
+            <SplitPanel id="mc-telemetry" defaultSize="22" minSize="10">
+              <TelemetryDock />
+            </SplitPanel>
+          </SplitGroup>
+        </SplitPanel>
+
+        <ResizeHandle direction="horizontal" />
+
+        <SplitPanel
+          id="mc-diagnostics"
+          defaultSize="25"
+          minSize="16"
+          maxSize="40"
+          className="min-w-0"
+        >
+          {/* One scrolling column: at 768px high the four panels do not fit, and
+              scrolling them together is better than shrinking each to nothing. */}
+          <div className="flex h-full min-h-0 flex-col gap-1.5 overflow-y-auto p-1.5">
+            <DetectorPanel />
+            <EstimatorPanel />
+            <ControllerPanel />
+            <IdentityPanel />
+            <ChannelPanel />
+          </div>
+        </SplitPanel>
+      </SplitGroup>
+
+      {engineering && <GroundTruthInspector />}
     </div>
   );
 }

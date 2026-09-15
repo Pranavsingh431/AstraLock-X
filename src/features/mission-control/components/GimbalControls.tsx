@@ -27,8 +27,8 @@ const COARSE_STEP = 0.1;
 const toDegrees = (value: number): string => radiansToDegrees(value as never).toFixed(3);
 
 const PHASE_STYLE = {
-  active: 'text-sky-700',
-  settling: 'text-amber-700',
+  active: 'text-status-active',
+  settling: 'text-status-degraded',
   holding: 'text-muted-foreground',
 } as const;
 
@@ -51,8 +51,6 @@ export function GimbalControls(): React.JSX.Element {
   const setCameraPose = useSimulationStore((state) => state.setCameraPose);
   const nudgeCamera = useSimulationStore((state) => state.nudgeCamera);
   const resetCamera = useSimulationStore((state) => state.resetCamera);
-  const showTruthOverlay = useSimulationStore((state) => state.showTruthOverlay);
-  const setTruthOverlay = useSimulationStore((state) => state.setTruthOverlay);
   const showActuatorTruth = useSimulationStore((state) => state.showActuatorTruth);
   const setActuatorTruthVisible = useSimulationStore((state) => state.setActuatorTruthVisible);
 
@@ -238,7 +236,7 @@ export function GimbalControls(): React.JSX.Element {
           lastCommandClamped) && (
           <Badge
             variant="outline"
-            className="gap-1 border-amber-500/40 text-[10px] font-normal text-amber-700"
+            className="gap-1 border-status-degraded/40 text-[10px] font-normal text-status-degraded"
           >
             <AlertTriangle aria-hidden className="size-3" />
             {[
@@ -253,20 +251,7 @@ export function GimbalControls(): React.JSX.Element {
           </Badge>
         )}
 
-        <label className="ml-auto flex items-center gap-1.5 text-[11px] text-amber-700/90">
-          <input
-            type="checkbox"
-            aria-label="Ground truth sensor overlay"
-            checked={showTruthOverlay}
-            onChange={(event) => {
-              setTruthOverlay(event.target.checked);
-            }}
-            className="accent-amber-400"
-          />
-          Truth overlay
-        </label>
-
-        <label className="flex items-center gap-1.5 text-[11px] text-amber-700/90">
+        <label className="ml-auto flex items-center gap-1.5 text-[11px] text-truth">
           <input
             type="checkbox"
             aria-label="Actuator truth debug panel"
@@ -274,7 +259,7 @@ export function GimbalControls(): React.JSX.Element {
             onChange={(event) => {
               setActuatorTruthVisible(event.target.checked);
             }}
-            className="accent-amber-400"
+            className="accent-[oklch(0.74_0.15_305)]"
           />
           Actuator truth
         </label>

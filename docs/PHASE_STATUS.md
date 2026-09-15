@@ -1778,5 +1778,121 @@ reported scenarios do.
 ### Not started
 
 No AI/ONNX verifier, FailureHunter, Operating Envelope Explorer, replay, HIL,
-cloud backend, database or authentication has been added, and Phase 10 — the
-premium interface redesign — has not been started.
+cloud backend, database or authentication has been added. Phase 10 — the
+interface redesign — was still ahead at the time of writing.
+
+## Phase 10 — the engineering workstation
+
+Phase 10 is an interface phase. It changes no tracking mathematics, no simulator
+physics, no benchmark metric, no fairness definition and no disturbance
+realization; every engineering result in this document still holds, and the
+whole test suite that produced them still passes unchanged.
+
+What it changes is that the application now looks and behaves like the
+instrument it is, rather than like a set of panels that grew one phase at a
+time.
+
+### The design system
+
+`src/components/astra/` is a small set of primitives — a panel, a readout, a
+status chip, a table, a chart frame — rather than a component library. Its
+purpose is that six workspaces built across ten phases still read as one
+instrument, and that the rules which matter get decided once instead of per
+panel:
+
+- every value carries its unit, in a separate element so the number is tabular
+  and the unit is not;
+- `null` renders as an em dash in muted italic, never as `0.000`, because a zero
+  is a measurement and absence is not;
+- `Status` is a closed union of seven engineering states, so there is no way to
+  introduce an aggregate "system health" percentage — the application has no
+  basis for one, and a single figure over seconds, microradians and a retention
+  fraction would be invented;
+- every PAT state is named and coloured in exactly one table, so the timeline
+  can never disagree with the chip above it.
+
+Colours are named by meaning rather than hue and defined once as OKLCH tokens.
+Violet is reserved, everywhere, for privileged simulator state, and nothing else
+is violet. No status is distinguishable by colour alone: every chip spells its
+own name, so a grayscale screenshot still works.
+
+### Mission Control
+
+Four resizable regions with real minimum sizes, each scrolling internally: the
+control rail, the sensor feed above the 3D twin, the diagnostics column, and the
+telemetry dock. The sensor feed is the largest by default because it is the only
+thing on screen a tracking algorithm actually receives. The diagnostics column
+reads top to bottom as the signal chain — detector, estimator, controller,
+identity, channel — which is the order to look in when a run goes wrong.
+
+Three things are new rather than restyled:
+
+- **A PAT timeline built from recorded transitions.** Segment widths are real
+  durations taken from the state machine's own history, so a two-frame excursion
+  into RECOVER is two frames wide. It is not derived from the current mode.
+- **A boresight reticle and a real uncertainty ring.** The ring around the
+  filter's prediction is its one-sigma angular uncertainty projected to pixels
+  through the believed calibration, so it grows while the tracker coasts and
+  shrinks on a detection.
+- **A detector panel.** Candidates, components, score, SNR, centroid, filtered
+  bearing, rates, misses, search waypoint and frames processed — all of it the
+  algorithm's own output, every field an em dash when the algorithm did not
+  compute it.
+
+### Engineering view and flight-representative view
+
+One control in the title bar, applying everywhere. Engineering view is the
+default and allows the privileged panels. Flight-representative view removes all
+of them at once, leaving only what a terminal's own software could compute from
+pixels, the believed calibration and the measured mount state.
+
+It gates **drawing only**. Nothing is computed, recorded or fed to an algorithm
+differently, and the individual panel toggles are untouched, so switching back
+restores exactly what was there. `workstation.test.tsx` asserts the invariant
+against a live run rather than trusting it: with the tracker in TRACK, switching
+the mode leaves `patMode`, `time`, `tick`, the centroid and the frame count
+identical, and the run carries on to the same state.
+
+### Measured
+
+| Evidence                                                        | Result                                       |
+| --------------------------------------------------------------- | -------------------------------------------- |
+| `pnpm test` — whole suite with type tests, performance excluded | 86 files, 1 637 tests passed, no type errors |
+| `pnpm test:performance` — run serially, as always               | 6 files, 30 tests passed                     |
+| Interface suites (Mission Control, shell, bench, reports)       | 11 files, 174 tests passed                   |
+| Engineering suites (core, algorithms, benchmark, contracts)     | unchanged from Phase 9                       |
+| TypeScript format, lint, typecheck and production build         | passed locally                               |
+| Rust `cargo fmt --check`                                        | clean                                        |
+| Rust compile, Clippy and tests                                  | **CI only** — the same blocker               |
+| Manual validation at 1920×1080, 1440×900 and 1366×768           | every workspace usable, no clipping          |
+
+### Honest limits
+
+- **The Xcode licence still blocks Rust locally**, as in Phases 8 and 9. Phase 10
+  changes no Rust, so `cargo fmt --check` plus CI is the whole Rust story here.
+- **Manual validation used the browser frontend**, not the native shell, for the
+  same reason. Nothing in this phase is Tauri-specific; the workspaces that need
+  durable storage say so and disable themselves in a browser tab.
+- **`react-resizable-panels` registers its panels once per group.** Changing the
+  panel set under a live group leaves its constraint table stale, so Mission
+  Control remounts the centre group when the view mode changes and re-applies
+  the chosen preset afterwards. This is worth knowing before adding a
+  conditionally rendered panel to any group.
+- **In jsdom every element measures 0×0 at the origin**, so the library's
+  separator hit test matches every click and suppresses the `mousedown` that
+  Radix tabs select on. `selectTab` in the test setup dispatches that event
+  directly. It is a measurement artefact of the test environment, not a defect
+  in the application.
+- **The diagnostics column scrolls at 768 px high.** All five panels fit at
+  1080 px and roughly two at 768 px; the rest are one scroll away, and the
+  dividers can be dragged.
+- **The performance suites still run serially**, as they have since Phase 5.
+  They assert wall-clock budgets, so running them alongside eighty-five other
+  files would measure contention rather than the code. `pnpm test` already
+  separates them; thirty tests pass that way.
+
+### Not started
+
+No AI/ONNX verifier, FailureHunter, Operating Envelope Explorer, replay, HIL,
+cloud backend, database or authentication has been added. Phase 11 has not been
+started.
