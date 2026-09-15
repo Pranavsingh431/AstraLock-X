@@ -527,9 +527,13 @@ export function ReportsView(): React.JSX.Element {
                     <FolderOpen className="size-3" />
                     Open folder
                   </Button>
+                  {/* The primary action on this screen. Opening a report shows
+                      what was written; this recomputes every field of it from
+                      the raw event, telemetry and evaluation files and says
+                      whether the two agree — which is the only reason to trust
+                      a stored number at all. */}
                   <Button
                     size="sm"
-                    variant="outline"
                     className="h-7 text-xs"
                     aria-label="Recompute and verify summary"
                     disabled={busy || current.summary === null}

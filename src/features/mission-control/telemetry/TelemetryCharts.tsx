@@ -37,6 +37,7 @@ import {
   ChartTooltip,
   EmptyState,
   SERIES_COLORS,
+  TRUTH_COLOR,
 } from '@/components/astra';
 import type { ResponseSample } from '@/stores/simulation-store';
 import { useSimulationStore } from '@/stores/simulation-store';
@@ -356,12 +357,12 @@ export function PointingErrorChart(): React.JSX.Element {
     <ChartFrame
       title="True angular pointing error"
       unit="µrad"
-      series={[{ label: 'Ground truth', color: 'oklch(0.74 0.15 305)' }]}
+      series={[{ label: 'Ground truth', color: TRUTH_COLOR }]}
       note="Privileged: the angle between the true optical axis and the true line of sight. No algorithm receives this."
       className="h-full"
     >
       <TimeSeries data={data} unit="µrad" tickFormatter={(v) => v.toFixed(0)}>
-        {line('error', 'True pointing error', 'oklch(0.74 0.15 305)')}
+        {line('error', 'True pointing error', TRUTH_COLOR)}
       </TimeSeries>
     </ChartFrame>
   );

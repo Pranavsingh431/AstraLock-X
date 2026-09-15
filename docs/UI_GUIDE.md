@@ -71,7 +71,7 @@ like one instrument.
 
 | Primitive                                  | What it settles                                           |
 | ------------------------------------------ | --------------------------------------------------------- |
-| `Panel` / `PanelHeader` / `PanelBody`      | the one container; tone declares provenance               |
+| `Panel` / `PanelHeader`                    | the one container; tone declares provenance               |
 | `Section`                                  | a labelled group inside a panel                           |
 | `MetricReadout`                            | a labelled value that always carries its unit             |
 | `DiagnosticRow`                            | the same, stacked rather than gridded                     |
@@ -281,6 +281,19 @@ into sixty dashboard renders a second:
 Numeric readouts do update at full rate. They are cheap, and a laggy number on
 an instrument is worse than a busy one.
 
+`rendering.test.tsx` measures this rather than asserting it. Stepping a
+twenty-second acquisition one frame at a time — each in its own commit, because
+batching the whole run into one `act` would measure React's batching and nothing
+else — a panel subscribing the way the diagnostics panels do commits **4 times
+across 4 000 frames**: once per PAT transition, through scan, acquire, track
+and handoff. It also checks that the telemetry buffers stay capped and
+that the PAT timeline keeps its array identity while the mode is unchanged.
+
+The mistake being guarded against is Phase 1's: a Zustand selector that built a
+fresh object on every call, so every store write re-rendered and then looped.
+It does not announce itself — the application is merely slow — so it is
+measured.
+
 ---
 
 ## 9. Accessibility
@@ -295,6 +308,12 @@ an instrument is worse than a busy one.
 - Tables are `<table>` markup with `<th>` row headers, not grids of `<div>`.
 - The PAT timeline carries a full `aria` description of its segments, because
   a proportional bar is meaningless to a screen reader otherwise.
+
+`accessibility.test.tsx` sweeps every workspace — and Mission Control in both
+view modes, with every collapsed group opened — and fails if any button,
+checkbox, combobox, tab, text field or number field has no accessible name. It
+is not an audit; it defends the one property that is cheap to break, invisible
+in review, and fatal to a screen reader.
 
 ---
 

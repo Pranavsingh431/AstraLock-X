@@ -133,11 +133,6 @@ export function PanelHeader({
   );
 }
 
-/** A panel body that scrolls on its own rather than growing its parent. */
-export function PanelBody({ className, ...props }: React.ComponentProps<'div'>): React.JSX.Element {
-  return <div className={cn('min-h-0 flex-1 overflow-auto', className)} {...props} />;
-}
-
 /** A labelled group inside a panel body. */
 export function Section({
   title,

@@ -1855,16 +1855,18 @@ identical, and the run carries on to the same state.
 
 ### Measured
 
-| Evidence                                                        | Result                                       |
-| --------------------------------------------------------------- | -------------------------------------------- |
-| `pnpm test` — whole suite with type tests, performance excluded | 86 files, 1 637 tests passed, no type errors |
-| `pnpm test:performance` — run serially, as always               | 6 files, 30 tests passed                     |
-| Interface suites (Mission Control, shell, bench, reports)       | 11 files, 174 tests passed                   |
-| Engineering suites (core, algorithms, benchmark, contracts)     | unchanged from Phase 9                       |
-| TypeScript format, lint, typecheck and production build         | passed locally                               |
-| Rust `cargo fmt --check`                                        | clean                                        |
-| Rust compile, Clippy and tests                                  | **CI only** — the same blocker               |
-| Manual validation at 1920×1080, 1440×900 and 1366×768           | every workspace usable, no clipping          |
+| Evidence                                                                       | Result                                                |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `pnpm test` — whole suite with type tests, performance excluded                | 87 files, 1 645 tests passed, no type errors          |
+| `pnpm test:performance` — run serially, as always                              | 6 files, 30 tests passed                              |
+| Interface suites (Mission Control, shell, bench, reports)                      | 13 files, 185 tests passed                            |
+| Engineering suites (core, algorithms, benchmark, contracts)                    | unchanged from Phase 9                                |
+| TypeScript format, lint, typecheck and production build                        | passed locally                                        |
+| Rust `cargo fmt --check`                                                       | clean                                                 |
+| Rust compile, Clippy and tests                                                 | **CI only** — the same blocker                        |
+| Manual validation at 1920×1080, 1440×900 and 1366×768                          | every workspace usable, no clipping                   |
+| Accessible-name sweep, six workspaces and both view modes                      | no unnamed control                                    |
+| Diagnostics panel commits over a 20 s acquisition, stepped one frame at a time | **4 commits / 4 000 frames** — one per PAT transition |
 
 ### Honest limits
 
