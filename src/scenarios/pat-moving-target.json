@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "id": "pat-moving-target",
   "name": "PAT: gentle crossing target",
   "seed": 4002,
@@ -15,9 +15,7 @@
       "x": 0,
       "y": 0,
       "z": 0
-    },
-    "baseDisturbanceRms": 0.0015,
-    "baseDisturbanceBandwidth": 25
+    }
   },
   "targets": [
     {
@@ -55,10 +53,7 @@
     "backgroundLevel": 0.0,
     "exposure": 0.002,
     "gain": 1,
-    "format": "mono8",
-    "readNoiseElectrons": 3.2,
-    "fullWellElectrons": 10000,
-    "dropoutProbability": 0.0
+    "format": "mono8"
   },
   "gimbal": {
     "pan": {
@@ -87,8 +82,66 @@
     },
     "commandLatency": 0.023
   },
-  "atmosphere": {
-    "refractiveIndexStructure": 1e-14,
-    "visibility": 20000
+  "disturbances": {
+    "preset": "CLEAN",
+    "platform": {
+      "enabled": false,
+      "biasAzimuth": 0,
+      "biasElevation": 0,
+      "tones": [],
+      "jitter": {
+        "enabled": false,
+        "rms": 0,
+        "correlationTime": 1
+      }
+    },
+    "atmosphere": {
+      "attenuation": {
+        "enabled": false,
+        "dbPerKm": 0
+      },
+      "scintillation": {
+        "enabled": false,
+        "logAmplitudeSigma": 0,
+        "correlationTime": 1
+      },
+      "wander": {
+        "enabled": false,
+        "rms": 0,
+        "correlationTime": 1
+      }
+    },
+    "optics": {
+      "exposure": {
+        "enabled": false,
+        "subSamples": 1
+      },
+      "defocus": {
+        "enabled": false,
+        "extraSigma": 0
+      },
+      "background": {
+        "enabled": false,
+        "level": 0,
+        "gradient": 0,
+        "gradientAngle": 0
+      }
+    },
+    "sensor": {
+      "readNoise": {
+        "enabled": false,
+        "sigma": 0
+      },
+      "shotNoise": {
+        "enabled": false,
+        "scale": 0
+      }
+    },
+    "dropouts": {
+      "mode": "none",
+      "probability": 0,
+      "meanGoodFrames": 1,
+      "meanBadFrames": 1
+    }
   }
 }

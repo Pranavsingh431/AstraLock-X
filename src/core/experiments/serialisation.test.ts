@@ -44,6 +44,13 @@ const evaluation = (patch: Partial<EvaluationSample> = {}): EvaluationSample => 
   truth_detector_centroid_error_px: null,
   truth_detection_on_other_emitter: false,
   truth_other_emitters_in_image: 0,
+  truth_base_azimuth_rad: null,
+  truth_base_elevation_rad: null,
+  truth_wander_azimuth_rad: null,
+  truth_wander_elevation_rad: null,
+  truth_scintillation_gain: null,
+  truth_image_snr_db: null,
+  truth_saturated_fraction: null,
   ...patch,
 });
 
@@ -87,7 +94,7 @@ describe('number formatting', () => {
 
 describe('sample files', () => {
   it('put units in every numeric column name', () => {
-    const unitSuffix = /_(s|m|px|rad|rad_s|rad_s2|ms)$/;
+    const unitSuffix = /_(s|m|px|rad|rad_s|rad_s2|ms|db)$/;
     const unitless = new Set([
       'frame_id',
       'tick',
@@ -119,6 +126,9 @@ describe('sample files', () => {
       'gate_accepted',
       'imm_cv_probability',
       'imm_ca_probability',
+      // Dimensionless disturbance truth: a multiplicative gain and a fraction.
+      'truth_scintillation_gain',
+      'truth_saturated_fraction',
     ]);
     for (const column of [...TELEMETRY_COLUMNS, ...EVALUATION_COLUMNS]) {
       if (unitless.has(column.name)) continue;

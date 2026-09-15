@@ -18,6 +18,7 @@ import { useSimulationStore } from '@/stores/simulation-store';
 
 import { ActuatorTruthPanel } from './ActuatorTruthPanel';
 import { AutonomyControls } from './AutonomyControls';
+import { DisturbancePanel } from './DisturbancePanel';
 import { ExperimentControls } from './ExperimentControls';
 import { GimbalControls } from './GimbalControls';
 import { CameraMonitor } from './CameraMonitor';
@@ -84,6 +85,7 @@ export function SensorPanel(): React.JSX.Element {
           cannot squeeze the viewfinder above it. */}
       <div className="max-h-[46%] shrink-0 overflow-y-auto">
         <AutonomyControls />
+        <DisturbancePanel />
         <ExperimentControls />
         <GimbalControls />
         <div className="space-y-2.5 border-t px-3 py-2.5">

@@ -19,6 +19,7 @@
 
 import type { GroundTruthTainted } from '@/core/contracts/isolation';
 import { brandAsGroundTruth } from '@/core/contracts/ground-truth';
+import { DisturbanceStack, type FrameDisturbance } from '@/core/disturbance';
 import type { CameraSensorFrame, PixelFormat } from '@/core/contracts/sensors';
 import type { SimulationConfig } from '@/core/contracts/simulation';
 import {
@@ -33,7 +34,14 @@ import {
 import { CameraClock } from './camera-clock';
 import { FrameBufferPool } from './frame-pool';
 import { type ResolvedIntrinsics, cameraBasis, projectPoint, resolveIntrinsics } from './pinhole';
-import { addGaussianPointSource, fillBackground, type RasterTarget } from './psf';
+import {
+  addGaussianPointSource,
+  addGaussianPointSourceFloat,
+  energyPreservingPeak,
+  fillBackground,
+  type FloatRasterTarget,
+  type RasterTarget,
+} from './psf';
 import {
   type EmitterProjectionTruth,
   type SensorEvaluationTruth,
@@ -100,6 +108,15 @@ export interface LatestCaptureResult {
    * the instrument.
    */
   readonly supersededForDisplay: number;
+  /**
+   * Scheduled frames the *sensor* failed to deliver.
+   *
+   * Categorically different from `supersededForDisplay` above: that is the
+   * display declining to build pixels it would throw away, this is the
+   * instrument not producing a frame at all. A dropped frame has no pixels, no
+   * truth record and no consumer.
+   */
+  readonly dropped: number;
 }
 
 export class VirtualCameraSensor {
@@ -117,6 +134,24 @@ export class VirtualCameraSensor {
   private scheduled = 0;
   private rasterized = 0;
   private superseded = 0;
+  private dropped = 0;
+
+  /**
+   * The disturbances acting on this run, or `null` for none.
+   *
+   * `null` and a clean stack are treated identically and both take the
+   * pre-Phase-7 image formation path.
+   */
+  private readonly disturbances: DisturbanceStack | null;
+  /**
+   * Accumulation buffer for the disturbed path, allocated once.
+   *
+   * Only built when something can actually write to it: a clean run never
+   * allocates it, so turning disturbances off costs neither time nor memory.
+   */
+  private readonly accumulator: Float64Array | null;
+  /** The realization of the most recently rasterized frame. */
+  private lastRealization: FrameDisturbance | null = null;
 
   /**
    * @throws {RangeError} for an unsupported pixel format, or a camera
@@ -146,6 +181,53 @@ export class VirtualCameraSensor {
       this.intrinsics.width * this.intrinsics.height,
       options.poolCapacity ?? 3,
     );
+
+    const stack = new DisturbanceStack(
+      options.config.disturbances,
+      options.config.seed,
+      camera.frameRate,
+    );
+    this.disturbances = stack.isClean ? null : stack;
+    this.accumulator =
+      this.disturbances === null
+        ? null
+        : new Float64Array(this.intrinsics.width * this.intrinsics.height);
+  }
+
+  /**
+   * The disturbance realization of the last frame rasterized, or `null`.
+   *
+   * **Privileged.** This is the answer key: the true base attitude, the true
+   * apparent beacon displacement and the true scintillation gain. It is read by
+   * the evaluator and by debug views, never by an algorithm.
+   */
+  public get lastDisturbance(): FrameDisturbance | null {
+    return this.lastRealization;
+  }
+
+  /** Whether any disturbance is active on this run. */
+  public get hasDisturbances(): boolean {
+    return this.disturbances !== null;
+  }
+
+  /** The derived seed of each disturbance stream, for the experiment record. */
+  public disturbanceStreamSeeds(): Record<string, number> {
+    return this.disturbances?.streamSeeds() ?? {};
+  }
+
+  /** Frames the sensor failed to deliver. Never counted as generated. */
+  public get framesDropped(): number {
+    return this.dropped;
+  }
+
+  /**
+   * Whether the sensor will fail to deliver a scheduled frame.
+   *
+   * Exposed so the runtime can account for a loss without rasterizing pixels
+   * nobody will ever see.
+   */
+  public isFrameDropped(frameIndex: number): boolean {
+    return this.disturbances?.isDroppedAt(frameIndex) ?? false;
   }
 
   /** Frames the camera clock has called for. */
@@ -179,6 +261,9 @@ export class VirtualCameraSensor {
     this.scheduled = 0;
     this.rasterized = 0;
     this.superseded = 0;
+    this.dropped = 0;
+    this.lastRealization = null;
+    this.disturbances?.reset();
     this.pool.releaseAll();
   }
 
@@ -202,6 +287,17 @@ export class VirtualCameraSensor {
     this.scheduled += range.count;
 
     for (let index = range.first; index <= range.last; index += 1) {
+      // A dropped frame is not rasterized, not delivered and not counted as
+      // generated. The consumer simply never hears about it, which is exactly
+      // what a camera that failed to produce a frame gives you.
+      if (this.disturbances?.isDroppedAt(index) === true) {
+        this.dropped += 1;
+        this.lastRealization = this.disturbances.realizationAt(
+          index,
+          this.clock.captureTime(index),
+        );
+        continue;
+      }
       const capture = this.captureFrame(sampler, index);
       try {
         onCapture(capture);
@@ -232,18 +328,43 @@ export class VirtualCameraSensor {
     const range = this.clock.framesBetween(afterTime, throughTime);
     this.scheduled += range.count;
 
-    if (range.count === 0) return { capture: null, supersededForDisplay: 0 };
+    if (range.count === 0) return { capture: null, supersededForDisplay: 0, dropped: 0 };
 
     const skipped = range.count - 1;
     this.superseded += skipped;
-    return { capture: this.captureFrame(sampler, range.last), supersededForDisplay: skipped };
+
+    if (this.disturbances?.isDroppedAt(range.last) === true) {
+      this.dropped += 1;
+      this.lastRealization = this.disturbances.realizationAt(
+        range.last,
+        this.clock.captureTime(range.last),
+      );
+      return { capture: null, supersededForDisplay: skipped, dropped: 1 };
+    }
+
+    return {
+      capture: this.captureFrame(sampler, range.last),
+      supersededForDisplay: skipped,
+      dropped: 0,
+    };
   }
 
-  /** Rasterizes one specific frame index. */
+  /**
+   * Rasterizes one specific frame index.
+   *
+   * Dispatches on whether anything can actually change a pixel. The clean path
+   * is the pre-Phase-7 renderer, unchanged and byte-for-byte: "disturbances off"
+   * therefore means *exactly* Phase 6 rather than a numerically similar
+   * approximation of it, which is what lets every Phase 0-6 regression stay
+   * pinned to its original values.
+   */
   public captureFrame(sampler: WorldSampler, frameIndex: number): SensorCapture {
     const captureTime = this.clock.captureTime(frameIndex);
-    const sample = sampler.sampleAt(captureTime);
-    return this.rasterize(frameIndex, captureTime, sample);
+    const disturbances = this.disturbances;
+    if (disturbances === null) {
+      return this.rasterize(frameIndex, captureTime, sampler.sampleAt(captureTime));
+    }
+    return this.rasterizeDisturbed(sampler, frameIndex, captureTime, disturbances);
   }
 
   private rasterize(
@@ -304,6 +425,10 @@ export class VirtualCameraSensor {
           visibility: projection.visibility,
           imageX: projection.imageX,
           imageY: projection.imageY,
+          // No wander on a clean run, so where the light landed and where the
+          // emitter is are the same point.
+          apparentImageX: projection.imageX,
+          apparentImageY: projection.imageY,
           range: meters(projection.range),
           offsetAzimuth: radians(offsetAzimuth),
           offsetElevation: radians(offsetElevation),
@@ -343,6 +468,7 @@ export class VirtualCameraSensor {
       cameraPositionEast: meters(sample.cameraPosition.x),
       cameraPositionNorth: meters(sample.cameraPosition.y),
       cameraPositionUp: meters(sample.cameraPosition.z),
+      disturbance: null,
       projections,
     });
 
@@ -364,6 +490,286 @@ export class VirtualCameraSensor {
         return { ...frame, data: new Uint8Array(lease.pixels) };
       },
     });
+  }
+
+  /**
+   * Rasterizes one frame through the disturbance pipeline.
+   *
+   * The order below is the physical one and is not interchangeable — see
+   * docs/DISTURBANCE_MODEL.md. Light is collected over the exposure first, then
+   * ambient background is added to it, then the sensor's noise is applied to the
+   * total, and only then is the result clipped and quantised. Quantising earlier
+   * would round the same photon budget several times; adding noise earlier would
+   * put it through the optics.
+   */
+  private rasterizeDisturbed(
+    sampler: WorldSampler,
+    frameIndex: number,
+    captureTime: number,
+    disturbances: DisturbanceStack,
+  ): SensorCapture {
+    const { width, height } = this.intrinsics;
+    const accumulator = this.accumulator!;
+
+    // Background first, as the initial value of the accumulator rather than a
+    // second pass over it. The camera's own pedestal and the ambient sky are
+    // both constant over the exposure, so integrating them is the same as
+    // starting from them — and it saves a full clear of three hundred thousand
+    // doubles every frame.
+    disturbances.fillBackground(accumulator, width, height, this.maxValue, this.backgroundValue);
+
+    const realization = disturbances.realizationAt(frameIndex, captureTime);
+    this.lastRealization = realization;
+
+    // The exposure window is centred on the capture instant, so the frame's
+    // timestamp is its mid-exposure time. Centring is what keeps a blurred
+    // centroid at the target's position *at* the timestamp: an exposure running
+    // [t, t+T] would put it half an exposure behind, which every evaluation
+    // comparing a detection against truth at t would then read as pointing bias.
+    const exposure = this.config.camera.exposure;
+    const subSamples = disturbances.subSamples;
+    const windowStart = captureTime - exposure / 2;
+    const subStep = exposure / subSamples;
+
+    // Wander displaces where the beacon *appears* to come from. A beacon that
+    // appears further round in azimuth is geometrically identical to a camera
+    // pointed further back, so it is applied by subtracting it from the optical
+    // axis used for projection. The recorded truth keeps the two separate: the
+    // camera axis it stores excludes wander entirely.
+    const wander = realization.wander;
+
+    const target: FloatRasterTarget = { data: accumulator, width, height };
+    const pixelsWritten = new Map<string, number>();
+    const attenuatedPeak = new Map<string, number>();
+
+    // The sample at the capture instant is the one the truth record describes.
+    let centreSample = sampler.sampleAt(captureTime);
+
+    for (let step = 0; step < subSamples; step += 1) {
+      // Midpoint of each sub-interval. With one sub-sample this is exactly the
+      // capture instant, so an exposure of one sample reproduces instantaneous
+      // capture rather than merely approximating it.
+      const subTime = windowStart + subStep * (step + 0.5);
+      const sample = subSamples === 1 ? centreSample : sampler.sampleAt(subTime);
+      if (subSamples > 1 && step === Math.floor(subSamples / 2)) centreSample = sample;
+
+      // Base attitude is evaluated at the sub-sample time, so platform vibration
+      // during the exposure produces real blur rather than a rigid shift.
+      const base = disturbances.baseAttitudeAt(subTime, frameIndex);
+      const basis = cameraBasis(
+        radians(sample.cameraPose.trueAzimuth + base.azimuth - wander.azimuth),
+        radians(sample.cameraPose.trueElevation + base.elevation - wander.elevation),
+      );
+
+      for (const emitter of sample.emitters) {
+        const relative = {
+          x: emitter.position.x - sample.cameraPosition.x,
+          y: emitter.position.y - sample.cameraPosition.y,
+          z: emitter.position.z - sample.cameraPosition.z,
+        };
+        const projection = projectPoint(relative, basis, this.intrinsics);
+        if (
+          projection.visibility !== 'visible' ||
+          projection.imageX === null ||
+          projection.imageY === null
+        ) {
+          continue;
+        }
+
+        // Radiometry: what survives the path, and how that varies in time.
+        const transmittance = disturbances.transmittanceOver(projection.range);
+        const intensity = emitter.intensity * transmittance * realization.scintillation;
+
+        // Defocus spreads the same energy over a wider spot, so the peak falls
+        // as sigma^2 rises and the integral is unchanged.
+        const spread = disturbances.spreadFor(emitter.psfSigma);
+        const peak = energyPreservingPeak(intensity * this.maxValue, emitter.psfSigma, spread);
+
+        const written = addGaussianPointSourceFloat(
+          target,
+          projection.imageX,
+          projection.imageY,
+          // Each sub-sample carries its share of the exposure's light, so the
+          // total collected is independent of how finely it was sampled.
+          peak / subSamples,
+          spread,
+        );
+        pixelsWritten.set(emitter.id, (pixelsWritten.get(emitter.id) ?? 0) + written);
+        attenuatedPeak.set(emitter.id, Math.max(attenuatedPeak.get(emitter.id) ?? 0, peak));
+      }
+    }
+
+    const lease = this.pool.acquire();
+    this.quantise(accumulator, lease.pixels, disturbances, frameIndex);
+
+    // Truth is described at the capture instant, with the true optical axis —
+    // which includes base attitude, because the platform really does move the
+    // camera, and excludes wander, because wander does not.
+    const pose = centreSample.cameraPose;
+    const truthBase = disturbances.baseAttitudeAt(captureTime, frameIndex);
+    const opticalAzimuth = pose.trueAzimuth + truthBase.azimuth;
+    const opticalElevation = pose.trueElevation + truthBase.elevation;
+    const geometricBasis = cameraBasis(radians(opticalAzimuth), radians(opticalElevation));
+    const apparentBasis = cameraBasis(
+      radians(opticalAzimuth - wander.azimuth),
+      radians(opticalElevation - wander.elevation),
+    );
+
+    const projections: EmitterProjectionTruth[] = [];
+    for (const emitter of centreSample.emitters) {
+      const relative = {
+        x: emitter.position.x - centreSample.cameraPosition.x,
+        y: emitter.position.y - centreSample.cameraPosition.y,
+        z: emitter.position.z - centreSample.cameraPosition.z,
+      };
+      const geometric = projectPoint(relative, geometricBasis, this.intrinsics);
+      const apparent = projectPoint(relative, apparentBasis, this.intrinsics);
+
+      projections.push(
+        brandProjectionTruth({
+          emitterId: emitter.id,
+          hostEntityId: emitter.hostEntityId,
+          visibility: geometric.visibility,
+          imageX: geometric.imageX,
+          imageY: geometric.imageY,
+          apparentImageX: apparent.imageX,
+          apparentImageY: apparent.imageY,
+          range: meters(geometric.range),
+          offsetAzimuth: radians(Math.atan2(geometric.cameraX, geometric.cameraZ)),
+          offsetElevation: radians(
+            Math.atan2(geometric.cameraY, Math.hypot(geometric.cameraX, geometric.cameraZ)),
+          ),
+          peakIntensity: attenuatedPeak.get(emitter.id) ?? 0,
+          pixelsWritten: pixelsWritten.get(emitter.id) ?? 0,
+        }),
+      );
+    }
+
+    this.rasterized += 1;
+
+    const frame: CameraSensorFrame = {
+      frameId: frameIndex,
+      captureTime: seconds(captureTime),
+      width: pixels(width),
+      height: pixels(height),
+      format: this.format,
+      data: lease.pixels,
+      exposure: this.config.camera.exposure,
+      gain: this.config.camera.gain,
+      // Frames the sensor failed to deliver, cumulative. A delivered frame can
+      // say how many went missing before it; it cannot describe one that does
+      // not exist, and a dropped frame is never handed to anyone.
+      droppedSince: this.dropped,
+      // Still the encoder's reading, which measures the gimbal axes only. Base
+      // attitude is absent from it on purpose: without a separate attitude
+      // reference a real terminal cannot measure how its own mounting moved.
+      pose: {
+        azimuth: radians(pose.measuredAzimuth),
+        elevation: radians(pose.measuredElevation),
+      },
+      cameraConfigId: this.cameraConfigId,
+    };
+
+    const truth = brandSensorTruth({
+      frameId: frameIndex,
+      captureTime: seconds(captureTime),
+      cameraAzimuth: radians(opticalAzimuth),
+      cameraElevation: radians(opticalElevation),
+      cameraPositionEast: meters(centreSample.cameraPosition.x),
+      cameraPositionNorth: meters(centreSample.cameraPosition.y),
+      cameraPositionUp: meters(centreSample.cameraPosition.z),
+      disturbance: realization,
+      projections,
+    });
+
+    return brandAsGroundTruth({
+      get frame(): CameraSensorFrame {
+        void lease.pixels;
+        return frame;
+      },
+      truth,
+      get isReleased(): boolean {
+        return lease.isReleased;
+      },
+      release(): void {
+        lease.release();
+      },
+      toOwned(): CameraSensorFrame {
+        return { ...frame, data: new Uint8Array(lease.pixels) };
+      },
+    });
+  }
+
+  /**
+   * Applies sensor noise, then clips and quantises.
+   *
+   * Noise is added to the accumulated intensity, never to the quantised result:
+   * a sensor's noise is in its signal chain, not in its analogue-to-digital
+   * converter. Shot noise comes first because it is a property of the light that
+   * arrived, read noise second because it is a property of the electronics that
+   * measured it, and the clip is last because saturation is what the well does
+   * to whatever reached it.
+   *
+   * Clipping is a clamp, never a wrap. A wrapped overflow turns the brightest
+   * pixel in the image into the darkest, which is invisible in a thumbnail and
+   * fatal to a detector.
+   */
+  private quantise(
+    accumulator: Float64Array,
+    out: Uint8Array,
+    disturbances: DisturbanceStack,
+    frameIndex: number,
+  ): void {
+    const maxValue = this.maxValue;
+    const shotScale = disturbances.shotNoiseScale;
+    const readSigma = disturbances.readNoiseSigma;
+    const length = accumulator.length;
+
+    // Three specialised loops rather than one with branches inside it. This runs
+    // three hundred thousand times a frame at sixty frames a second, so a
+    // predictable branch per pixel is not free, and the shapes are different
+    // enough that one loop cannot be fast for all of them.
+
+    if (shotScale <= 0 && readSigma <= 0) {
+      for (let index = 0; index < length; index += 1) {
+        const value = accumulator[index]!;
+        out[index] = value <= 0 ? 0 : value >= maxValue ? maxValue : (value + 0.5) | 0;
+      }
+      return;
+    }
+
+    // Each frame's noise field is seeded from the frame index, so it is the same
+    // field whether the frame was rendered in a headless sweep or skipped to in
+    // a live view.
+    if (shotScale > 0 && readSigma > 0) {
+      const shot = disturbances.shotNoiseFor(frameIndex);
+      const read = disturbances.readNoiseFor(frameIndex);
+      for (let index = 0; index < length; index += 1) {
+        const signal = accumulator[index]!;
+        const value =
+          signal +
+          shotScale * Math.sqrt(signal > 0 ? signal : 0) * shot.nextGaussian() +
+          readSigma * read.nextGaussian();
+        out[index] = value <= 0 ? 0 : value >= maxValue ? maxValue : (value + 0.5) | 0;
+      }
+      return;
+    }
+
+    if (shotScale > 0) {
+      const shot = disturbances.shotNoiseFor(frameIndex);
+      for (let index = 0; index < length; index += 1) {
+        const signal = accumulator[index]!;
+        const value = signal + shotScale * Math.sqrt(signal > 0 ? signal : 0) * shot.nextGaussian();
+        out[index] = value <= 0 ? 0 : value >= maxValue ? maxValue : (value + 0.5) | 0;
+      }
+      return;
+    }
+
+    const read = disturbances.readNoiseFor(frameIndex);
+    for (let index = 0; index < length; index += 1) {
+      const value = accumulator[index]! + readSigma * read.nextGaussian();
+      out[index] = value <= 0 ? 0 : value >= maxValue ? maxValue : (value + 0.5) | 0;
+    }
   }
 }
 

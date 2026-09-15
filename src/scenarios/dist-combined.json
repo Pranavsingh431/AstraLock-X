@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 5,
+  "id": "dist-combined",
+  "name": "Disturbance: combined stress",
+  "seed": 7007,
+  "duration": 90,
+  "tickRate": 200,
+  "platform": {
+    "initialPosition": {
+      "x": 0,
+      "y": 0,
+      "z": 12
+    },
+    "initialVelocity": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  },
+  "targets": [
+    {
+      "label": "Crossing beacon",
+      "trajectory": {
+        "kind": "linear",
+        "position": {
+          "x": 620,
+          "y": 1500,
+          "z": 95
+        },
+        "velocity": {
+          "x": -26,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radius": 1,
+      "beacon": {
+        "transmitPower": 0.05,
+        "intensity": 0.9,
+        "psfSigma": 2.4
+      }
+    },
+    {
+      "label": "Distant intruder",
+      "trajectory": {
+        "kind": "linear",
+        "position": {
+          "x": -1100,
+          "y": 1800,
+          "z": 40
+        },
+        "velocity": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "radius": 1,
+      "beacon": {
+        "transmitPower": 0.05,
+        "intensity": 0.8,
+        "psfSigma": 2.4
+      }
+    }
+  ],
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "horizontalFov": 0.20943951,
+    "verticalFovPolicy": "square-pixels",
+    "principalPoint": null,
+    "nearRange": 1,
+    "farRange": 50000,
+    "frameRate": 60,
+    "backgroundLevel": 0,
+    "exposure": 0.002,
+    "gain": 1,
+    "format": "mono8"
+  },
+  "gimbal": {
+    "pan": {
+      "initialAngle": 0,
+      "minAngle": -2.967059728,
+      "maxAngle": 2.967059728,
+      "maxRate": 0.698131701,
+      "maxAcceleration": 3.490658504,
+      "naturalFrequency": 6,
+      "dampingRatio": 0.65,
+      "deadband": 0.000069813,
+      "backlash": 0.000872665,
+      "encoderResolution": 0.000174533
+    },
+    "tilt": {
+      "initialAngle": 0,
+      "minAngle": -0.34906585,
+      "maxAngle": 1.396263402,
+      "maxRate": 0.523598776,
+      "maxAcceleration": 2.617993878,
+      "naturalFrequency": 5,
+      "dampingRatio": 0.7,
+      "deadband": 0.000069813,
+      "backlash": 0.000698132,
+      "encoderResolution": 0.000174533
+    },
+    "commandLatency": 0.023
+  },
+  "disturbances": {
+    "preset": "COMBINED_STRESS",
+    "platform": {
+      "enabled": true,
+      "biasAzimuth": 0,
+      "biasElevation": 0,
+      "tones": [
+        {
+          "axis": "azimuth",
+          "amplitude": 0.0004363323129985824,
+          "frequency": 5,
+          "phase": 0
+        },
+        {
+          "axis": "elevation",
+          "amplitude": 0.0003141592653589793,
+          "frequency": 8,
+          "phase": 1.9
+        }
+      ],
+      "jitter": {
+        "enabled": true,
+        "rms": 0.00012217304763960306,
+        "correlationTime": 0.3
+      }
+    },
+    "atmosphere": {
+      "attenuation": {
+        "enabled": true,
+        "dbPerKm": 1.5
+      },
+      "scintillation": {
+        "enabled": true,
+        "logAmplitudeSigma": 0.2,
+        "correlationTime": 0.05
+      },
+      "wander": {
+        "enabled": true,
+        "rms": 0.000035,
+        "correlationTime": 0.7
+      }
+    },
+    "optics": {
+      "exposure": {
+        "enabled": true,
+        "subSamples": 6
+      },
+      "defocus": {
+        "enabled": true,
+        "extraSigma": 0.5
+      },
+      "background": {
+        "enabled": true,
+        "level": 0.05,
+        "gradient": 0.02,
+        "gradientAngle": 2.4
+      }
+    },
+    "sensor": {
+      "readNoise": {
+        "enabled": true,
+        "sigma": 2.5
+      },
+      "shotNoise": {
+        "enabled": true,
+        "scale": 0.5
+      }
+    },
+    "dropouts": {
+      "mode": "burst",
+      "probability": 0,
+      "meanGoodFrames": 180,
+      "meanBadFrames": 12
+    }
+  }
+}

@@ -475,6 +475,8 @@ implementation that hid its limits would be worth less than none.
    the image is, because nothing yet measures clutter.
 6. **Handoff readiness is a claim about the coarse track**, not a measurement of
    fine-pointing feasibility, and there is no fine-pointing stage to accept it.
-7. **The sensor is still ideal.** Every accuracy figure above is a best case;
-   noise, turbulence and occlusion arrive in later phases.
+7. **Disturbance identity is still unresolved.** Phase 7 adds
+   camera-observable motion, attenuation, noise and dropout, but it does not
+   make a blob carry a verified identity. Their limits are deliberately exposed
+   rather than hidden; coded optical identity is a later concern.
 8. **Single target.** One track hypothesis, no multi-target association.

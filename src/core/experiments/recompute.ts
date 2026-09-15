@@ -107,6 +107,14 @@ export async function summariseStoredRun(
   }
   await verifySnapshots(storage, manifest);
 
+  // Read back from the snapshot the run actually stored, so a recomputed
+  // summary names the same preset as the original even if the preset has since
+  // been retuned or deleted.
+  const scenario = JSON.parse(await storage.readFile(runId, RUN_FILES.scenario)) as {
+    disturbances?: { preset?: unknown };
+  };
+  const preset = scenario.disturbances?.preset;
+
   const metricsConfig =
     options.metricsConfig === undefined
       ? manifest.metricsConfig
@@ -118,6 +126,7 @@ export async function summariseStoredRun(
     metricsFingerprint: fingerprint(metricsConfig),
     terminationReason: manifest.terminationReason,
     configuredSensorFps: manifest.camera.frameRate,
+    disturbancePreset: typeof preset === 'string' ? preset : null,
     sensorFramesGenerated: manifest.sensorFramesGenerated,
     startSimulationTime: manifest.startSimulationTime,
     endSimulationTime: manifest.endSimulationTime,

@@ -555,6 +555,101 @@ interface DocumentInputs {
  * cannot reach handoff readiness or a recovery state at all, and showing it an
  * empty handoff table would describe a capability it does not have.
  */
+/**
+ * What the scenario asked for, read from the stored snapshot.
+ *
+ * From the scenario document rather than from the preset name: a preset can be
+ * retuned or deleted after a run, and the run has to keep describing itself.
+ * A run recorded before Phase 7 has no `disturbances` block at all, which is
+ * stated as such rather than shown as a row of zeroes.
+ */
+function disturbanceConfigCell(scenario: Record<string, unknown>): string {
+  const disturbances = scenario['disturbances'] as
+    | {
+        preset?: unknown;
+        platform?: {
+          enabled?: boolean;
+          tones?: unknown[];
+          jitter?: { enabled?: boolean; rms?: number };
+        };
+        atmosphere?: Record<string, { enabled?: boolean } & Record<string, unknown>>;
+        optics?: Record<string, { enabled?: boolean } & Record<string, unknown>>;
+        sensor?: Record<string, { enabled?: boolean } & Record<string, unknown>>;
+        dropouts?: { mode?: string };
+      }
+    | undefined;
+
+  if (disturbances === undefined) {
+    return '<span class="absent">not modelled</span> <span class="sub">Recorded before Phase 7, when the simulator had no disturbance model.</span>';
+  }
+
+  const on: string[] = [];
+  const off: string[] = [];
+  const note = (label: string, active: boolean): void => {
+    (active ? on : off).push(label);
+  };
+
+  const platform = disturbances.platform;
+  note(
+    'platform motion',
+    platform?.enabled === true &&
+      ((platform.tones?.length ?? 0) > 0 || platform.jitter?.enabled === true),
+  );
+  note('attenuation', disturbances.atmosphere?.['attenuation']?.enabled === true);
+  note('scintillation', disturbances.atmosphere?.['scintillation']?.enabled === true);
+  note('angular wander', disturbances.atmosphere?.['wander']?.enabled === true);
+  note('finite exposure', disturbances.optics?.['exposure']?.enabled === true);
+  note('defocus', disturbances.optics?.['defocus']?.enabled === true);
+  note('ambient background', disturbances.optics?.['background']?.enabled === true);
+  note('read noise', disturbances.sensor?.['readNoise']?.enabled === true);
+  note('shot noise', disturbances.sensor?.['shotNoise']?.enabled === true);
+  note('frame dropouts', disturbances.dropouts?.mode !== 'none');
+
+  const preset = typeof disturbances.preset === 'string' ? disturbances.preset : null;
+  const presetNote =
+    preset === null
+      ? ''
+      : ` <span class="sub">Populated from preset <strong>${escape(preset)}</strong>; the parameters above are the record, not the name.</span>`;
+
+  if (on.length === 0) {
+    return `<strong>None.</strong> Every effect disabled, so image formation took the pre-Phase-7 path unchanged.${presetNote}`;
+  }
+  return `<strong>On:</strong> ${escape(on.join(', '))}.<br><span class="sub">Off: ${escape(off.join(', '))}. Full parameters in the scenario snapshot.</span>${presetNote}`;
+}
+
+/**
+ * What the disturbances actually did, measured from the recorded realization.
+ *
+ * Absent for a run that had none. The distinction between this and the
+ * configuration table above is the point: one is what was asked for, the other
+ * is what the run delivered, and only the second is evidence.
+ */
+function disturbanceSection(s: ExperimentSummary): string {
+  const d = s.disturbance;
+  if (d === null || d === undefined) return '';
+
+  return `
+<h2>Disturbance realization</h2>
+<p class="note">Measured from the recorded realization, not read back from the configuration. A scenario asking for 50 µrad of wander and a run that delivered 50 µrad of wander are different claims; this table is the second one. The per-pixel noise field is deliberately not stored — it is reproducible from the seed and the frame index, both of which are.</p>
+<table class="kv">
+<tr><th>Effects active</th><td>${d.active.length === 0 ? '<span class="absent">none</span>' : escape(d.active.join(', '))}${d.preset === null ? '' : ` <span class="sub">preset ${escape(d.preset)}</span>`}</td></tr>
+<tr><th>Platform attitude RMS</th><td>${show(d.platformJitterRmsAzimuth)} azimuth &middot; ${show(d.platformJitterRmsElevation)} elevation <span class="sub">True base motion, composed with the gimbal's own angles. The encoder cannot see it.</span></td></tr>
+<tr><th>Apparent wander RMS</th><td>${show(d.apparentWanderRmsAzimuth)} azimuth &middot; ${show(d.apparentWanderRmsElevation)} elevation <span class="sub">Where the beacon appeared to come from, which is not where it was.</span></td></tr>
+<tr><th>Frames dropped</th><td>${String(d.framesDropped)} <span class="sub">${show(d.frameDropRate)} of scheduled &middot; longest burst ${String(d.longestDropBurstFrames)} frames. Never delivered to the algorithm — not a black frame, and not a flag.</span></td></tr>
+<tr><th>Saturated pixels</th><td>${show(d.saturatedPixelFraction)} <span class="sub">Mean fraction at the top of the range, over sampled frames.</span></td></tr>
+</table>
+
+<table>
+${statHead('Quantity')}
+<tbody>
+${statRow('Scintillation gain', d.scintillationGain)}
+${statRow('Image SNR', d.imageSnrDb, 2)}
+</tbody>
+</table>
+<p class="note"><strong>Image SNR</strong> is <code>10 log10( &Sigma; signal² / &Sigma; noise² )</code> over a square aperture around the target's true projected centre, where <em>signal</em> is the clean target contribution above background and <em>noise</em> is the delivered frame minus the noiseless one rendered from the same realization. It is sampled at 4 Hz rather than every frame, because measuring it costs two extra renders. With no stochastic noise the noise image is identically zero and the ratio is <strong>undefined</strong> — reported as not measured, never as 0 dB.</p>
+`;
+}
+
 function robustSections(s: ExperimentSummary): string {
   const parts: string[] = [];
   const threshold = (s.metricsConfig as { handoffValidityThresholdRad?: number })
@@ -628,7 +723,6 @@ function document(inputs: DocumentInputs): string {
   const targets = Array.isArray(scenario['targets'])
     ? (scenario['targets'] as { label?: string; trajectory?: { kind?: string } }[])
     : [];
-  const platform = scenario['platform'] as { baseDisturbanceRms?: number } | undefined;
 
   const detailText = (event: ExperimentEvent): string =>
     Object.entries(event.detail)
@@ -723,7 +817,7 @@ ${performanceLog(s)
 <tr><th>Camera</th><td>${String(m.camera.width)}×${String(m.camera.height)} px &middot; ${(m.camera.horizontalFovRad * DEG).toFixed(2)}° horizontal FOV &middot; ${String(m.camera.frameRate)} fps &middot; principal point (${m.camera.principalPointXPx.toFixed(1)}, ${m.camera.principalPointYPx.toFixed(1)}) px</td></tr>
 <tr><th>Gimbal</th><td>pan ${(m.gimbal.panMinRad * DEG).toFixed(1)}° to ${(m.gimbal.panMaxRad * DEG).toFixed(1)}°, ≤ ${(m.gimbal.panMaxRateRadS * DEG).toFixed(1)}°/s &middot; tilt ${(m.gimbal.tiltMinRad * DEG).toFixed(1)}° to ${(m.gimbal.tiltMaxRad * DEG).toFixed(1)}°, ≤ ${(m.gimbal.tiltMaxRateRadS * DEG).toFixed(1)}°/s &middot; command latency ${(m.gimbal.commandLatencySeconds * 1000).toFixed(1)} ms</td></tr>
 <tr><th>Targets</th><td>${targets.map((t, i) => `${escape(t.label ?? `target ${String(i)}`)} <span class="sub">${escape(t.trajectory?.kind ?? '')}</span>`).join('<br>')}</td></tr>
-<tr><th>Platform disturbance</th><td>${platform?.baseDisturbanceRms === undefined ? '<span class="absent">not specified</span>' : `${String(platform.baseDisturbanceRms)} rad RMS`}</td></tr>
+<tr><th>Disturbances</th><td>${disturbanceConfigCell(scenario)}</td></tr>
 <tr><th>Sensor noise, atmosphere</th><td><span class="absent">Not modelled</span> <span class="sub">The sensor is noiseless and no atmospheric disturbance is applied in this phase.</span></td></tr>
 </table>
 
@@ -808,6 +902,7 @@ ${
 </table>
 
 ${robustSections(s)}
+${disturbanceSection(s)}
 <h2>Frame statistics</h2>
 <p class="note">Four different quantities that all get called "FPS", kept apart: what the camera was <em>configured</em> to do, how many frames were actually <em>generated</em>, the <em>window</em> those frames were counted over, and the <em>observed</em> rate that results. The rates are counts divided by the window and nothing else — no smoothing, and no substitution of the configured figure when the observed one is awkward.</p>
 <table class="kv">

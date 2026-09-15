@@ -126,3 +126,98 @@ export function addGaussianPointSource(
 export function fillBackground(target: RasterTarget, level: number): void {
   target.data.fill(Math.max(0, Math.min(target.maxValue, Math.round(level))));
 }
+
+/**
+ * A floating-point accumulation buffer.
+ *
+ * The integer {@link RasterTarget} clips and rounds at every write, which is
+ * correct for a single ideal exposure but wrong once several things have to be
+ * summed before quantisation: sub-exposure samples, ambient background and
+ * noise all have to land in one place first. Rounding between them would
+ * quantise the same photon budget several times over.
+ */
+export interface FloatRasterTarget {
+  /** Row-major intensity, `width * height` entries, unclipped. */
+  readonly data: Float64Array;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Adds one Gaussian point source to a floating-point image.
+ *
+ * Same kernel, same separable evaluation and same sub-pixel centre as
+ * {@link addGaussianPointSource}. Two differences, both required by the
+ * disturbance pipeline:
+ *
+ *  - Contributions accumulate without clipping or rounding, so saturation is
+ *    decided once, at quantisation, against the total.
+ *  - There is no "below half a count" cut-off. That shortcut is safe when a
+ *    contribution is written straight to an 8-bit pixel, and wrong when it is
+ *    one of several sub-exposure samples that together round to something.
+ *
+ * @param centreX continuous image coordinate; pixel centres are at half-integers
+ * @param peak    peak intensity of this contribution
+ * @returns the number of pixels touched
+ */
+export function addGaussianPointSourceFloat(
+  target: FloatRasterTarget,
+  centreX: number,
+  centreY: number,
+  peak: number,
+  sigma: number,
+): number {
+  if (!(sigma > 0)) {
+    throw new RangeError(`Point-spread sigma must be strictly positive, received ${String(sigma)}`);
+  }
+  if (!Number.isFinite(centreX) || !Number.isFinite(centreY) || !Number.isFinite(peak)) {
+    throw new RangeError('Point source centre and peak must be finite');
+  }
+
+  const radius = psfRadiusPixels(sigma);
+  const firstX = Math.max(0, Math.floor(centreX - radius));
+  const lastX = Math.min(target.width - 1, Math.ceil(centreX + radius));
+  const firstY = Math.max(0, Math.floor(centreY - radius));
+  const lastY = Math.min(target.height - 1, Math.ceil(centreY + radius));
+
+  if (firstX > lastX || firstY > lastY) return 0;
+
+  const denominator = 2 * sigma * sigma;
+  const columnCount = lastX - firstX + 1;
+  const rowCount = lastY - firstY + 1;
+  const columnWeights = new Float64Array(columnCount);
+  const rowWeights = new Float64Array(rowCount);
+
+  for (let index = 0; index < columnCount; index += 1) {
+    const dx = firstX + index + 0.5 - centreX;
+    columnWeights[index] = Math.exp(-(dx * dx) / denominator);
+  }
+  for (let index = 0; index < rowCount; index += 1) {
+    const dy = firstY + index + 0.5 - centreY;
+    rowWeights[index] = Math.exp(-(dy * dy) / denominator);
+  }
+
+  let written = 0;
+  for (let row = 0; row < rowCount; row += 1) {
+    const rowWeight = rowWeights[row]! * peak;
+    const rowOffset = (firstY + row) * target.width;
+    for (let column = 0; column < columnCount; column += 1) {
+      target.data[rowOffset + firstX + column]! += rowWeight * columnWeights[column]!;
+      written += 1;
+    }
+  }
+  return written;
+}
+
+/**
+ * Peak intensity that preserves total energy when a spot is broadened.
+ *
+ * A Gaussian's integral is `peak * 2*pi*sigma^2`, so holding the peak fixed
+ * while widening the spot would create light. Defocus spreads a fixed amount of
+ * energy over a larger area: the peak falls as `sigma^2` grows, and the sum over
+ * the image is unchanged.
+ */
+export function energyPreservingPeak(peak: number, baseSigma: number, spreadSigma: number): number {
+  if (!(spreadSigma > 0) || !(baseSigma > 0)) return peak;
+  return (peak * baseSigma * baseSigma) / (spreadSigma * spreadSigma);
+}

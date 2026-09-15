@@ -10,7 +10,7 @@
 /** A raw config object that satisfies every rule in the schema. */
 export function makeValidRawConfig(): Record<string, unknown> {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     id: 'fixture-001',
     name: 'Fixture scenario',
     seed: 12345,
@@ -19,8 +19,6 @@ export function makeValidRawConfig(): Record<string, unknown> {
     platform: {
       initialPosition: { x: 0, y: 0, z: 30 },
       initialVelocity: { x: 0, y: 0, z: 0 },
-      baseDisturbanceRms: 0.002,
-      baseDisturbanceBandwidth: 20,
     },
     targets: [
       {
@@ -47,9 +45,6 @@ export function makeValidRawConfig(): Record<string, unknown> {
       exposure: 0.002,
       gain: 1,
       format: 'mono8',
-      readNoiseElectrons: 3.2,
-      fullWellElectrons: 10000,
-      dropoutProbability: 0.001,
     },
     gimbal: {
       pan: {
@@ -78,9 +73,30 @@ export function makeValidRawConfig(): Record<string, unknown> {
       },
       commandLatency: 0,
     },
-    atmosphere: {
-      refractiveIndexStructure: 1e-14,
-      visibility: 20000,
+    disturbances: {
+      preset: 'CLEAN',
+      platform: {
+        enabled: false,
+        biasAzimuth: 0,
+        biasElevation: 0,
+        tones: [],
+        jitter: { enabled: false, rms: 0, correlationTime: 1 },
+      },
+      atmosphere: {
+        attenuation: { enabled: false, dbPerKm: 0 },
+        scintillation: { enabled: false, logAmplitudeSigma: 0, correlationTime: 1 },
+        wander: { enabled: false, rms: 0, correlationTime: 1 },
+      },
+      optics: {
+        exposure: { enabled: false, subSamples: 1 },
+        defocus: { enabled: false, extraSigma: 0 },
+        background: { enabled: false, level: 0, gradient: 0, gradientAngle: 0 },
+      },
+      sensor: {
+        readNoise: { enabled: false, sigma: 0 },
+        shotNoise: { enabled: false, scale: 0 },
+      },
+      dropouts: { mode: 'none', probability: 0, meanGoodFrames: 1, meanBadFrames: 1 },
     },
   };
 }

@@ -228,6 +228,13 @@ export interface LoopObserver {
   onFrameProcessed(observation: LoopObservation): void;
   /** Every frame the sensor produced for the loop, before delivery. */
   onSensorFrame?(frameId: number, captureTime: number): void;
+  /**
+   * Every frame the sensor was scheduled to produce and failed to deliver.
+   *
+   * For the record and the evaluator only. The algorithm is told nothing: it
+   * experiences the loss as a frame that never arrives.
+   */
+  onFrameDropped?(frameId: number, captureTime: number): void;
   /** Every command the mount applied, in application order. */
   onCommandApplied?(applied: AppliedCommandObservation): void;
 }
@@ -372,6 +379,8 @@ export class ClosedLoopRuntime {
   private commands: IssuedCommand[] = [];
   private events: LoopEvent[] = [];
   private framesDelivered = 0;
+  /** Scheduled frames the sensor failed to deliver during this run. */
+  private droppedFrames = 0;
   private blankBuffer: Uint8Array | null = null;
   private readonly onFrame: ClosedLoopOptions['onFrame'];
   private observer: LoopObserver | null;
@@ -444,6 +453,17 @@ export class ClosedLoopRuntime {
     return this.framesDelivered;
   }
 
+  /**
+   * Scheduled frames the sensor failed to deliver.
+   *
+   * Distinct from the display's superseded count, which is the interface
+   * choosing not to rasterize a frame it would immediately discard. This is the
+   * instrument not producing one.
+   */
+  public get framesDropped(): number {
+    return this.droppedFrames;
+  }
+
   public get cameraState(): CameraState {
     return this.camera;
   }
@@ -456,6 +476,7 @@ export class ClosedLoopRuntime {
     this.commands = [];
     this.events = [];
     this.framesDelivered = 0;
+    this.droppedFrames = 0;
     this.inFlight.clear();
     this.appliedSeen = this.engine.gimbal.appliedCommandCount;
   }
@@ -522,6 +543,22 @@ export class ClosedLoopRuntime {
       this.reportApplied();
       this.observer?.onSensorFrame?.(next, this.sensor.clock.captureTime(next));
       const observationMs = performance.now() - observationStarted;
+
+      // A frame the sensor failed to deliver is simply absent. The world has
+      // already been advanced to the instant it would have arrived, so time
+      // passes normally and the algorithm's own timeout logic sees exactly what
+      // a real terminal would: nothing, for one frame period.
+      //
+      // Nothing is injected to say so. Handing the tracker a "this frame is
+      // missing" flag would be telling it something a camera that produced no
+      // frame cannot tell anyone, and the algorithm's recovery behaviour would
+      // then be responding to a message rather than to an absence.
+      if (this.sensor.isFrameDropped(next)) {
+        this.droppedFrames += 1;
+        this.observer?.onFrameDropped?.(next, this.sensor.clock.captureTime(next));
+        this.capturedThrough = this.sensor.clock.captureTime(next);
+        continue;
+      }
 
       const sensorStarted = performance.now();
       const capture = this.sensor.captureFrame(this.sampler, next);

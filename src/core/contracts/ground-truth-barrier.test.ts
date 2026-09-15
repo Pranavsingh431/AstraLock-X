@@ -93,6 +93,29 @@ const probes: readonly Probe[] = [
     source: `import { VirtualCameraSensor } from '@/core/sensors';\nexport const probe = VirtualCameraSensor;\n`,
   },
   {
+    // Phase 7. The disturbance realization is the answer key to the pixels: the
+    // true platform attitude, the true beam wander, the true scintillation gain
+    // and the frame-drop schedule. A tracker that could read any of it would be
+    // told what it is supposed to be measuring.
+    path: join(probeDirectory, 'disturbance-import.ts'),
+    source: `import { DisturbanceStack } from '@/core/disturbance';\nexport const probe = DisturbanceStack;\n`,
+  },
+  {
+    path: join(probeDirectory, 'disturbance-stack-import.ts'),
+    source: `import { OrnsteinUhlenbeck } from '@/core/disturbance/processes';\nexport const probe = OrnsteinUhlenbeck;\n`,
+  },
+  {
+    // The configuration is barred too, not only the realization. Knowing that
+    // scintillation is on and how strong it is would let a tracker condition on
+    // the weather rather than measure it.
+    path: join(probeDirectory, 'disturbance-config-import.ts'),
+    source: `import { CLEAN_DISTURBANCES } from '@/core/contracts/disturbance';\nexport const probe = CLEAN_DISTURBANCES;\n`,
+  },
+  {
+    path: join(probeDirectory, 'disturbance-config-type-import.ts'),
+    source: `import type { DisturbanceConfig } from '@/core/contracts/disturbance';\nexport type Probe = DisturbanceConfig;\n`,
+  },
+  {
     path: join(probeDirectory, 'sensor-truth-import.ts'),
     source: `import type { SensorEvaluationTruth } from '@/core/sensors/sensor-truth';\nexport type Probe = SensorEvaluationTruth;\n`,
   },

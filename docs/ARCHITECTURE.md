@@ -264,3 +264,17 @@ The Tauri capability set is deliberately minimal: `core:default` only. No
 network, shell or filesystem permission is granted until a phase needs one. The
 content security policy allows no remote origins, which is what makes the
 offline requirement structural rather than aspirational.
+
+## Camera-observable disturbances (Phase 7)
+
+`src/core/disturbance/` is a privileged physical layer between world sampling
+and the authoritative `GRAY8` frame. It owns platform base attitude,
+propagation-style intensity effects, finite exposure, sensor noise and frame
+transport loss. The algorithm graph cannot import it: a tracker receives only
+the delivered frame, capture time, calibration and measured gimbal pose.
+
+Disturbance configuration is part of `SimulationConfig`, so it is serialized,
+fingerprinted and stored with the physical scenario. A second, evaluator-only
+stack reproduces the same frame-indexed realization to score it without feeding
+truth back into the runtime. The exact layer ordering, equations and limits are
+in [DISTURBANCE_MODEL.md](DISTURBANCE_MODEL.md).

@@ -455,16 +455,15 @@ Stated because the robust algorithm needs a real baseline to beat.
    though the NIS is computed and reported.
 7. **One track.** No multi-hypothesis association; a second bright object is
    simply ignored or steals the track outright.
-8. **Fixed thresholds.** The detector's threshold is a constant. On a sensor
-   with a varying background — which does not exist yet — it would need to
-   adapt.
+8. **Fixed thresholds.** The detector's threshold is a constant. Phase 7 now
+   supplies varying background and sensor noise, so the low-contrast scenarios
+   exercise this weakness rather than merely predicting it.
 9. **No compute-time model.** Algorithm latency is zero after a frame becomes
    available.
-10. **No link budget, no SNR.** The sensor has no noise model, so there is no
-    ratio to compute. Since Phase 5 `snr` is a `Measurement` reported as
-    `not-modelled` rather than as 0 dB — a real physical value meaning signal
-    equal to noise, and therefore a lie about a noiseless sensor. See
-    [METRICS.md](METRICS.md#na-and-unmodelled-semantics).
+10. **No calibrated link budget.** Phase 7 has a rigorously defined,
+    evaluator-only image SNR for its relative intensity model, but it is not a
+    radiometric FSOC link budget and is not available to the algorithm. See
+    [METRICS.md](METRICS.md#metrics-definition-v3-phase-7).
 
 Items 1, 3, 4, 5 and 6 are precisely what the robust algorithm is for, and
 [ASTRALOCK_PAT.md](ASTRALOCK_PAT.md) records how far it gets with each. Item 1 —

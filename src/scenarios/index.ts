@@ -20,6 +20,13 @@ import astralockStationary from './astralock-stationary.json';
 import cameraBoresight from './camera-boresight.json';
 import cameraOutsideFov from './camera-target-outside-fov.json';
 import circular from './circular.json';
+import distCombined from './dist-combined.json';
+import distDecoyEasy from './dist-decoy-easy.json';
+import distDecoyHard from './dist-decoy-hard.json';
+import distFrameLoss from './dist-frame-loss.json';
+import distLowContrast from './dist-low-contrast.json';
+import distVibration from './dist-vibration.json';
+import distVibrationExtreme from './dist-vibration-extreme.json';
 import gimbalBacklash from './gimbal-backlash.json';
 import gimbalLatency from './gimbal-latency.json';
 import gimbalStepResponse from './gimbal-step-response.json';
@@ -52,6 +59,13 @@ export const SCENARIO_IDS = [
   'astralock-maneuver',
   'astralock-short-loss',
   'astralock-handoff',
+  'dist-vibration',
+  'dist-vibration-extreme',
+  'dist-low-contrast',
+  'dist-frame-loss',
+  'dist-decoy-easy',
+  'dist-decoy-hard',
+  'dist-combined',
 ] as const;
 
 export type ScenarioId = (typeof SCENARIO_IDS)[number];
@@ -76,6 +90,13 @@ const RAW_SCENARIOS: Record<ScenarioId, unknown> = {
   'astralock-maneuver': astralockManeuver,
   'astralock-short-loss': astralockShortLoss,
   'astralock-handoff': astralockHandoff,
+  'dist-vibration': distVibration,
+  'dist-vibration-extreme': distVibrationExtreme,
+  'dist-low-contrast': distLowContrast,
+  'dist-frame-loss': distFrameLoss,
+  'dist-decoy-easy': distDecoyEasy,
+  'dist-decoy-hard': distDecoyHard,
+  'dist-combined': distCombined,
 };
 
 const cache = new Map<ScenarioId, SimulationConfig>();

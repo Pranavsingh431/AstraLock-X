@@ -445,3 +445,19 @@ own state transitions. A tracker can enter RECOVER and return without the
 evaluator ever registering a loss, and it can hold the lock condition while
 believing itself lost. Both are worth recording, and they are recorded
 separately.
+
+## Metrics definition v3 (Phase 7)
+
+Version 3 adds evaluator-only disturbance realization summaries: measured base
+and apparent-wander RMS, scintillation statistics, delivered-frame loss and
+longest burst, saturation fraction, and image-domain SNR. A `null` disturbance
+summary means no disturbance model existed for the run; it is not evidence that
+every effect measured zero.
+
+Image SNR is sampled at 4 Hz over the versioned square aperture. For a pixel
+`p`, `signal(p)` is the noiseless target contribution above analytic background
+and `noise(p)` is delivered minus noiseless intensity. The reported power ratio
+is `sum(signal²) / sum(noise²)`, in dB as `10 log10(ratio)`. It is absent when
+there is no stochastic noise or no aperture signal—never represented as infinity
+or fabricated as 0 dB. [ADR-0021](adr/0021-image-snr-is-defined-or-absent.md)
+records the decision.

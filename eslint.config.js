@@ -118,6 +118,32 @@ const GROUND_TRUTH_PATTERNS = [
       'Evaluation code scores a tracker from the outside and reads ground truth. A tracker importing it would create a leak path (ADR-0003).',
   },
   {
+    group: [
+      '@/core/disturbance',
+      '@/core/disturbance/**',
+      '**/core/disturbance',
+      '**/core/disturbance/**',
+    ],
+    allowTypeImports: false,
+    message:
+      'The disturbance realization is the answer key to the pixels: the true platform attitude, the true beam wander, the true scintillation gain and the frame-drop schedule. A tracker experiences all of it through the image and nothing else (ADR-0003, ADR-0019).',
+  },
+  {
+    group: [
+      '@/core/contracts/disturbance',
+      '@/core/contracts/disturbance.*',
+      '**/contracts/disturbance',
+      '**/contracts/disturbance.*',
+      './disturbance',
+      './disturbance.*',
+      '../disturbance',
+      '../disturbance.*',
+    ],
+    allowTypeImports: false,
+    message:
+      'Disturbance configuration describes the physics a tracker is being tested against. Reading it would let an algorithm condition on the weather instead of measuring it (ADR-0003, ADR-0019).',
+  },
+  {
     group: ['@/core/sensors', '@/core/sensors/**', '**/core/sensors', '**/core/sensors/**'],
     allowTypeImports: false,
     message:

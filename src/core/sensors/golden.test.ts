@@ -485,7 +485,7 @@ describe('L. reproducibility', () => {
   it('carries the configuration identifier on every frame', () => {
     const { sensor, sampler } = sensorFor([emitter({ x: 0, y: 1200, z: 0 })]);
     const { frame } = sensor.captureFrame(sampler, 3);
-    expect(frame.cameraConfigId).toContain('@v4');
+    expect(frame.cameraConfigId).toContain('@v5');
   });
 });
 

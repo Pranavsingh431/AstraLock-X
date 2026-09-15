@@ -19,11 +19,16 @@
  */
 
 import type { SimulationConfig } from '@/core/contracts/simulation';
+import { CLEAN_DISTURBANCES } from '@/core/contracts/disturbance';
+import { DisturbanceStack } from '@/core/disturbance';
+import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
+import type { WorldSampler } from '@/core/sensors/world-sampler';
+import { imageSnr } from './image-snr';
 import { cameraBasis, projectPoint, resolveIntrinsics } from '@/core/sensors/pinhole';
 import type { ResolvedIntrinsics } from '@/core/sensors/pinhole';
 import type { SimulationEngine } from '@/core/simulation/engine';
 
-import type { EvaluationSample } from './schema';
+import type { EvaluationSample, MetricsConfig } from './schema';
 
 /** A world-frame unit vector in East-North-Up. */
 export interface UnitVector {
@@ -83,6 +88,14 @@ export interface EvaluatorOptions {
   readonly config: SimulationConfig;
   /** Index of the designated target. Defaults to the first. */
   readonly designatedIndex?: number;
+  /**
+   * The definition being scored against.
+   *
+   * Only the image-SNR aperture is read from it, and only under definition v3;
+   * every threshold is applied later, over the raw samples, which is what keeps
+   * a recording rescorable under a different definition.
+   */
+  readonly metricsConfig?: MetricsConfig;
 }
 
 /** A detected centroid, in the image's continuous pixel coordinates. */
@@ -97,6 +110,53 @@ export class Evaluator {
   public readonly designatedIndex: number;
   private readonly pan: { readonly min: number; readonly max: number };
   private readonly tilt: { readonly min: number; readonly max: number };
+  /**
+   * The run's disturbances, or `null` when there are none.
+   *
+   * The evaluator needs these because **base attitude moves the camera**. The
+   * gimbal's own angles say where the mount is pointed relative to whatever it
+   * is bolted to; if that structure is vibrating, the optical axis in the world
+   * is somewhere else. Scoring against the gimbal alone would report a mount
+   * holding its aim perfectly while the target slid across the image.
+   *
+   * This is a second `DisturbanceStack` over the same seed and configuration as
+   * the sensor's. They agree by construction: every process is a pure function
+   * of the frame index, so two instances walking the same run cannot diverge.
+   */
+  private readonly disturbances: DisturbanceStack | null;
+  private readonly frameRate: number;
+  /**
+   * A sensor with every stochastic effect disabled, for measuring noise.
+   *
+   * Noise is defined as the difference between the delivered frame and the
+   * noiseless one, so the noiseless one has to exist. Rendering it is a second
+   * full frame, which is why it is only done on sampled frames — see
+   * {@link snrSampleInterval}.
+   *
+   * `null` when the run has no stochastic noise at all, in which case there is
+   * nothing to measure and the ratio is undefined by definition.
+   */
+  private cleanSensor: VirtualCameraSensor | null = null;
+  /**
+   * The deterministic background level at a pixel, in intensity counts.
+   *
+   * Analytic rather than rendered. The sensor takes its emitters from the world
+   * sampler, not from its own configuration, so a "background" frame rendered
+   * from a config with the beacons stripped would still contain them — and the
+   * signal would come out identically zero. The background is a pedestal plus an
+   * optional ramp, so computing it directly is both exact and cheaper.
+   */
+  private background: ((x: number, y: number) => number) | null = null;
+  private readonly snrAperture: number;
+  /**
+   * Frames between image-SNR measurements.
+   *
+   * SNR is reported as a distribution over the run, so sampling it costs
+   * resolution in that distribution and nothing else, while measuring it on
+   * every frame would add two full renders per frame to the recording path.
+   * Four hertz is far finer than any statistic in the report needs.
+   */
+  private readonly snrSampleInterval: number;
 
   constructor(options: EvaluatorOptions) {
     this.engine = options.engine;
@@ -107,6 +167,89 @@ export class Evaluator {
       min: options.config.gimbal.tilt.minAngle,
       max: options.config.gimbal.tilt.maxAngle,
     };
+    this.frameRate = options.config.camera.frameRate;
+    const stack = new DisturbanceStack(
+      options.config.disturbances,
+      options.config.seed,
+      options.config.camera.frameRate,
+    );
+    this.disturbances = stack.isClean ? null : stack;
+    this.snrAperture =
+      options.metricsConfig !== undefined && 'snrApertureRadiusPx' in options.metricsConfig
+        ? options.metricsConfig.snrApertureRadiusPx
+        : 12;
+    this.snrSampleInterval = Math.max(1, Math.round(options.config.camera.frameRate / 4));
+
+    if (stack.hasSensorNoise) {
+      // The reference renders keep every deterministic effect — attenuation,
+      // scintillation, exposure, defocus, background — and drop only the
+      // stochastic ones. Anything else would put a deterministic difference
+      // into the "noise" image and inflate it.
+      const deterministic = {
+        ...options.config.disturbances,
+        sensor: CLEAN_DISTURBANCES.sensor,
+      };
+      this.cleanSensor = new VirtualCameraSensor({
+        config: { ...options.config, disturbances: deterministic },
+        poolCapacity: 2,
+      });
+
+      const camera = options.config.camera;
+      const maxValue = 255;
+      const pedestal = camera.backgroundLevel * maxValue;
+      const backgroundStack = stack;
+      this.background = (x, y) =>
+        pedestal +
+        (backgroundStack.hasBackground
+          ? backgroundStack.backgroundAt(x, y, camera.width, camera.height, maxValue)
+          : 0);
+    }
+  }
+
+  /**
+   * Image SNR for one frame, or `null` when it is not defined or not sampled.
+   *
+   * Undefined when the run has no stochastic noise: the noise image is
+   * identically zero and the ratio has no value. Never reported as 0 dB, which
+   * is what Phase 5 removed.
+   */
+  public measureSnr(
+    sampler: WorldSampler,
+    frameIndex: number,
+    noisy: { data: Uint8Array; width: number; height: number },
+    centreX: number | null,
+    centreY: number | null,
+  ): { snrDb: number | null; saturatedFraction: number } | null {
+    if (this.cleanSensor === null || this.background === null) return null;
+    if (frameIndex % this.snrSampleInterval !== 0) return null;
+
+    let saturated = 0;
+    for (const value of noisy.data) if (value >= 255) saturated += 1;
+    const saturatedFraction = saturated / noisy.data.length;
+
+    const cleanCapture = this.cleanSensor.captureFrame(sampler, frameIndex);
+    try {
+      const result = imageSnr(
+        noisy,
+        {
+          data: cleanCapture.frame.data as Uint8Array,
+          width: cleanCapture.frame.width,
+          height: cleanCapture.frame.height,
+        },
+        this.background,
+        centreX,
+        centreY,
+        this.snrAperture,
+      );
+      return { snrDb: result.snrDb, saturatedFraction };
+    } finally {
+      cleanCapture.release();
+    }
+  }
+
+  /** The disturbance realization at a frame, or `null` on a clean run. */
+  public disturbanceAt(frameIndex: number, captureTime: number) {
+    return this.disturbances?.realizationAt(frameIndex, captureTime) ?? null;
   }
 
   /** The principal point, for reporting distance-from-centre of a detection. */
@@ -131,7 +274,17 @@ export class Evaluator {
     readonly detectionOnOtherEmitter: boolean;
   } {
     const pose = this.engine.gimbalPoseAt(simulationTime);
-    const basis = cameraBasis(pose.azimuth, pose.elevation);
+    // The optical axis is the base attitude composed with the gimbal's output.
+    // On a clean run the base contributes nothing and this is the Phase-6 axis
+    // exactly.
+    const base =
+      this.disturbances === null
+        ? { azimuth: 0, elevation: 0 }
+        : this.disturbances.baseAttitudeAt(
+            simulationTime,
+            Math.max(0, Math.round(simulationTime * this.frameRate)),
+          );
+    const basis = cameraBasis(pose.azimuth + base.azimuth, pose.elevation + base.elevation);
     const opticalAxis: UnitVector = {
       east: basis.forward.x,
       north: basis.forward.y,
@@ -241,8 +394,22 @@ export class Evaluator {
     captureTime: number,
     patState: string,
     detection: DetectedPoint | null,
+    /** The delivered pixels and the sampler behind them, for image SNR. */
+    image: {
+      readonly sampler: WorldSampler;
+      readonly data: Uint8Array;
+      readonly width: number;
+      readonly height: number;
+    } | null = null,
   ): EvaluationSample {
     const frame = this.at(captureTime, detection);
+    const realization = this.disturbanceAt(frameId, captureTime);
+    // Measured about where the target's light actually landed, which is where a
+    // receiver would put its aperture.
+    const snr =
+      image === null
+        ? null
+        : this.measureSnr(image.sampler, frameId, image, frame.trueImageX, frame.trueImageY);
     return {
       frame_id: frameId,
       capture_time_s: captureTime,
@@ -264,6 +431,16 @@ export class Evaluator {
       truth_detector_centroid_error_px: frame.centroidError,
       truth_detection_on_other_emitter: frame.detectionOnOtherEmitter,
       truth_other_emitters_in_image: frame.otherEmittersInImage,
+
+      // The disturbance realization behind this frame. Null on a clean run,
+      // which is what "no such thing was modelled" looks like in a column.
+      truth_base_azimuth_rad: realization?.base.azimuth ?? null,
+      truth_base_elevation_rad: realization?.base.elevation ?? null,
+      truth_wander_azimuth_rad: realization?.wander.azimuth ?? null,
+      truth_wander_elevation_rad: realization?.wander.elevation ?? null,
+      truth_scintillation_gain: realization?.scintillation ?? null,
+      truth_image_snr_db: snr?.snrDb ?? null,
+      truth_saturated_fraction: snr?.saturatedFraction ?? null,
     };
   }
 

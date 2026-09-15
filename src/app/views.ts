@@ -42,11 +42,11 @@ export interface ViewDefinition {
 /**
  * Registry of views.
  *
- * Mission Control became real in Phase 1: it observes the simulation. The rest
- * are still placeholders and each says so. The descriptions of the unbuilt ones
- * are plans rather than claims — a view with nothing measured to show stays
- * empty, because a placeholder full of invented numbers is worse than a blank
- * panel and has a way of surviving into a release.
+ * Mission Control and the Phase 7 disturbance subset of Scenario Lab are real.
+ * The remaining views are placeholders and each says so. Their descriptions are
+ * plans rather than claims — a view with nothing measured to show stays empty,
+ * because a placeholder full of invented numbers is worse than a blank panel
+ * and has a way of surviving into a release.
  */
 export const VIEWS: readonly ViewDefinition[] = [
   {
@@ -67,16 +67,16 @@ export const VIEWS: readonly ViewDefinition[] = [
     id: 'scenario-lab',
     label: 'Scenario Lab',
     icon: FlaskConical,
-    status: 'not-implemented',
-    summary: 'Author, validate and store experiment configurations.',
-    plannedPhase: 'Phase 2',
+    status: 'implemented',
+    summary: 'Edit the physical disturbance configuration of the active scenario.',
+    plannedPhase: 'Phase 7',
     plannedCapabilities: [
-      'Form-based editing of platform, target, camera, gimbal and atmosphere settings',
-      'Live validation against the SimulationConfig schema, with field-level errors',
-      'Seed selection, including sweeps for repeated trials',
-      'Save and load scenarios as files on disk',
+      'Apply a named physical-disturbance preset to the active scenario',
+      'Edit platform, optical, sensor and frame-dropout parameters in engineering units',
+      'Validate the edited scenario through the SimulationConfig schema',
+      'Refuse scenario changes while an experiment is recording',
     ],
-    blockedBy: ['Simulation core'],
+    blockedBy: [],
   },
   {
     id: 'astrabench',

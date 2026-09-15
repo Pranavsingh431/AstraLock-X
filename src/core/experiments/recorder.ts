@@ -40,6 +40,7 @@ import type {
 } from '@/core/runtime/closed-loop';
 import type { SimulationEngine } from '@/core/simulation/engine';
 import { resolveIntrinsics } from '@/core/sensors/pinhole';
+import type { WorldSampler } from '@/core/sensors/world-sampler';
 
 import { Evaluator } from './evaluation';
 import { fingerprint } from './fingerprint';
@@ -108,6 +109,14 @@ export interface RecorderOptions {
    * simulation step, which may never come if the run is paused.
    */
   readonly onFailure?: ((message: string) => void) | undefined;
+  /**
+   * The world sampler the sensor is driven by.
+   *
+   * Used only to render the noiseless reference frames that image SNR is
+   * measured against. Absent means no SNR is measured and the column is null,
+   * which is what every Phase 5 and Phase 6 caller gets.
+   */
+  readonly sampler?: WorldSampler | undefined;
   /** Queued bytes above which to ask for backpressure. Defaults to {@link BACKPRESSURE_BYTES}. */
   readonly backpressureBytes?: number | undefined;
   /** Overridable so tests get deterministic ids and timestamps. */
@@ -177,6 +186,8 @@ export class ExperimentRecorder implements LoopObserver {
   private telemetryRows = 0;
   private evaluationRows = 0;
   private sensorFramesGenerated = 0;
+  /** The run of dropped frames currently open, or `null` when delivery is healthy. */
+  private dropBurst: { firstFrame: number; firstTime: number; count: number } | null = null;
   private lastGeneratedCaptureTime = Number.NEGATIVE_INFINITY;
 
   // Bounded batches of already-serialised rows.
@@ -220,6 +231,7 @@ export class ExperimentRecorder implements LoopObserver {
       engine: options.engine,
       config: options.config,
       designatedIndex: options.designatedTargetIndex ?? 0,
+      metricsConfig: this.metricsConfig,
     });
     this.liveLock = new LockAnalyser(this.metricsConfig);
   }
@@ -369,6 +381,44 @@ export class ExperimentRecorder implements LoopObserver {
   }
 
   /**
+   * A frame the sensor failed to deliver.
+   *
+   * Accumulated into a burst and written as **one** event when delivery
+   * resumes. Phase 5's event log is change-only for a reason: a scenario losing
+   * a fifth of its frames would otherwise put a thousand identical rows into a
+   * ninety-second run, and drown every state transition in them.
+   *
+   * The count and the first frame together reconstruct the whole pattern, and
+   * the burst length is the quantity that actually matters — a single dropped
+   * frame is coasted over without noticing, and a run of them is not.
+   */
+  public onFrameDropped(frameId: number, captureTime: number): void {
+    if (this.state !== 'running') return;
+    if (this.dropBurst === null) {
+      this.dropBurst = { firstFrame: frameId, firstTime: captureTime, count: 1 };
+    } else {
+      this.dropBurst.count += 1;
+    }
+  }
+
+  /** Writes the open drop burst, if any, as a single event. */
+  private flushDropBurst(): void {
+    const burst = this.dropBurst;
+    if (burst === null) return;
+    this.dropBurst = null;
+    // Stamped when the burst *closed*, not when it began. The event log is
+    // strictly non-decreasing in simulated time, and a burst is only known to
+    // be a burst once delivery resumes — so back-dating it to its first frame
+    // would write the log out of order. The start is carried in the detail,
+    // which loses nothing.
+    this.recordEvent('frames-dropped', {
+      firstFrame: burst.firstFrame,
+      firstCaptureTime: burst.firstTime,
+      frames: burst.count,
+    });
+  }
+
+  /**
    * Frames generated with capture time in [start, end).
    *
    * Every frame generated while recording was captured after the start instant
@@ -515,12 +565,24 @@ export class ExperimentRecorder implements LoopObserver {
     this.telemetryBatch.push(telemetryRow(telemetry));
     this.telemetryRows += 1;
 
+    // Delivery has resumed, so any open loss burst is now a closed fact.
+    this.flushDropBurst();
+
     // --- Privileged evaluation, at the frame's own capture instant.
+    const sampler = this.options.sampler;
     const evaluation = this.evaluator.sample(
       frame.frameId,
       frame.captureTime,
       mode,
       detection === null ? null : { x: detection.x, y: detection.y },
+      sampler === undefined
+        ? null
+        : {
+            sampler,
+            data: frame.data as Uint8Array,
+            width: frame.width,
+            height: frame.height,
+          },
     );
     this.evaluationBatch.push(evaluationRow(evaluation));
     this.evaluationRows += 1;
@@ -665,6 +727,9 @@ export class ExperimentRecorder implements LoopObserver {
     if (this.state !== 'running') {
       throw new Error(`Run ${this.runId} is ${this.state}, not running`);
     }
+    // A run that ends while frames are still being lost still has to record
+    // that they were lost, or the last burst disappears from the summary.
+    this.flushDropBurst();
     this.recordEvent(event, { reason });
     this.endTime = this.engine.time;
     this.endStateHash = this.engine.stateHash();

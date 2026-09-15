@@ -15,7 +15,8 @@
 
 import { create } from 'zustand';
 
-import type { SimulationConfig } from '@/core/contracts/simulation';
+import type { DisturbanceConfig } from '@/core/contracts/disturbance';
+import { type SimulationConfig, parseSimulationConfig } from '@/core/contracts/simulation';
 import {
   type PlaybackSpeed,
   type PlaybackStatus,
@@ -230,6 +231,10 @@ export interface SimulationStoreState {
    * assistance on screen at all. When hidden it is not computed either.
    */
   readonly showLiveEvaluation: boolean;
+  /** Whether the privileged disturbance realization readout is shown. */
+  readonly showDisturbanceTruth: boolean;
+  /** Frames the sensor failed to deliver so far in this run. */
+  readonly framesDropped: number;
   /** Live figures from ground truth, or `null` when hidden. Never routed to the algorithm. */
   readonly liveEvaluation: LiveEvaluationReadout | null;
 
@@ -270,6 +275,14 @@ export interface SimulationStoreState {
   /** Ends the recording without treating it as a result. */
   abortExperiment: (reason?: TerminationReason) => Promise<void>;
   setLiveEvaluation: (visible: boolean) => void;
+  setDisturbanceTruthVisible: (visible: boolean) => void;
+  /**
+   * Replaces the scenario's disturbances, rebuilding the world.
+   *
+   * Refused while a recording is open: changing the physics under an experiment
+   * would splice two different worlds into one record.
+   */
+  setDisturbances: (disturbances: DisturbanceConfig) => void;
   /** Whether an experiment is currently recording. */
   isRecording: () => boolean;
 }
@@ -426,6 +439,7 @@ type SessionSnapshot = Pick<
   | 'framesScheduled'
   | 'framesRasterized'
   | 'framesSupersededForDisplay'
+  | 'framesDropped'
   | 'commandedPan'
   | 'commandedTilt'
   | 'measuredPan'
@@ -463,6 +477,7 @@ function snapshotState(active: Session): SessionSnapshot {
     framesScheduled: active.sensor.framesScheduled,
     framesRasterized: active.sensor.framesRasterized,
     framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
+    framesDropped: active.sensor.framesDropped,
     ...actuatorState(active),
   };
 }
@@ -612,6 +627,9 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   recorderError: null,
   runtimeError: null,
   showLiveEvaluation: true,
+  // Off by default, like the other privileged readouts: an operator should have
+  // to ask to see the answer key.
+  showDisturbanceTruth: false,
   liveEvaluation: null,
   ...snapshotState(initialSession),
 
@@ -766,6 +784,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       framesScheduled: active.sensor.framesScheduled,
       framesRasterized: active.sensor.framesRasterized,
       framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
+      framesDropped: active.sensor.framesDropped,
       ...sensorUpdate,
       ...actuator,
       ...liveEvaluation(active, get().showLiveEvaluation, sensorUpdate.patMode ?? get().patMode),
@@ -884,15 +903,22 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     if (active.recorder !== null || get().recorderBusy) return;
 
     const info = readAppInfo();
+    const recordedPlugin = selectedPlugin(active.algorithmId);
     const recorder = new ExperimentRecorder({
       storage: createStorage(),
       engine: active.engine,
       config: active.engine.config,
       scenarioId: get().scenarioId,
-      algorithmId: baselineKfPidPat.manifest.id,
-      algorithmVersion: baselineKfPidPat.manifest.version,
-      algorithmConfig: DEFAULT_BASELINE_PAT_CONFIG,
+      // The tracker the operator actually chose. Recording the baseline's id
+      // for an AstraLock-X run would mislabel the experiment, and the label is
+      // most of what makes two runs comparable.
+      algorithmId: recordedPlugin.manifest.id,
+      algorithmVersion: recordedPlugin.manifest.version,
+      algorithmConfig: selectedConfig(active.algorithmId),
       metricsConfig: DEFAULT_METRICS_CONFIG,
+      // Lets the evaluator render the noiseless reference frames that image
+      // SNR is measured against.
+      sampler: active.sampler,
       applicationVersion: info.version,
       sourceCommit: info.sourceCommit,
       sourceTreeModified: info.sourceTreeModified,
@@ -971,6 +997,25 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     set({ algorithmId: id, patMode: null, algorithmDebug: null });
   },
 
+  setDisturbanceTruthVisible: (visible) => {
+    set({ showDisturbanceTruth: visible });
+  },
+
+  setDisturbances: (disturbances) => {
+    const active = requireSession();
+    if (active.recorder !== null) {
+      set({
+        recorderError:
+          'Disturbances cannot change while an experiment is recording: the run would span two different worlds.',
+      });
+      return;
+    }
+    // Parsed rather than trusted, exactly as a scenario from disk is. A value
+    // typed into a form is no more validated than one read off a file.
+    const parsed = parseSimulationConfig({ ...active.engine.config, disturbances });
+    get().loadConfig(parsed, get().scenarioId);
+  },
+
   setLiveEvaluation: (visible) => {
     const active = requireSession();
     set({ showLiveEvaluation: visible, ...liveEvaluation(active, visible, get().patMode) });
@@ -1045,6 +1090,7 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       framesScheduled: active.sensor.framesScheduled,
       framesRasterized: active.sensor.framesRasterized,
       framesSupersededForDisplay: active.sensor.framesSupersededForDisplay,
+      framesDropped: active.sensor.framesDropped,
       ...sensorUpdate,
       ...actuator,
       ...liveEvaluation(active, get().showLiveEvaluation, sensorUpdate.patMode ?? get().patMode),

@@ -38,7 +38,7 @@ beforeEach(() => {
  * Mission Control became real in Phase 1, so the placeholder assertions moved
  * to a view that is genuinely still unbuilt rather than being deleted.
  */
-const PLACEHOLDER_VIEW = 'scenario-lab' as const;
+const PLACEHOLDER_VIEW = 'astrabench' as const;
 
 describe('AppShell', () => {
   it('opens on the default view', () => {

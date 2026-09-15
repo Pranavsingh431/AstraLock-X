@@ -19,6 +19,8 @@ import { brandAsGroundTruth } from '@/core/contracts/ground-truth';
 import type { GroundTruthTainted } from '@/core/contracts/isolation';
 import type { Meters, Radians, Seconds } from '@/core/contracts/units';
 
+import type { FrameDisturbance } from '@/core/disturbance';
+
 import type { EmitterId } from './emitters';
 import type { EmitterVisibility } from './pinhole';
 
@@ -42,6 +44,18 @@ export interface EmitterProjectionTruth extends GroundTruthTainted {
    */
   readonly imageX: number | null;
   readonly imageY: number | null;
+  /**
+   * Where the emitter's light actually landed, after apparent angular wander.
+   *
+   * Equal to `imageX`/`imageY` whenever wander is off, which is every run before
+   * Phase 7 and every clean run since. The pair is kept separate because the two
+   * answer different questions and a single field would silently merge them: the
+   * geometric centre says where the emitter *is*, which is what pointing error
+   * is measured against, and the apparent centre says where its light *arrived*,
+   * which is the best a centroid algorithm could possibly do.
+   */
+  readonly apparentImageX: number | null;
+  readonly apparentImageY: number | null;
   /** True straight-line distance from the camera. */
   readonly range: Meters;
   /** True bearing of the emitter relative to the camera boresight. */
@@ -64,6 +78,15 @@ export interface SensorEvaluationTruth extends GroundTruthTainted {
   readonly cameraPositionEast: Meters;
   readonly cameraPositionNorth: Meters;
   readonly cameraPositionUp: Meters;
+  /**
+   * The disturbance realization behind this frame, or `null` on a clean run.
+   *
+   * The platform attitude that was added to the mount's own pointing, the
+   * apparent angular displacement of the beacon, and the scintillation gain.
+   * Scalars only: the per-pixel noise field is reproducible from the seed and
+   * the frame index, so storing it would turn an experiment record into a video.
+   */
+  readonly disturbance: FrameDisturbance | null;
   readonly projections: readonly EmitterProjectionTruth[];
 }
 

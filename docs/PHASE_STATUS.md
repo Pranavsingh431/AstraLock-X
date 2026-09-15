@@ -1307,7 +1307,7 @@ Recorder overhead +3.1 % (median of three interleaved runs); writer alone
   `contracts/telemetry.ts` are unused and not yet reconciled with the Phase 5
   schema.
 
-### Not started
+### Not started at the Phase 6 checkpoint
 
 No IMM, constant-acceleration model, beacon identity, AI verifier, adaptive
 search, predictive recovery, handoff, feed-forward control, disturbances, sensor
@@ -1443,6 +1443,44 @@ must be a non-negative integer, received -5200`. The replacement runtime
 
 ### Not started
 
-No coded beacon identification, AI/ONNX verifier, atmospheric disturbance
-engine, sensor-noise engine, AstraBench batch benchmarking, FailureHunter,
-replay, HIL or final UI redesign was added. Phase 7 has not been started.
+No coded beacon identification, AI/ONNX verifier, AstraBench batch
+benchmarking, FailureHunter, replay, HIL or final UI redesign had been added.
+
+## Phase 7 — physically parameterized disturbance engine
+
+Phase 7 adds deterministic, **camera-observable** platform, optical, sensor and
+frame-transport disturbances to physical scenario schema v5. The clean scenario
+path remains the original Phase 6 rasterizer; historical v4 scenarios migrate
+to an explicit clean configuration and remain recomputable.
+
+The implemented chain is: base attitude and apparent angular wander; path
+attenuation and correlated scintillation; finite-exposure integration, PSF
+broadening and background; shot/read noise, clipping and GRAY8 quantisation;
+then true missing-frame transport dropout. Clutter is represented by real scene
+emitters. Algorithms receive only legitimate camera frames and measured
+gimbal-relative pose—never a realization, SNR or truth state. The evaluator has
+a separate one-way truth tap for metrics and reports.
+
+Seven disturbed scenarios cover normal and extreme vibration, low contrast,
+bursty loss, easy and plausible decoys, and combined stress. The hard-decoy
+scenario deliberately demonstrates that the existing non-identity algorithms
+can false-lock; no Phase 7 algorithm change conceals that weakness.
+
+### Local Phase 7 verification
+
+| Evidence                                                    | Result                                                                                                                    |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Clean-mode regression                                       | 13 passed                                                                                                                 |
+| Contracts, stochastic processes, optics and image formation | 122 passed                                                                                                                |
+| Paired closed-loop disturbance scenarios                    | 20 passed                                                                                                                 |
+| Five declared seeds across low contrast and combined stress | 9 passed                                                                                                                  |
+| Throughput and bounded-memory checks                        | 10 passed                                                                                                                 |
+| TypeScript format, lint, typecheck and production build     | passed locally                                                                                                            |
+| Rust `fmt --check`, Clippy `-D warnings`, and tests         | passed locally; 5 Rust tests                                                                                              |
+| Native macOS executable and `.app`                          | built and launched locally                                                                                                |
+| macOS DMG                                                   | produced with Tauri's generated non-GUI packager; Finder cosmetic scripting is unavailable to this automation environment |
+
+The detailed model, assumptions and explicitly excluded full-wave-optics claims
+are in [DISTURBANCE_MODEL.md](DISTURBANCE_MODEL.md). The local completion commit
+and pending remote-CI status are recorded in
+[OVERNIGHT_STATUS.md](OVERNIGHT_STATUS.md).

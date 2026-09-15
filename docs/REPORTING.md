@@ -142,3 +142,13 @@ otherwise it is instantaneous, and confirmed lock, retention and frames read
 a test shows it acquiring and holding with the panel hidden.
 
 The autonomy panel shows the current detection's SNR as **Not modelled**.
+
+## Phase 7 disturbance reporting
+
+Completed Phase 7 reports add the exact disturbance scenario configuration and
+an evaluator-measured realization section. They distinguish requested settings
+from what the seeded run delivered, show image-domain SNR only when it is
+defined, and show false-lock figures only when a competing source was actually
+in the image. Earlier reports remain readable: their absent disturbance block is
+labelled as not modelled rather than a clean measurement. Report generation and
+offline recomputation both consume the same versioned raw records.

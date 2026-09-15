@@ -69,14 +69,14 @@ serves a test, the interactive UI and a future headless benchmark runner
 
 ## Views
 
-| View            | Purpose                                       | Status                    |
-| --------------- | --------------------------------------------- | ------------------------- |
-| Mission Control | Live view of a running experiment             | Not implemented (Phase 6) |
-| Scenario Lab    | Author and validate experiment configurations | Not implemented (Phase 2) |
-| AstraBench      | Compare algorithms across scenarios and seeds | Not implemented (Phase 5) |
-| Replay          | Step through a completed run                  | Not implemented (Phase 5) |
-| Calibration     | Estimate intrinsics and gimbal alignment      | Not implemented (Phase 4) |
-| Reports         | Export experiment summaries                   | Not implemented (Phase 5) |
+| View            | Purpose                                       | Status                                      |
+| --------------- | --------------------------------------------- | ------------------------------------------- |
+| Mission Control | Live view of a running experiment             | Disturbance status added (Phase 7)          |
+| Scenario Lab    | Author and validate experiment configurations | Physical disturbance editor added (Phase 7) |
+| AstraBench      | Compare algorithms across scenarios and seeds | Not implemented (Phase 5)                   |
+| Replay          | Step through a completed run                  | Not implemented (Phase 5)                   |
+| Calibration     | Estimate intrinsics and gimbal alignment      | Not implemented (Phase 4)                   |
+| Reports         | Export experiment summaries                   | Not implemented (Phase 5)                   |
 
 ## Getting started
 
@@ -113,6 +113,7 @@ pnpm verify
 - [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) — recording a run: lifecycle, artifacts, run identity, storage, recomputation and reproducibility
 - [docs/METRICS.md](docs/METRICS.md) — every KPI formula, denominator, unit and N/A rule
 - [docs/REPORTING.md](docs/REPORTING.md) — the generated offline report and the Reports screen
+- [docs/DISTURBANCE_MODEL.md](docs/DISTURBANCE_MODEL.md) — camera-observable platform, propagation-style, sensor and transport disturbances
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — setup, commands, conventions
 - [docs/PHASE_STATUS.md](docs/PHASE_STATUS.md) — what works, what does not
 - [docs/adr/](docs/adr/) — why things are the way they are

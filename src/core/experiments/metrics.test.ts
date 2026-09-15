@@ -53,6 +53,13 @@ const at = (time: number, patch: Partial<EvaluationSample> = {}): EvaluationSamp
   truth_detector_centroid_error_px: null,
   truth_detection_on_other_emitter: false,
   truth_other_emitters_in_image: 0,
+  truth_base_azimuth_rad: null,
+  truth_base_elevation_rad: null,
+  truth_wander_azimuth_rad: null,
+  truth_wander_elevation_rad: null,
+  truth_scintillation_gain: null,
+  truth_image_snr_db: null,
+  truth_saturated_fraction: null,
   ...patch,
 });
 

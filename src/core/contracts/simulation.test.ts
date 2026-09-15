@@ -39,7 +39,7 @@ describe('parseSimulationConfig', () => {
 
   it('rejects a missing section', () => {
     const raw = makeValidRawConfig();
-    delete raw['atmosphere'];
+    delete raw['disturbances'];
     expect(() => parseSimulationConfig(raw)).toThrow();
   });
 

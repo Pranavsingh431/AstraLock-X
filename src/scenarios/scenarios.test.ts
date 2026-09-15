@@ -289,12 +289,16 @@ describe('invalid scenarios are refused', () => {
     expect(safeParseSimulationConfig(raw).success).toBe(false);
   });
 
-  it.each([1, 2, 3, 5])('rejects schema version %i rather than guessing a migration', (version) => {
+  it.each([1, 2, 3, 6])('rejects schema version %i rather than guessing a migration', (version) => {
     // Version 1 declared a start position rather than a trajectory; version 2 a
     // focal length rather than a field of view; version 3 a static boresight
     // rather than an actuator. Inventing the missing half would be inventing
     // the experiment or the instrument, and a future version cannot be
     // understood at all.
+    //
+    // Version 4 is the single exception and is migrated, because the only thing
+    // it is missing is a disturbance block, and "no disturbances" is what a
+    // version-4 run provably had rather than a value someone has to choose.
     const raw = makeValidRawConfig();
     raw['schemaVersion'] = version;
     expect(safeParseSimulationConfig(raw).success).toBe(false);

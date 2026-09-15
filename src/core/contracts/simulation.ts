@@ -11,14 +11,9 @@
 
 import { z } from 'zod';
 
+import { CLEAN_DISTURBANCES, type DisturbanceConfig, disturbanceConfigSchema } from './disturbance';
 import type { Vec3 } from './geometry';
-import {
-  nonNegativeNumber,
-  positiveNumber,
-  tagged,
-  unitIntervalNumber,
-  vec3Schema,
-} from './schema';
+import { positiveNumber, tagged, unitIntervalNumber, vec3Schema } from './schema';
 import {
   type GimbalConfig,
   gimbalConfigSchema,
@@ -34,7 +29,6 @@ import type {
   Normalized,
   Pixels,
   Radians,
-  RadiansPerSecond,
   Seconds,
   Watts,
 } from './units';
@@ -63,13 +57,22 @@ export const MAX_SIMULATION_SEED = 0xffff_ffff;
  * and replaces a target's bare `beaconPower` with a beacon that has apparent
  * optical properties. Version 4 (Phase 3) replaces the static mount with a
  * dynamic actuator, and consolidates initial pointing — previously declared in
- * three places — into the gimbal's own axis angles.
+ * three places — into the gimbal's own axis angles. Version 5 (Phase 7) adds
+ * the `disturbances` block and drops five placeholder fields that declared
+ * effects the simulator never produced.
  *
- * Older documents are rejected rather than migrated. Guessing a field of view
- * for a config that never specified one would be inventing the instrument, in
- * the same way that guessing a trajectory would be inventing the experiment.
+ * Older documents are rejected rather than migrated, with **one** exception,
+ * version 4 to version 5. Guessing a field of view for a config that never
+ * specified one would be inventing the instrument. Inserting "no disturbances"
+ * into a version-4 document is not a guess: a version-4 simulator could not
+ * produce a disturbance, so a version-4 scenario demonstrably ran with none.
+ * Recording what was already true is migration; the rejected cases were all
+ * inventions. See {@link migrateScenarioDocument}.
  */
-export const SIMULATION_CONFIG_SCHEMA_VERSION = 4;
+export const SIMULATION_CONFIG_SCHEMA_VERSION = 5;
+
+/** The one older version {@link migrateScenarioDocument} can read. */
+export const MIGRATABLE_SCENARIO_VERSION = 4;
 
 /**
  * Largest image dimension a scenario may ask for.
@@ -97,15 +100,6 @@ export function simulationSeed(value: number): SimulationSeed {
 export interface PlatformConfig {
   readonly initialPosition: Vec3<Meters>;
   readonly initialVelocity: Vec3<MetersPerSecond>;
-  /**
-   * RMS angular disturbance injected at the gimbal base, per axis.
-   *
-   * Declared here but **not modelled in Phase 1**: base motion belongs with the
-   * gimbal and sensor models. See docs/SIMULATION.md.
-   */
-  readonly baseDisturbanceRms: RadiansPerSecond;
-  /** Corner frequency of the disturbance spectrum. Not modelled in Phase 1. */
-  readonly baseDisturbanceBandwidth: Hertz;
 }
 
 /** One target in the scenario. */
@@ -200,33 +194,12 @@ export interface CameraConfig {
   readonly exposure: Seconds;
   readonly gain: number;
   readonly format: PixelFormat;
-  /**
-   * RMS read noise in electrons. Declared, **not modelled in Phase 2** — the
-   * sensor is ideal and noiseless. See docs/SENSOR_MODEL.md.
-   */
-  readonly readNoiseElectrons: number;
-  /** Full-well capacity in electrons. Declared, not modelled in Phase 2. */
-  readonly fullWellElectrons: number;
-  /** Per-frame dropout probability. Declared, not modelled in Phase 2. */
-  readonly dropoutProbability: Normalized;
-}
-
-/** Propagation conditions along the optical path. */
-export interface AtmosphereConfig {
-  /**
-   * Refractive-index structure constant Cn^2, in m^(-2/3). Sets scintillation
-   * depth and angle-of-arrival jitter; typical daytime near-ground values are
-   * around 1e-14.
-   */
-  readonly refractiveIndexStructure: number;
-  /** Meteorological visibility, which drives atmospheric attenuation. */
-  readonly visibility: Meters;
 }
 
 /** Complete, self-contained description of one experiment. */
 export interface SimulationConfig {
   /** Bumped whenever this shape changes, so stored scenarios stay readable. */
-  readonly schemaVersion: 4;
+  readonly schemaVersion: 5;
   readonly id: string;
   readonly name: string;
   readonly seed: SimulationSeed;
@@ -243,7 +216,16 @@ export interface SimulationConfig {
   readonly targets: readonly TargetConfig[];
   readonly camera: CameraConfig;
   readonly gimbal: GimbalConfig;
-  readonly atmosphere: AtmosphereConfig;
+  /**
+   * Physical disturbances acting on this run.
+   *
+   * Replaces version 4's `atmosphere`, which declared a refractive-index
+   * structure constant and a meteorological visibility that nothing read. Those
+   * are inputs to a propagation model this project does not run; carrying them
+   * implied a fidelity that did not exist. What is here instead are the
+   * camera-observable effects that are actually computed.
+   */
+  readonly disturbances: DisturbanceConfig;
 }
 
 // --- Validation -------------------------------------------------------------
@@ -268,8 +250,6 @@ export const simulationConfigSchema = z.strictObject({
   platform: z.strictObject({
     initialPosition: vec3Schema<Meters>(),
     initialVelocity: vec3Schema<MetersPerSecond>(),
-    baseDisturbanceRms: tagged<RadiansPerSecond>(nonNegativeNumber),
-    baseDisturbanceBandwidth: tagged<Hertz>(positiveNumber),
   }),
 
   targets: z
@@ -311,9 +291,6 @@ export const simulationConfigSchema = z.strictObject({
       exposure: tagged<Seconds>(positiveNumber),
       gain: positiveNumber,
       format: z.enum(['mono8', 'mono16']),
-      readNoiseElectrons: nonNegativeNumber,
-      fullWellElectrons: positiveNumber,
-      dropoutProbability: tagged<Normalized>(unitIntervalNumber),
     })
     .refine((camera) => camera.nearRange < camera.farRange, {
       error: 'Camera nearRange must be strictly less than farRange.',
@@ -334,10 +311,7 @@ export const simulationConfigSchema = z.strictObject({
 
   gimbal: gimbalConfigSchema,
 
-  atmosphere: z.strictObject({
-    refractiveIndexStructure: nonNegativeNumber,
-    visibility: tagged<Meters>(positiveNumber),
-  }),
+  disturbances: disturbanceConfigSchema,
 });
 
 /**
@@ -376,15 +350,73 @@ export const validatedSimulationConfigSchema = simulationConfigSchema
   ) satisfies z.ZodType<SimulationConfig, unknown>;
 
 /**
- * Parses an untrusted config.
+ * Brings a version-4 scenario document up to version 5.
+ *
+ * Version 4 documents are the ones stored inside every Phase 3 to Phase 6
+ * experiment, and those runs must stay re-runnable: a recorded experiment whose
+ * scenario can no longer be loaded is no longer reproducible, which is most of
+ * what the recording was for.
+ *
+ * Two things happen, and neither invents anything:
+ *
+ *  - `disturbances` is set to {@link CLEAN_DISTURBANCES}. A version-4 simulator
+ *    had no disturbance model at all, so every version-4 run demonstrably had
+ *    none. This records a fact rather than choosing a value.
+ *  - Five fields are dropped: `platform.baseDisturbanceRms`,
+ *    `platform.baseDisturbanceBandwidth`, `camera.readNoiseElectrons`,
+ *    `camera.fullWellElectrons` and `camera.dropoutProbability`, along with the
+ *    whole `atmosphere` block. Every one of them was declared and never read.
+ *    Carrying them forward next to fields that *are* now modelled would leave
+ *    two spellings of the same idea, one of which does nothing — and one of
+ *    them, `readNoiseElectrons`, would claim a calibrated electron unit that
+ *    this sensor cannot support.
+ *
+ * Anything that is not version 4 or 5 is returned untouched, so it fails
+ * validation with its own version in the error rather than a confusing one.
+ *
+ * @returns a new document; the input is not modified.
+ */
+export function migrateScenarioDocument(input: unknown): unknown {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input;
+
+  const document = input as Record<string, unknown>;
+  if (document['schemaVersion'] !== MIGRATABLE_SCENARIO_VERSION) return input;
+
+  const migrated: Record<string, unknown> = { ...document };
+  migrated['schemaVersion'] = SIMULATION_CONFIG_SCHEMA_VERSION;
+  delete migrated['atmosphere'];
+
+  const platform = migrated['platform'];
+  if (typeof platform === 'object' && platform !== null) {
+    const next = { ...(platform as Record<string, unknown>) };
+    delete next['baseDisturbanceRms'];
+    delete next['baseDisturbanceBandwidth'];
+    migrated['platform'] = next;
+  }
+
+  const camera = migrated['camera'];
+  if (typeof camera === 'object' && camera !== null) {
+    const next = { ...(camera as Record<string, unknown>) };
+    delete next['readNoiseElectrons'];
+    delete next['fullWellElectrons'];
+    delete next['dropoutProbability'];
+    migrated['camera'] = next;
+  }
+
+  migrated['disturbances'] = CLEAN_DISTURBANCES;
+  return migrated;
+}
+
+/**
+ * Parses an untrusted config, migrating a version-4 document first.
  *
  * @throws {z.ZodError} listing every violated rule, not just the first.
  */
 export function parseSimulationConfig(input: unknown): SimulationConfig {
-  return validatedSimulationConfigSchema.parse(input);
+  return validatedSimulationConfigSchema.parse(migrateScenarioDocument(input));
 }
 
 /** Non-throwing variant of {@link parseSimulationConfig}. */
 export function safeParseSimulationConfig(input: unknown): z.ZodSafeParseResult<SimulationConfig> {
-  return validatedSimulationConfigSchema.safeParse(input);
+  return validatedSimulationConfigSchema.safeParse(migrateScenarioDocument(input));
 }

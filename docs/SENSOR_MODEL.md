@@ -299,3 +299,18 @@ GRAY8 — spelled `mono8` in the pixel-format contract, for continuity with
 Phase 0 — is the authoritative sensor format. The UI expands it to RGBA to draw
 it, which is a display concern only; a detector has no use for three identical
 colour channels.
+
+## Phase 7 camera-observable disturbance model
+
+The Phase 2 omissions above describe the original clean path. Phase 7 retains
+that byte-for-byte path whenever the scenario is clean, and adds an explicitly
+separate disturbed image-formation path. It models finite exposure, optical
+attenuation, correlated scintillation and angular wander, PSF broadening,
+ambient background, signal-dependent shot-noise approximation, read noise,
+clipping and GRAY8 quantisation. A dropout is not a black frame or a flag: the
+sensor does not rasterize or deliver it at all.
+
+These are camera-observable engineering models, not a calibrated link budget or
+full wave-optics propagation. Their order, units, equations, deterministic RNG
+streams and tested limits are specified in
+[DISTURBANCE_MODEL.md](DISTURBANCE_MODEL.md).

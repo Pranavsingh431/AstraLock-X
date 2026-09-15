@@ -404,3 +404,14 @@ JavaScript engines are expected to match but are not separately guaranteed.
 - Closing the application does not attempt a last-moment abort: asynchronous
   work at window close is not reliable, and the incomplete-run rule already
   covers it honestly.
+
+## Phase 7 disturbance provenance
+
+A Phase 7 run persists the exact validated disturbance configuration in its
+`scenario.json` snapshot and includes it in the scenario fingerprint. The raw
+evaluation stream records evaluator-only physical realization values needed for
+the versioned disturbance KPIs; no tracker receives them. Schema and metrics
+definition v3 remain backward-compatible with earlier run directories: missing
+v3 fields parse as absent data rather than invented zeroes. A disturbed recorded
+run is recomputed cold from raw artifacts with zero differences in the test
+suite, exactly as a clean historical run is.

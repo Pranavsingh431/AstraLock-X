@@ -52,6 +52,7 @@ export function buildRig(options: RigOptions): Rig {
   const algorithmConfig = options.algorithmConfig ?? DEFAULT_BASELINE_PAT_CONFIG;
   const engine = new SimulationEngine(config);
   const sensor = new VirtualCameraSensor({ config: engine.config });
+  const sampler = new ExactWorldSampler(engine);
 
   const recorderOptions: RecorderOptions | null =
     options.storage === undefined || options.storage === null
@@ -65,6 +66,9 @@ export function buildRig(options: RigOptions): Rig {
           algorithmVersion: plugin.manifest.version,
           algorithmConfig,
           metricsConfig: options.metricsConfig,
+          // Lets the evaluator render the noiseless reference frames that image
+          // SNR is defined against.
+          sampler,
           applicationVersion: '0.0.0-test',
           sourceCommit: null,
           platform: 'test',
@@ -78,7 +82,7 @@ export function buildRig(options: RigOptions): Rig {
   const runtime = new ClosedLoopRuntime({
     engine,
     sensor,
-    sampler: new ExactWorldSampler(engine),
+    sampler,
     plugin,
     config: algorithmConfig,
     // Unbounded, so a comparison sees every command rather than the last 256.

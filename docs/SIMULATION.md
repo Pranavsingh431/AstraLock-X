@@ -312,3 +312,14 @@ runtime surprise. See [GIMBAL_MODEL.md](GIMBAL_MODEL.md).
 Export writes the validated config and nothing else — no camera pose, no
 playback speed, no view toggles. Those describe how someone was looking at a
 run, not what the run was.
+
+## Schema v5: physical disturbance scenarios
+
+Version 5 adds a validated `disturbances` block to the physical scenario. It
+contains platform, atmosphere, optics, sensor, dropout and clutter settings;
+it is not algorithm configuration. Version-4 scenarios migrate to the explicit
+clean preset, preserving their Phase 3–6 physics and historical recomputation.
+Stochastic effects are a pure function of the root seed, fixed stream name and
+frame index, so rendering or skipping display frames cannot alter the physical
+realization. Details are in [DISTURBANCE_MODEL.md](DISTURBANCE_MODEL.md) and
+[ADR-0020](adr/0020-disturbance-randomness-is-indexed-by-frame.md).

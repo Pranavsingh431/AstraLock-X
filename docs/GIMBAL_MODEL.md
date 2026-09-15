@@ -300,3 +300,14 @@ Stated plainly, because an unstated omission is a lie by default:
 
 Items 1–8 are not defects to be hidden behind a plausible-looking number. Where
 a quantity is not modelled, nothing in the interface claims it is.
+
+## Phase 7 platform motion boundary
+
+Phase 7 intentionally leaves the shaft-torque hook unused. Instead, a terminal
+base-attitude disturbance composes with the gimbal output to form the true
+optical axis: `optical = gimbal + base`. The encoder still reports only the
+gimbal-relative angle, so the algorithm cannot subtract the vehicle motion from
+an answer it was never given. The camera experiences it as image motion and, at
+sub-exposure sampling times, as real motion blur. The evaluator includes the
+same base attitude when scoring true pointing error. See
+[ADR-0019](adr/0019-platform-motion-is-not-gimbal-motion.md).

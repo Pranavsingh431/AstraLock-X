@@ -24,6 +24,7 @@
 import type { z } from 'zod';
 
 import {
+  EVALUATION_V3_COLUMNS,
   TELEMETRY_V2_COLUMNS,
   evaluationSampleSchema,
   experimentEventSchema,
@@ -58,6 +59,10 @@ export const TELEMETRY_V1_COLUMNS = TELEMETRY_COLUMNS.filter(
   (column) => !(TELEMETRY_V2_COLUMNS as readonly string[]).includes(column.name),
 );
 export const EVALUATION_COLUMNS = columnsOf(evaluationSampleSchema);
+/** The evaluation columns a schema-v1 or v2 (Phase 5, Phase 6) file has. */
+export const EVALUATION_PRE_V3_COLUMNS = EVALUATION_COLUMNS.filter(
+  (column) => !(EVALUATION_V3_COLUMNS as readonly string[]).includes(column.name),
+);
 
 /** Exact text for a double. */
 export function formatNumber(value: number): string {
@@ -197,7 +202,9 @@ export const telemetryParser = (): CsvSampleParser<TelemetrySample> =>
   ]);
 
 export const evaluationParser = (): CsvSampleParser<EvaluationSample> =>
-  new CsvSampleParser(EVALUATION_COLUMNS, evaluationSampleSchema, 'evaluation.csv');
+  new CsvSampleParser(EVALUATION_COLUMNS, evaluationSampleSchema, 'evaluation.csv', [
+    EVALUATION_PRE_V3_COLUMNS,
+  ]);
 
 /** Parses one line of events.jsonl, or `null` for a blank line. */
 export function parseEventLine(text: string, lineNumber: number): ExperimentEvent | null {

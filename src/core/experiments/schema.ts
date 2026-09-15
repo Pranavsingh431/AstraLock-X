@@ -51,7 +51,7 @@ export type ExperimentSchemaVersion = z.infer<typeof schemaVersionSchema>;
  * recomputation under a different version is a new result rather than a
  * correction of the old one.
  */
-export const METRICS_DEFINITION_VERSION = 2;
+export const METRICS_DEFINITION_VERSION = 3;
 
 /**
  * The PAT modes that count as the algorithm claiming a measured track, per
@@ -144,15 +144,37 @@ export const metricsConfigV2Schema = z.strictObject({
   handoffValidityThresholdRad: z.number().positive(),
 });
 
+/**
+ * Metrics definition v3 (Phase 7): v2 plus the image-SNR aperture.
+ *
+ * The aperture has to be part of the *definition* rather than a constant in the
+ * evaluator, because an SNR measured over a different box is a different number
+ * and two reports quoting "SNR" over different apertures are not comparable.
+ */
+export const metricsConfigV3Schema = z.strictObject({
+  definitionVersion: z.literal(3),
+  ...metricsThresholdFields,
+  handoffValidityThresholdRad: z.number().positive(),
+  /**
+   * Half-width, in pixels, of the square box around the designated target's
+   * true projected centre over which image SNR is summed.
+   */
+  snrApertureRadiusPx: z.number().positive(),
+});
+
 /** The thresholds a run is scored against. Recorded so a score is reproducible. */
 export const metricsConfigSchema = z.discriminatedUnion('definitionVersion', [
   metricsConfigV1Schema,
   metricsConfigV2Schema,
+  metricsConfigV3Schema,
 ]);
 export type MetricsConfig = z.infer<typeof metricsConfigSchema>;
 
 export const DEFAULT_METRICS_CONFIG: MetricsConfig = metricsConfigSchema.parse({
   definitionVersion: METRICS_DEFINITION_VERSION,
+  // Four times the widest bundled beacon spread, so the box contains
+  // essentially all of the target's light and a ring of background around it.
+  snrApertureRadiusPx: 12,
   // One milliradian: half the coarse-lock threshold. A handoff-ready claim is a
   // claim of better-than-coarse alignment, so it is held to a tighter bar.
   handoffValidityThresholdRad: 1e-3,
@@ -351,6 +373,14 @@ export const experimentEventTypeSchema = z.enum([
   'handoff-ready',
   'handoff-lost',
   'detection-missed',
+  /**
+   * One run of frames the sensor failed to deliver (v3).
+   *
+   * Recorded once per burst with its first frame and its length, not once per
+   * frame: Phase 5's event log is change-only, and a 22 % drop rate would
+   * otherwise add a thousand events to a ninety-second run.
+   */
+  'frames-dropped',
   'lock-lost',
   'lost-entered',
   'search-reentered',
@@ -471,6 +501,24 @@ export const telemetrySampleSchema = z.strictObject({
 });
 export type TelemetrySample = z.infer<typeof telemetrySampleSchema>;
 
+/**
+ * Evaluation columns added in schema v3; absent from v1 and v2 files.
+ *
+ * A Phase 5 or Phase 6 run has no disturbance realization to record, so its
+ * evaluation file simply lacks these columns. The reader accepts the shorter
+ * header and fills them as null — which is the correct reading, since those runs
+ * had no disturbances rather than disturbances measured at zero.
+ */
+export const EVALUATION_V3_COLUMNS = [
+  'truth_base_azimuth_rad',
+  'truth_base_elevation_rad',
+  'truth_wander_azimuth_rad',
+  'truth_wander_elevation_rad',
+  'truth_scintillation_gain',
+  'truth_image_snr_db',
+  'truth_saturated_fraction',
+] as const;
+
 /** Telemetry columns added in schema v2; absent from v1 files and read as empty. */
 export const TELEMETRY_V2_COLUMNS = [
   'track_quality',
@@ -539,6 +587,25 @@ export const evaluationSampleSchema = z.strictObject({
   truth_detection_on_other_emitter: z.boolean(),
   /** Non-designated emitters projecting inside the image at this instant. */
   truth_other_emitters_in_image: z.number().int().nonnegative(),
+
+  // --- Disturbance realization (v3). Null on a run with no disturbances. ---
+  /** True base attitude added to the mount's own pointing, radians. */
+  truth_base_azimuth_rad: z.number().nullable(),
+  truth_base_elevation_rad: z.number().nullable(),
+  /** True apparent angular displacement of the received beacon, radians. */
+  truth_wander_azimuth_rad: z.number().nullable(),
+  truth_wander_elevation_rad: z.number().nullable(),
+  /** True scintillation multiplier applied to every emitter this frame. */
+  truth_scintillation_gain: z.number().nullable(),
+  /**
+   * Image signal-to-noise ratio in decibels over the metrics aperture.
+   *
+   * Null when the run has no stochastic noise, in which case the noise image is
+   * identically zero and the ratio is undefined. Never a fabricated 0 dB.
+   */
+  truth_image_snr_db: z.number().nullable(),
+  /** Fraction of pixels at the top of the range in this frame. */
+  truth_saturated_fraction: z.number().nullable(),
 });
 export type EvaluationSample = z.infer<typeof evaluationSampleSchema>;
 
@@ -626,6 +693,52 @@ const estimatorSummarySchema = z.strictObject({
   framesWithModelProbabilities: z.number().int().nonnegative(),
   /** Constant-acceleration model probability over frames in a tracking mode. */
   caProbabilityWhileTracking: statisticsSchema,
+});
+
+/**
+ * What the disturbances actually did during a run (v3).
+ *
+ * Measured from the recorded realization, not read back from the configuration:
+ * a scenario asking for 50 µrad of wander and a run that delivered 50 µrad of
+ * wander are different claims, and only the second is evidence.
+ *
+ * `null` for a run with no disturbances, rather than a block of zeroes — a table
+ * of zeroes reads as "measured and found to be nothing" when the truth is "no
+ * such thing was modelled".
+ */
+const disturbanceSummarySchema = z.strictObject({
+  /** The preset a scenario was populated from, for provenance only. */
+  preset: z.string().nullable(),
+  /** Which effects were active. The parameters live in the scenario snapshot. */
+  active: z.array(z.string()),
+
+  /** Measured RMS of the true base attitude, per axis. */
+  platformJitterRmsAzimuth: measurementSchema,
+  platformJitterRmsElevation: measurementSchema,
+  /** Measured RMS of the true apparent angular displacement, per component. */
+  apparentWanderRmsAzimuth: measurementSchema,
+  apparentWanderRmsElevation: measurementSchema,
+  /** The scintillation multiplier actually delivered. Mean should be near one. */
+  scintillationGain: statisticsSchema,
+
+  /** Frames the sensor was scheduled to produce and failed to deliver. */
+  framesDropped: z.number().int().nonnegative(),
+  /** Dropped as a fraction of scheduled, over the autonomous window. */
+  frameDropRate: measurementSchema,
+  /** Longest run of consecutive dropped frames. */
+  longestDropBurstFrames: z.number().int().nonnegative(),
+
+  /**
+   * Image signal-to-noise ratio in decibels, over the aperture the metrics
+   * definition names.
+   *
+   * `not-applicable` when the run has no stochastic noise: the noise image is
+   * identically zero and the ratio is undefined. Reported as such rather than
+   * as infinity, and never as a fabricated 0 dB.
+   */
+  imageSnrDb: statisticsSchema,
+  /** Fraction of pixels at the top of the range, averaged over sampled frames. */
+  saturatedPixelFraction: measurementSchema,
 });
 
 export const experimentSummarySchema = z.strictObject({
@@ -723,5 +836,7 @@ export const experimentSummarySchema = z.strictObject({
   handoff: handoffSummarySchema.optional(),
   algorithmRecovery: algorithmRecoverySummarySchema.optional(),
   estimator: estimatorSummarySchema.optional(),
+  /** What the disturbances did, or `null`/absent on a clean run (v3). */
+  disturbance: disturbanceSummarySchema.nullable().optional(),
 });
 export type ExperimentSummary = z.infer<typeof experimentSummarySchema>;

@@ -387,9 +387,20 @@ export interface SummaryContext {
   readonly configuredSensorFps: number;
   /** Frames the sensor generated with capture time in [start, end). From the manifest. */
   readonly sensorFramesGenerated: number;
+  /**
+   * The disturbance preset named in the scenario, for provenance.
+   *
+   * The name only. Every parameter lives in the scenario snapshot, so a report
+   * stays complete even if the preset is later retuned or removed.
+   */
+  readonly disturbancePreset?: string | null | undefined;
   readonly startSimulationTime: number;
   readonly endSimulationTime: number;
 }
+
+/** Whether a column carries a usable number, as opposed to null or absent. */
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
 
 const numberDetail = (event: ExperimentEvent, key: string): number | null => {
   const value = event.detail[key];
@@ -473,6 +484,18 @@ export class SummaryBuilder {
 
   // Definition v2: estimator model probabilities, from telemetry.
   private framesWithImm = 0;
+
+  // --- Disturbance realization, measured rather than read back from config ---
+  private disturbanceSeen = false;
+  private framesDropped = 0;
+  private longestDropBurst = 0;
+  private readonly baseAzimuth = new SampleSeries();
+  private readonly baseElevation = new SampleSeries();
+  private readonly wanderAzimuth = new SampleSeries();
+  private readonly wanderElevation = new SampleSeries();
+  private readonly scintillation = new SampleSeries();
+  private readonly snrDb = new SampleSeries();
+  private readonly saturated = new SampleSeries();
   private readonly caProbability = new SampleSeries();
   private readonly trackingModes: readonly string[];
 
@@ -489,6 +512,15 @@ export class SummaryBuilder {
       case 'search-started':
         this.searchStart ??= event.simulationTime;
         break;
+      case 'frames-dropped': {
+        // One event per burst, carrying its length. Counting frames and the
+        // longest run from the same record keeps the summary reproducible from
+        // the log alone.
+        const frames = numberDetail(event, 'frames') ?? 0;
+        this.framesDropped += frames;
+        this.longestDropBurst = Math.max(this.longestDropBurst, frames);
+        break;
+      }
       case 'track-entered':
         this.trackEntry ??= event.simulationTime;
         break;
@@ -602,6 +634,33 @@ export class SummaryBuilder {
       this.firstDetection = time;
     }
     if (sample.truth_other_emitters_in_image > 0) this.falseLockExercised = true;
+
+    // Guarded on being an actual number, not merely on being non-null. A row
+    // recorded before these columns existed has them absent rather than null,
+    // and `undefined !== null` is true — which would push NaN into every series
+    // and turn the whole block into NaN.
+    if (isNumber(sample.truth_base_azimuth_rad)) {
+      this.disturbanceSeen = true;
+      this.baseAzimuth.push(sample.truth_base_azimuth_rad);
+      if (isNumber(sample.truth_base_elevation_rad)) {
+        this.baseElevation.push(sample.truth_base_elevation_rad);
+      }
+    }
+    if (isNumber(sample.truth_wander_azimuth_rad)) {
+      this.disturbanceSeen = true;
+      this.wanderAzimuth.push(sample.truth_wander_azimuth_rad);
+      if (isNumber(sample.truth_wander_elevation_rad)) {
+        this.wanderElevation.push(sample.truth_wander_elevation_rad);
+      }
+    }
+    if (isNumber(sample.truth_scintillation_gain)) {
+      this.disturbanceSeen = true;
+      this.scintillation.push(sample.truth_scintillation_gain);
+    }
+    if (isNumber(sample.truth_image_snr_db)) this.snrDb.push(sample.truth_image_snr_db);
+    if (isNumber(sample.truth_saturated_fraction)) {
+      this.saturated.push(sample.truth_saturated_fraction);
+    }
 
     // A false lock is the tracker holding a detection on the *wrong* emitter.
     // High pointing error alone is a loss of lock, not a false lock; the two
@@ -777,8 +836,60 @@ export class SummaryBuilder {
         framesWithModelProbabilities: this.framesWithImm,
         caProbabilityWhileTracking: this.caProbability.statistics('1'),
       },
+      disturbance: this.disturbanceSummary(autonomousDuration),
     };
   }
+
+  /**
+   * What the disturbances actually did, measured from the recorded realization.
+   *
+   * `null` for a run that had none — not a block of zeroes, which would read as
+   * "measured and found to be nothing" when the truth is that no such thing was
+   * modelled.
+   */
+  private disturbanceSummary(autonomousDuration: number | null): ExperimentSummary['disturbance'] {
+    if (!this.disturbanceSeen && this.framesDropped === 0) return null;
+
+    const active: string[] = [];
+    if (this.baseAzimuth.length > 0) active.push('platform');
+    if (this.wanderAzimuth.length > 0) active.push('wander');
+    if (this.scintillation.length > 0) active.push('scintillation');
+    if (this.framesDropped > 0) active.push('dropouts');
+    if (this.snrDb.length > 0) active.push('sensor-noise');
+
+    const scheduled =
+      autonomousDuration === null ? null : this.context.sensorFramesGenerated + this.framesDropped;
+
+    return {
+      preset: this.context.disturbancePreset ?? null,
+      active,
+      platformJitterRmsAzimuth: rmsOf(this.baseAzimuth, 'rad'),
+      platformJitterRmsElevation: rmsOf(this.baseElevation, 'rad'),
+      apparentWanderRmsAzimuth: rmsOf(this.wanderAzimuth, 'rad'),
+      apparentWanderRmsElevation: rmsOf(this.wanderElevation, 'rad'),
+      scintillationGain: this.scintillation.statistics('1'),
+      framesDropped: this.framesDropped,
+      frameDropRate:
+        scheduled === null || scheduled === 0
+          ? notMeasured('1')
+          : derived(this.framesDropped / scheduled, '1'),
+      longestDropBurstFrames: this.longestDropBurst,
+      // Undefined rather than zero when nothing stochastic was configured: a
+      // run with no noise has no signal-to-noise ratio.
+      // An empty series already reports not-measured throughout, which is the
+      // honest reading: with no stochastic noise the ratio is undefined, and
+      // "0 dB" is exactly the fabrication Phase 5 removed.
+      imageSnrDb: this.snrDb.statistics('dB'),
+      saturatedPixelFraction:
+        this.saturated.length > 0 ? this.saturated.statistics('1').mean : notApplicable('1'),
+    };
+  }
+}
+
+/** Root mean square of a series, or `not-measured` when it is empty. */
+function rmsOf(series: SampleSeries, unit: string): Measurement {
+  const stats = series.statistics(unit);
+  return stats.rms;
 }
 
 /** Everything a whole-array summary needs. For tests. */
