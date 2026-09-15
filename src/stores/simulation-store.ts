@@ -41,7 +41,7 @@ import {
   astraLockXPat,
   baselineKfPidPat,
 } from '@/core/algorithms';
-import type { AstraLockDebug } from '@/core/algorithms';
+import type { AstraLockConfig, AstraLockDebug } from '@/core/algorithms';
 import type { BaselineDebug } from '@/core/algorithms';
 import type { Measurement } from '@/core/contracts/measurement';
 import type { PATMode } from '@/core/contracts/pat';
@@ -87,6 +87,14 @@ interface Session {
   runtime: ClosedLoopRuntime | null;
   /** Which algorithm this session's runtime was built with. */
   algorithmId: string;
+  /**
+   * Whether the operator has switched coded beacon identity on.
+   *
+   * Defaults to on for a scenario whose designated beacon carries a code and is
+   * inert otherwise, so loading a Phase 7 scenario behaves exactly as it did
+   * before identity existed.
+   */
+  identityEnabled: boolean;
   /** The experiment recorder, or `null` when nothing is being recorded. */
   recorder: ExperimentRecorder | null;
   /**
@@ -206,6 +214,23 @@ export interface SimulationStoreState {
   /** Draw the algorithm's detections on the sensor feed. */
   readonly showAlgorithmOverlay: boolean;
   /**
+   * Whether the tracker is configured to recognise the beacon by its code.
+   *
+   * A property of the *tracker's configuration*, not of the world. Turning it
+   * off is the control arm of the identity comparison and reproduces Phase 7
+   * behaviour exactly.
+   */
+  readonly identityEnabled: boolean;
+  /**
+   * Whether the loaded scenario has a coded beacon to recognise at all.
+   *
+   * False for every scenario written before Phase 8. Identity is offered only
+   * where it means something: switched on against an unmodulated beacon, the
+   * tracker would correctly refuse to acquire anything, which is a confusing
+   * way to present "this scenario cannot demonstrate the feature".
+   */
+  readonly identityAvailable: boolean;
+  /**
    * Operator override: manual pointing while autonomy is engaged.
    *
    * Off by default, so a human cannot silently fight the controller. Turning it
@@ -269,6 +294,14 @@ export interface SimulationStoreState {
   /** Chooses which tracker flies the mount. Ends any recording in progress. */
   setAlgorithm: (id: string) => void;
   setManualOverride: (enabled: boolean) => void;
+  /**
+   * Switches coded identity on or off, rebuilding the tracker.
+   *
+   * The tracker's configuration cannot change under a running estimator, so the
+   * runtime is rebuilt and the algorithm starts from nothing — the same rule
+   * that governs swapping algorithms mid-run.
+   */
+  setIdentityEnabled: (enabled: boolean) => void;
 
   /** Begins recording. Resolves once the run directory exists and recording has begun. */
   startExperiment: () => Promise<void>;
@@ -330,7 +363,7 @@ function buildRuntime(active: Session): ClosedLoopRuntime {
     sensor: active.sensor,
     sampler: active.sampler,
     plugin: selectedPlugin(active.algorithmId),
-    config: selectedConfig(active.algorithmId),
+    config: selectedConfig(active.algorithmId, active.engine.config, active.identityEnabled),
     historyLimit: 256,
     // Where the sensor has already been read to. Zero when autonomy is being
     // enabled on a fresh session, non-zero when the operator swaps algorithms
@@ -372,7 +405,62 @@ const ALGORITHM_CONFIGS: Record<string, unknown> = {
 };
 
 const selectedPlugin = (id: string) => algorithmById(id) ?? baselineKfPidPat;
-const selectedConfig = (id: string) => ALGORITHM_CONFIGS[id] ?? DEFAULT_BASELINE_PAT_CONFIG;
+
+/**
+ * The signalling pattern the designated beacon is configured to send, if any.
+ *
+ * **This is a configuration path, not a channel into the algorithm.** A real
+ * terminal is told what its partner will transmit before the link is attempted,
+ * the same way a radio is set to a frequency; the application plays that role
+ * here by reading the scenario the operator loaded. What crosses is a sequence
+ * of ones and zeros and a symbol duration — the same two numbers that would be
+ * written on a mission card.
+ *
+ * What does **not** cross is any fact about the world: no position, no emitter
+ * id, no target index, nothing that changes during the run, and nothing about
+ * any other source in the scene. The tracker still has to find the pattern in
+ * pixels, and still cannot tell which object it is looking at.
+ */
+function configuredIdentityCode(
+  config: SimulationConfig,
+): { sequence: readonly (0 | 1)[]; symbolDuration: number } | null {
+  // The designated target: index 0, the same one the evaluator scores against.
+  const code = config.targets[0]?.beacon?.identityCode ?? null;
+  if (code === null || !code.enabled) return null;
+  return { sequence: code.sequence, symbolDuration: code.symbolDuration };
+}
+
+/** Whether this scenario can demonstrate coded identity at all. */
+const scenarioHasCode = (config: SimulationConfig): boolean =>
+  configuredIdentityCode(config) !== null;
+
+/**
+ * The algorithm's configuration for a session.
+ *
+ * Identity is off unless the operator has switched it on *and* the loaded
+ * scenario carries a coded beacon. Both conditions matter: with identity on,
+ * acquisition requires a positive recognition, so switching it on against an
+ * unmodulated beacon would correctly — and uselessly — refuse to acquire
+ * anything at all.
+ */
+function selectedConfig(id: string, config: SimulationConfig, identityOn: boolean): unknown {
+  const base = ALGORITHM_CONFIGS[id] ?? DEFAULT_BASELINE_PAT_CONFIG;
+  if (id !== astraLockXPat.manifest.id) return base;
+
+  const code = identityOn ? configuredIdentityCode(config) : null;
+  const astra = base as AstraLockConfig;
+  return code === null
+    ? { ...astra, identity: { ...astra.identity, enabled: false } }
+    : {
+        ...astra,
+        identity: {
+          ...astra.identity,
+          enabled: true,
+          expectedSequence: code.sequence,
+          symbolDuration: code.symbolDuration,
+        },
+      };
+}
 
 /** Drains the parked result into the shape the store stores. */
 function drainAutonomousFrame(): Partial<SimulationStoreState> {
@@ -407,6 +495,9 @@ function createSession(config: SimulationConfig): Session {
     heldCapture: null,
     runtime: null,
     algorithmId: baselineKfPidPat.manifest.id,
+    // On by default where it means something, so loading a coded scenario
+    // demonstrates the capability without the operator having to find a switch.
+    identityEnabled: scenarioHasCode(config),
     recorder: null,
     evaluator: new Evaluator({ engine, config }),
   };
@@ -624,6 +715,8 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
   algorithmDebug: null,
   detectionSnr: null,
   showAlgorithmOverlay: true,
+  identityEnabled: initialSession.identityEnabled,
+  identityAvailable: scenarioHasCode(initialSession.engine.config),
   manualOverride: false,
   recorderStatus: null,
   recorderBusy: false,
@@ -662,6 +755,8 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     set({
       scenarioId,
       config,
+      identityEnabled: session.identityEnabled,
+      identityAvailable: scenarioHasCode(config),
       paths: session.paths,
       importError: null,
       runtimeError: null,
@@ -899,6 +994,24 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
     set({ showAlgorithmOverlay: visible });
   },
 
+  setIdentityEnabled: (enabled) => {
+    const active = requireSession();
+    if (active.identityEnabled === enabled) return;
+
+    // Same rule as changing the algorithm: the tracker's configuration is part
+    // of what a recording is a record of, so a run cannot span both settings.
+    if (active.recorder !== null) {
+      set({ recorderError: 'Recording stopped: beacon identity was switched mid-run.' });
+      void active.recorder.abort('algorithm-changed');
+      active.recorder = null;
+      set({ recorderStatus: null });
+    }
+
+    active.identityEnabled = enabled;
+    if (active.runtime !== null) active.runtime = buildRuntime(active);
+    set({ identityEnabled: enabled, patMode: null, algorithmDebug: null });
+  },
+
   setManualOverride: (enabled) => {
     // An operator taking the mount mid-run changes what the run measures, so a
     // recording says when it happened.
@@ -922,7 +1035,11 @@ export const useSimulationStore = create<SimulationStoreState>()((set, get) => (
       // most of what makes two runs comparable.
       algorithmId: recordedPlugin.manifest.id,
       algorithmVersion: recordedPlugin.manifest.version,
-      algorithmConfig: selectedConfig(active.algorithmId),
+      algorithmConfig: selectedConfig(
+        active.algorithmId,
+        active.engine.config,
+        active.identityEnabled,
+      ),
       metricsConfig: DEFAULT_METRICS_CONFIG,
       // Lets the evaluator render the noiseless reference frames that image
       // SNR is measured against.

@@ -33,6 +33,27 @@ vi.setConfig({ testTimeout: 900_000 });
 
 const FRAME_BUDGET_MS = 1000 / 60;
 
+/**
+ * The robust algorithm's configuration, optionally with identity enabled.
+ *
+ * The expected pattern is read from the scenario by the harness, playing the
+ * role a mission plan plays for a real terminal. Nothing about the world
+ * crosses: a sequence of ones and zeros and a symbol duration.
+ */
+function astraConfig(scenario: ScenarioId, identity: boolean) {
+  if (!identity) return DEFAULT_ASTRALOCK_CONFIG;
+  const code = loadScenario(scenario).targets[0]!.beacon!.identityCode!;
+  return {
+    ...DEFAULT_ASTRALOCK_CONFIG,
+    identity: {
+      ...DEFAULT_ASTRALOCK_CONFIG.identity,
+      enabled: true,
+      expectedSequence: code.sequence,
+      symbolDuration: code.symbolDuration as number,
+    },
+  };
+}
+
 const summarise = (samples: number[]) => {
   const sorted = [...samples].sort((a, b) => a - b);
   return {
@@ -44,7 +65,7 @@ const summarise = (samples: number[]) => {
 };
 
 /** Per-frame wall-clock cost of the whole loop for one algorithm. */
-function measureLoop(scenario: ScenarioId, robust: boolean, seconds: number) {
+function measureLoop(scenario: ScenarioId, robust: boolean, seconds: number, identity = false) {
   const engine = new SimulationEngine(loadScenario(scenario));
   const sensor = new VirtualCameraSensor({ config: engine.config });
   const runtime = new ClosedLoopRuntime({
@@ -52,7 +73,7 @@ function measureLoop(scenario: ScenarioId, robust: boolean, seconds: number) {
     sensor,
     sampler: new ExactWorldSampler(engine),
     plugin: robust ? astraLockXPat : baselineKfPidPat,
-    config: robust ? DEFAULT_ASTRALOCK_CONFIG : DEFAULT_BASELINE_PAT_CONFIG,
+    config: robust ? astraConfig(scenario, identity) : DEFAULT_BASELINE_PAT_CONFIG,
   });
 
   // Warm the JIT and get past acquisition, so the measurement covers the
@@ -172,5 +193,69 @@ describe('a long autonomous run', () => {
       }
     }
     expect(Number.isFinite(engine.gimbal.measuredPointing().panAngle)).toBe(true);
+  });
+});
+
+describe('what the correlator costs', () => {
+  it('is a small addition to a loop the detector already dominates', () => {
+    // The correlator searches phase for every watched candidate on every frame,
+    // which is the only part of this design with a plausible route to being
+    // expensive. Measured against the same scenario with identity switched off,
+    // so the difference is the correlator and nothing else.
+    const off = measureLoop('code-decoy-hard', true, 15, false);
+    const on = measureLoop('code-decoy-hard', true, 15, true);
+
+    // eslint-disable-next-line no-console -- the measured figures are the point
+    console.log(
+      `beacon identity, ${FRAME_BUDGET_MS.toFixed(2)} ms budget:\n` +
+        `  identity off mean ${off.mean.toFixed(3)} ms  median ${off.median.toFixed(3)}  p95 ${off.p95.toFixed(3)}  max ${off.max.toFixed(3)}\n` +
+        `  identity on  mean ${on.mean.toFixed(3)} ms  median ${on.median.toFixed(3)}  p95 ${on.p95.toFixed(3)}  max ${on.max.toFixed(3)}`,
+    );
+
+    expect(on.mean).toBeLessThan(FRAME_BUDGET_MS / 2);
+    expect(on.p95).toBeLessThan(FRAME_BUDGET_MS);
+  });
+
+  it('does not grow with the length of the run', () => {
+    // The guard against an accidentally unbounded history: cost per frame after
+    // sixty seconds of watching must look like cost per frame after ten. A
+    // history that grew with the run would show here as a rising mean long
+    // before it showed as memory.
+    const engine = new SimulationEngine(loadScenario('code-clean'));
+    const sensor = new VirtualCameraSensor({ config: engine.config });
+    const runtime = new ClosedLoopRuntime({
+      engine,
+      sensor,
+      sampler: new ExactWorldSampler(engine),
+      plugin: astraLockXPat,
+      config: astraConfig('code-clean', true),
+    });
+
+    const tickRate = engine.config.tickRate;
+    const window = (seconds: number) => {
+      const samples: number[] = [];
+      for (let tick = 0; tick < seconds * tickRate; tick += 1) {
+        const started = performance.now();
+        const processed = runtime.step(1);
+        const elapsed = performance.now() - started;
+        if (processed > 0) samples.push(elapsed);
+      }
+      return summarise(samples);
+    };
+
+    for (let tick = 0; tick < 25 * tickRate; tick += 1) runtime.step(1);
+    const early = window(10);
+    for (let tick = 0; tick < 30 * tickRate; tick += 1) runtime.step(1);
+    const late = window(10);
+
+    // eslint-disable-next-line no-console -- the measured figures are the point
+    console.log(
+      `identity cost over a long run: early median ${early.median.toFixed(3)} ms, ` +
+        `late median ${late.median.toFixed(3)} ms`,
+    );
+
+    // Generous, because this is a wall-clock measurement on a shared machine.
+    // Anything unbounded shows up as a multiple, not as a percentage.
+    expect(late.median).toBeLessThan(early.median * 3 + 0.5);
   });
 });

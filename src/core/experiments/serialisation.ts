@@ -26,6 +26,7 @@ import type { z } from 'zod';
 import {
   EVALUATION_V3_COLUMNS,
   TELEMETRY_V2_COLUMNS,
+  TELEMETRY_V3_COLUMNS,
   evaluationSampleSchema,
   experimentEventSchema,
   telemetrySampleSchema,
@@ -56,7 +57,13 @@ function columnsOf(schema: z.ZodObject): readonly Column[] {
 export const TELEMETRY_COLUMNS = columnsOf(telemetrySampleSchema);
 /** The telemetry columns a schema-v1 (Phase 5) file has. */
 export const TELEMETRY_V1_COLUMNS = TELEMETRY_COLUMNS.filter(
-  (column) => !(TELEMETRY_V2_COLUMNS as readonly string[]).includes(column.name),
+  (column) =>
+    !(TELEMETRY_V2_COLUMNS as readonly string[]).includes(column.name) &&
+    !(TELEMETRY_V3_COLUMNS as readonly string[]).includes(column.name),
+);
+/** The telemetry columns a schema-v2 (Phase 6, Phase 7) file has. */
+export const TELEMETRY_V2_ONLY_COLUMNS = TELEMETRY_COLUMNS.filter(
+  (column) => !(TELEMETRY_V3_COLUMNS as readonly string[]).includes(column.name),
 );
 export const EVALUATION_COLUMNS = columnsOf(evaluationSampleSchema);
 /** The evaluation columns a schema-v1 or v2 (Phase 5, Phase 6) file has. */
@@ -179,7 +186,15 @@ export class CsvSampleParser<T> {
     this.active.forEach((column, index) => {
       record[column.name] = parseCell(column, cells[index]!);
     });
-    for (const column of this.absent) record[column.name] = null;
+    // A column this file predates reads as absent. For a numeric column that is
+    // null — the same "not recorded" every modern run writes — and for a text
+    // column it is the empty string, which is how an empty cell already parses.
+    // Using null for both would make an old file's text columns a shape no
+    // current file can produce, and every consumer would need a second case for
+    // a distinction that carries no information.
+    for (const column of this.absent) {
+      record[column.name] = column.kind === 'text' ? '' : null;
+    }
 
     const parsed = this.schema.safeParse(record);
     if (!parsed.success) {
@@ -198,6 +213,7 @@ export class CsvSampleParser<T> {
 
 export const telemetryParser = (): CsvSampleParser<TelemetrySample> =>
   new CsvSampleParser(TELEMETRY_COLUMNS, telemetrySampleSchema, 'telemetry.csv', [
+    TELEMETRY_V2_ONLY_COLUMNS,
     TELEMETRY_V1_COLUMNS,
   ]);
 

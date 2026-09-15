@@ -152,3 +152,23 @@ defined, and show false-lock figures only when a competing source was actually
 in the image. Earlier reports remain readable: their absent disturbance block is
 labelled as not modelled rather than a clean measurement. Report generation and
 offline recomputation both consume the same versioned raw records.
+
+## Phase 8 beacon identity reporting
+
+A report from a run that used coded identity gains a **Beacon identity**
+section. It has two halves and the report says which is which: the left column
+is the tracker's own verdict on its own evidence, and the right is the evaluator
+checking that verdict against truth the tracker never saw.
+
+It reports how many chances the run gave the tracker to be fooled, how often it
+claimed recognition, how many of those claims were on the designated target and
+how many were on something else, and how many episodes it spent unable to tell.
+Abstention is presented as a result rather than as a failure: two sources
+sending the same pattern cannot be separated by watching them, and a report that
+scored that as an error would be scoring physics.
+
+The correlation is shown as a coefficient on `[-1, 1]` with a note that it is not
+a probability, and never as a percentage or a confidence. A run without identity
+has no such section at all — an algorithm with no correlator has no opinion to
+score, and an empty identity table under its name would suggest it had failed a
+test it never sat.

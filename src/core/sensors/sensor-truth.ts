@@ -63,6 +63,16 @@ export interface EmitterProjectionTruth extends GroundTruthTainted {
   readonly offsetElevation: Radians;
   /** Peak intensity actually written, after clipping. */
   readonly peakIntensity: number;
+  /**
+   * The code level this emitter was actually sending, integrated over the
+   * exposure, or `1` for an unmodulated source.
+   *
+   * **Privileged.** This is the answer to the question the tracker has to work
+   * out from brightness alone, so it exists for the evaluator — to check that a
+   * recovered code phase is right, and to show in a debug view — and for
+   * nothing else.
+   */
+  readonly emittedLevel: number;
   /** Pixels the point spread actually wrote. Zero when clipped away entirely. */
   readonly pixelsWritten: number;
 }

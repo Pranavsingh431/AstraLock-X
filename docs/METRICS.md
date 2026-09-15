@@ -277,6 +277,47 @@ non-designated emitter in the image. Otherwise duration and rate are
 of zero from a single-emitter scenario is not evidence of identity robustness.
 Every bundled Phase 4 scenario has one emitter.
 
+## Beacon identity
+
+**What the tracker claimed, checked against what was true.** Present only for a
+run in which some identity verdict was reported: `beaconIdentity` is `null` for
+the baseline and for AstraLock-X with identity disabled. A block of zeroes would
+say the question was asked and answered negatively, which is a different
+statement from "the question was never asked".
+
+The telemetry column `identity_state` is the algorithm's own verdict, joined to
+the evaluation row for the same `frame_id`. The truth half of every comparison
+comes from `truth_detection_on_other_emitter`, which the algorithm never sees.
+
+| Metric                          | Definition                                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------------- |
+| `identityChallenges`            | frames in TRACK with at least one non-designated emitter in the image              |
+| `correctCodeAssociations`       | frames where `identity_state = match` **and** the detection was on the target      |
+| `wrongCodeAssociations`         | frames where `identity_state = match` **and** the detection was on another emitter |
+| `ambiguousIdentityEpisodes`     | rising edges of `identity_state = ambiguous`                                       |
+| `insufficientEvidenceEpisodes`  | rising edges of `identity_state = insufficient-evidence`                           |
+| `matchFrames`, `mismatchFrames` | frames reporting each verdict                                                      |
+| `matchCorrelation`              | statistics of `code_correlation` over frames called a match                        |
+
+`identityChallenges` is counted the same way whether identity is enabled or not,
+so the two arms of an ablation are compared over the same exposure.
+
+**Only a confident claim is scored.** `mismatch`, `ambiguous`, `unconfirmed` and
+`insufficient-evidence` are not claims of recognition, so they are neither
+credited nor charged, whatever the truth was. Declining to answer is not a wrong
+answer.
+
+**`wrongCodeAssociations` is the number that matters**, and it is distinct from
+a false lock. A false lock is about where the tracker was _pointing_; a wrong
+recognition is about what it _claimed to have recognised_. A run can have one
+without the other, and the two failures have different fixes.
+
+Episodes are runs of consecutive frames rather than frame counts: a verdict that
+holds for a second is one episode of not knowing, not sixty.
+
+The correlation is a Pearson coefficient on `[-1, 1]`, invariant to brightness.
+**It is not a probability** and nothing in the report presents it as one.
+
 ## Frame rates
 
 | Quantity                    | Definition                                                                   |

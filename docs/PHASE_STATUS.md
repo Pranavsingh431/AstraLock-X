@@ -1484,3 +1484,129 @@ The detailed model, assumptions and explicitly excluded full-wave-optics claims
 are in [DISTURBANCE_MODEL.md](DISTURBANCE_MODEL.md). The local completion commit
 and pending remote-CI status are recorded in
 [OVERNIGHT_STATUS.md](OVERNIGHT_STATUS.md).
+
+## Phase 8 — coded optical beacon identity and false-lock resistance
+
+Phase 8 gives a beacon a camera-observable temporal identity and gives the
+tracker a way to recognise it. A target's beacon may carry an `identityCode` —
+a binary sequence, a symbol duration, a phase offset and two emitted levels —
+and the simulator modulates that emitter's intensity accordingly. The
+modulation reaches an image the way light does: integrated exactly over the
+exposure, never sampled at an instant.
+
+AstraLock-X keeps a bounded brightness history for every blob the detector
+reports, joined across frames **by bearing** rather than by pixel position, and
+correlates each history against the exposure-integrated shape of the pattern it
+has been configured to expect. The correlation is normalised, so a brighter
+source scores no better for being brighter, and phase is recovered by a bounded
+search because the transmitter's clock is not known.
+
+**The tracker is configured with a pattern, not told an answer.** What crosses
+into the algorithm is a sequence of ones and zeros and a symbol duration — a
+setting, the way a radio's frequency is a setting. No emitter identifier, no
+target index, no true code, no true phase and no truth of any kind reaches it,
+and the anti-cheat suite holds that line: the same world with its entities
+renamed produces a bit-identical run, and blank pixels produce no verdict at
+all.
+
+Identity is ranked **after** physics and never overrides it. A candidate
+outside the motion gate is not where the target can be, and no correlation
+rescues it; a positively refused identity removes a candidate even when it is
+the only one admitted; among what remains a match outranks a non-match and the
+smallest innovation breaks the tie. Starting a track requires a positive
+recognition within a bounded wait, and an established track is never ended
+because the evidence ran out — a beacon that stops signalling is reported as
+unconfirmable, not as wrong.
+
+Eight coded scenarios cover a clean coded target, an uncoded intruder, an
+intruder sending a different code, the Phase 7 hard decoy with both sources
+coded, an intruder replaying a rotation of the beacon's code, an intruder
+sending the identical code at the identical phase, a beacon that stops
+signalling twenty seconds in, and a coded beacon through bursty frame loss.
+
+### What it achieves, measured
+
+Same world, same seed, identity switched on and off; both arms scored by the
+same evaluator from the same recorded files.
+
+| Scenario             | RMS error (µrad) off → on | Retention off → on | False lock off → on |
+| -------------------- | ------------------------- | ------------------ | ------------------- |
+| `code-clean`         | 315 → 315                 | 1.000 → 1.000      | 0 → 0               |
+| `code-decoy-uncoded` | 370 → 2 683               | 1.000 → 0.921      | 1 → **0**           |
+| `code-decoy-wrong`   | 498 → 2 905               | 0.975 → 0.919      | 1 → **0**           |
+| `code-decoy-hard`    | 361 636 → **2 435**       | 0.235 → **0.922**  | 3 (24.4 s) → **0**  |
+| `code-ambiguous`     | 361 636 → 15 574          | 0.235 → 0.831      | 24.4 s → 0.4 s      |
+| `code-identical`     | 361 635 → 361 635         | 0.235 → 0.235      | 24.4 s → 24.4 s     |
+| `code-insufficient`  | 315 → 453                 | 1.000 → 0.963      | 0 → 0               |
+| `code-frame-loss`    | 5 066 → 5 066             | 0.726 → 0.726      | 0 → 0               |
+
+The `code-decoy-hard` result holds on all five declared seeds, not only on the
+median. Identity costs 0.02–0.16 ms per frame against a 16.67 ms budget, and
+0.061 ms measured a second way as whole-loop wall clock; the cost does not grow
+with run length.
+
+### Honest limits
+
+- **`code-identical` shows no improvement, and that is the correct result.** Two
+  sources sending the same code at the same phase are the same signal from
+  different objects. Identity abstains and what is left is Phase 7 behaviour.
+  The run's 1 271 "wrong recognitions" are truthful: the tracker claimed the
+  source it held is sending the expected pattern, and that was true of the
+  decoy.
+- **Removing a false lock can cost pointing accuracy.** On `code-decoy-uncoded`
+  and `code-decoy-wrong` the control arm was already nearly fine, and identity
+  raises RMS error from a few hundred to a few thousand microradians while
+  eliminating the false lock. The cost is the merged blob: within about 1.3
+  pixels of each other the two emitters are one detection carrying two
+  superimposed codes, and the tracker declines a measurement it cannot
+  attribute rather than accepting it.
+- **A rotation of the expected code is indistinguishable to a receiver that has
+  not locked phase**, which is measured at 15/15. A locked receiver separates
+  them, because the rotated copy is at the wrong phase in absolute time.
+- **This is recognition, not authentication.** The code is not secret and
+  carries no signature, so a decoy that knows the pattern can send it and will
+  be accepted. Phase 8 resists confusion; it does not resist an adversary.
+- **Identity needs time** — roughly half a second of continuous observation at
+  the bundled timing. A target seen more briefly is reported as
+  `insufficient-evidence` rather than guessed at.
+- Identity is off by default and is offered in the interface only on a scenario
+  whose beacon carries a code. Enabled against an unmodulated beacon it would
+  correctly, and uselessly, refuse to acquire anything.
+
+### Local Phase 8 verification
+
+| Evidence                                                     | Result                                             |
+| ------------------------------------------------------------ | -------------------------------------------------- |
+| Whole TypeScript suite, type tests included                  | 78 files, 1 539 tests passed                       |
+| Performance suites (run separately)                          | 5 files, 27 tests passed                           |
+| Code waveform, code library and correlator unit tests        | 92 passed                                          |
+| Image-level identity, through the real sensor                | 10 passed                                          |
+| Identity ON/OFF ablation over eight scenarios and five seeds | 18 passed                                          |
+| Anti-cheat and isolation, including identity                 | 23 passed                                          |
+| Clean-mode regression, including "identity off is Phase 7"   | 15 passed                                          |
+| TypeScript format, lint, typecheck and production build      | passed locally                                     |
+| Rust `fmt --check`, Clippy `-D warnings`, and tests          | passed locally; 5 Rust tests                       |
+| Manual validation in the running application                 | performed against the dev view at `localhost:1420` |
+
+Manual validation exercised the identity panel on `code-decoy-hard` end to end:
+SEARCH shows IDLE with "no candidate is being watched"; TRACK shows MATCH with
+correlation 0.931, a recovered code phase of 50 ms against a true 37 ms — one
+search step — and 121 observations over 2.0 s; the sensor overlay marks the
+selected blob in the match colour; switching identity off removes the panel and
+states that the tracker is choosing on motion alone; and a scenario with no
+coded beacon offers no identity control at all. The same caveat as Phase 7
+applies: experiment recording cannot run in a browser, so the record → finalise
+→ report chain was validated headlessly against `NodeFileStorage` and by the
+automated report suite.
+
+The model, the codes, the correlator, the measured results and the limits are in
+[BEACON_IDENTITY.md](BEACON_IDENTITY.md); the decisions are
+[ADR-0023](adr/0023-identity-is-a-configured-expectation.md),
+[ADR-0024](adr/0024-code-timing-follows-the-camera.md) and
+[ADR-0025](adr/0025-identity-is-evidence-not-proof.md).
+
+### Not started
+
+No AI/ONNX verifier, AstraBench batch benchmarking, FailureHunter, replay, HIL
+or final UI redesign has been added. There is no communications modem, no link
+budget and no wave-optics propagation.

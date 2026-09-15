@@ -37,6 +37,14 @@ handoff-validity verdict are not inputs.** The algorithm decides handoff
 readiness from its own measurements; whether that claim was justified is
 computed separately, afterwards, and never reaches it.
 
+Phase 8 adds one item to the configuration and nothing to the inputs: the
+**signalling pattern the terminal expects its partner to send**, as a sequence
+of ones and zeros and a symbol duration. That is a setting, the way a radio's
+frequency is a setting. It carries no brightness, no phase, no position and no
+identifier, and it says nothing about which object in the world is emitting —
+working that out from pixels remains the tracker's problem, and it can still get
+it wrong. See [ADR-0023](adr/0023-identity-is-a-configured-expectation.md).
+
 ## States
 
 ```
@@ -118,9 +126,37 @@ radius bounds that independently.
 | TRACK   | 13.82 (99.9%, 2 dof) | 1.5°            |
 | RECOVER | 13.82                | 6.0°            |
 
-**This does not solve identity.** A decoy inside the gate with a smaller `d²`
-than the real beacon takes the track, and a test asserts exactly that. Coded
-beacon identification is a later phase, and this is the reason it is needed.
+**On its own this does not solve identity.** A decoy inside the gate with a
+smaller `d²` than the real beacon takes the track, and a test asserts exactly
+that.
+
+### Identity, when it is enabled
+
+Phase 8 adds a second, independent kind of evidence: whether a candidate's
+brightness over time carries the signalling pattern the terminal is configured
+to expect. The two are never combined arithmetically. Acceptance is **staged**,
+and the stages are ordered by what they can prove:
+
+1. **Physics decides what is admissible, and is never overridden.** A candidate
+   outside the chi-square gate or the angular radius is not where the target can
+   be, and no correlation rescues it.
+2. **A positively refused identity removes a candidate**, even when it is the
+   only one admitted — leaving the estimator coasting, which is what RECOVER is
+   for and is the better failure.
+3. **Among what remains, a match outranks a non-match**, and within one identity
+   class the smallest `d²` wins: exactly the rule above.
+
+Starting a track needs more than continuing one. ACQUIRE requires a positive
+recognition as well as motion evidence, within a bounded wait; SEARCH skips a
+source identity has already settled against, so the machine cannot oscillate by
+offering the same refused decoy over and over. An established track is never
+ended merely because the evidence ran out — a beacon that stops signalling is
+reported as unconfirmable, not as wrong.
+
+Nothing about the world reaches the correlator. It is configured with a pattern
+and a symbol duration, and recovers phase by search. See
+[BEACON_IDENTITY.md](BEACON_IDENTITY.md) and
+[ADR-0025](adr/0025-identity-is-evidence-not-proof.md).
 
 ## Estimator: interacting multiple model
 
@@ -457,10 +493,16 @@ measured bottleneck that would justify moving anything to Rust.
 Stated because a later phase has to beat this one, and because a reference
 implementation that hid its limits would be worth less than none.
 
-1. **Identity is unresolved.** Prediction and motion consistency narrow the
-   field; they do not establish which emitter is which. A plausible decoy inside
-   the gate captures the track, and a test asserts it. Coded beacon
-   identification is the fix, and it is a later phase.
+1. **Identity is resolved only for a beacon that signals.** Phase 8 adds coded
+   beacon recognition, and where the target carries a distinguishable code it
+   works decisively — `code-decoy-hard` goes from 0.235 retention and 24.4
+   seconds of false lock to 0.922 retention and none. It is not a general
+   answer. With identity disabled, or against an unmodulated beacon, prediction
+   and motion consistency are all there is and a plausible decoy inside the gate
+   still captures the track; a test asserts it. Two sources sending the same
+   code at the same phase cannot be separated by any receiver watching the
+   light, and the tracker abstains rather than guessing. See
+   [BEACON_IDENTITY.md](BEACON_IDENTITY.md).
 2. **Recovery has a finite envelope.** A disappearance longer than
    `maxDuration`, or one after which the target does not return near the
    prediction, falls back to a global sweep — correctly, but that is still a
@@ -475,8 +517,14 @@ implementation that hid its limits would be worth less than none.
    the image is, because nothing yet measures clutter.
 6. **Handoff readiness is a claim about the coarse track**, not a measurement of
    fine-pointing feasibility, and there is no fine-pointing stage to accept it.
-7. **Disturbance identity is still unresolved.** Phase 7 adds
-   camera-observable motion, attenuation, noise and dropout, but it does not
-   make a blob carry a verified identity. Their limits are deliberately exposed
-   rather than hidden; coded optical identity is a later concern.
-8. **Single target.** One track hypothesis, no multi-target association.
+7. **Recognition is not authentication.** The code is not secret and carries no
+   signature, so a decoy that knows the pattern can send it and will be
+   accepted. Phase 8 resists confusion; it does not resist an adversary, and
+   nothing here should be described as if it did.
+8. **Two sources inside one blob are one source.** At closest approach in the
+   decoy scenarios the emitters are about 1.3 pixels apart against a
+   point-spread sigma of 2.4. The detector reports one component carrying two
+   superimposed codes, the correlation collapses, and the tracker declines the
+   measurement and coasts. That is correct and it costs roughly a second and a
+   half of coasting each time.
+9. **Single target.** One track hypothesis, no multi-target association.

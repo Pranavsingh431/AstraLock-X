@@ -540,6 +540,7 @@ export class ExperimentRecorder implements LoopObserver {
       host_algorithm_ms: timings.algorithmMs,
       host_detector_ms: timings.stages.detector,
       host_bearing_transform_ms: timings.stages['bearing-transform'],
+      host_identity_ms: timings.stages.identity ?? null,
       host_estimator_ms: timings.stages.estimator,
       host_controller_ms: timings.stages.controller,
       host_orchestration_ms: timings.orchestrationMs,
@@ -561,6 +562,17 @@ export class ExperimentRecorder implements LoopObserver {
       recovery_age_s: nullableNumber(debug['recoveryAge']),
       local_search_radius_rad: nullableNumber(debug['localSearchRadius']),
       handoff_dwell_s: nullableNumber(debug['handoffDwell']),
+
+      // Beacon identity, as the algorithm reported it about its own evidence.
+      // An algorithm with no correlator leaves these empty rather than
+      // reporting a confident-looking default.
+      identity_state: typeof debug['identityState'] === 'string' ? debug['identityState'] : '',
+      code_correlation: nullableNumber(debug['codeCorrelation']),
+      code_phase_s: nullableNumber(debug['codePhase']),
+      identity_samples: nullableNumber(debug['identitySamples']),
+      identity_span_s: nullableNumber(debug['identitySpan']),
+      identity_candidates: nullableNumber(debug['identityCandidates']),
+      identity_rejected: nullableNumber(debug['identityRejected']),
     };
     this.telemetryBatch.push(telemetryRow(telemetry));
     this.telemetryRows += 1;

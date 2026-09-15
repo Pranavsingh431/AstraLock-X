@@ -28,7 +28,23 @@ interface OverlayDebug {
   readonly candidateScore: number | null;
   readonly predictedImageX: number | null;
   readonly predictedImageY: number | null;
+  /**
+   * The identity verdict on the selected candidate, for a tracker that has a
+   * correlator. Optional because the baseline has none, and absent is not the
+   * same as "no verdict": one algorithm cannot answer, the other has not.
+   */
+  readonly identityState?: string | null;
+  readonly identityEnabled?: boolean;
 }
+
+/** Colour and short caption for each identity verdict drawn on the image. */
+const IDENTITY_MARK: Record<string, { colour: string; caption: string }> = {
+  match: { colour: '#34d399', caption: 'CODE OK' },
+  mismatch: { colour: '#f87171', caption: 'CODE X' },
+  ambiguous: { colour: '#fbbf24', caption: 'CODE ?' },
+  unconfirmed: { colour: '#cbd5e1', caption: 'CODE ~' },
+  'insufficient-evidence': { colour: '#cbd5e1', caption: 'WATCHING' },
+};
 import type { CameraSensorFrame } from '@/core/contracts/sensors';
 import type { SensorEvaluationTruth } from '@/core/sensors/sensor-truth';
 import { useSimulationStore } from '@/stores/simulation-store';
@@ -135,8 +151,17 @@ function drawAlgorithmOverlay(
     context.stroke();
   }
 
+  // The identity verdict rides on the selection box, because that is what the
+  // verdict is about: this blob, judged on its own brightness over time. It is
+  // never drawn next to a source the tracker did not select, and it never names
+  // an emitter — the tracker does not know one to name.
+  const mark =
+    debug.identityEnabled === true && typeof debug.identityState === 'string'
+      ? IDENTITY_MARK[debug.identityState]
+      : undefined;
+
   if (debug.boundingBox !== null) {
-    context.strokeStyle = '#34d399';
+    context.strokeStyle = mark?.colour ?? '#34d399';
     context.strokeRect(
       debug.boundingBox.x - 0.5,
       debug.boundingBox.y - 0.5,
@@ -153,6 +178,11 @@ function drawAlgorithmOverlay(
 
     if (debug.candidateScore !== null) {
       context.fillText(debug.candidateScore.toFixed(2), debug.centroidX + 8, debug.centroidY - 6);
+    }
+
+    if (mark !== undefined) {
+      context.fillStyle = mark.colour;
+      context.fillText(mark.caption, debug.centroidX + 8, debug.centroidY + 12);
     }
   }
 

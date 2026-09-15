@@ -51,6 +51,7 @@ function emitter(position: Vec3Lite, intensity = 0.8, psfSigma = 2): OpticalEmit
     position,
     intensity: intensity as never,
     psfSigma: psfSigma as never,
+    code: null,
   };
 }
 

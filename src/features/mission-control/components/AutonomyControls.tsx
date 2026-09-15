@@ -62,6 +62,9 @@ export function AutonomyControls(): React.JSX.Element {
   const patMode = useSimulationStore((state) => state.patMode);
   const debug = useSimulationStore((state) => state.algorithmDebug);
   const overlay = useSimulationStore((state) => state.showAlgorithmOverlay);
+  const identityEnabled = useSimulationStore((state) => state.identityEnabled);
+  const identityAvailable = useSimulationStore((state) => state.identityAvailable);
+  const setIdentityEnabled = useSimulationStore((state) => state.setIdentityEnabled);
   const override = useSimulationStore((state) => state.manualOverride);
   const runtimeError = useSimulationStore((state) => state.runtimeError);
   const snr = useSimulationStore((state) => state.detectionSnr);
@@ -213,6 +216,7 @@ export function AutonomyControls(): React.JSX.Element {
           </div>
 
           <EstimatorPanel />
+          <IdentityPanel />
 
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-1.5 text-[11px] text-emerald-700/90">
@@ -240,7 +244,32 @@ export function AutonomyControls(): React.JSX.Element {
               />
               Manual override
             </label>
+
+            {identityAvailable && algorithmId === 'astralock-x' && (
+              <label className="flex items-center gap-1.5 text-[11px] text-violet-700/90">
+                <input
+                  type="checkbox"
+                  aria-label="Beacon identity"
+                  checked={identityEnabled}
+                  onChange={(event) => {
+                    if (!confirmIfRecording('Switching beacon identity ends the recording.')) {
+                      return;
+                    }
+                    setIdentityEnabled(event.target.checked);
+                  }}
+                  className="accent-violet-400"
+                />
+                Beacon identity
+              </label>
+            )}
           </div>
+
+          {identityAvailable && algorithmId === 'astralock-x' && !identityEnabled && (
+            <p className="text-[10px] leading-snug text-violet-700/90">
+              Identity off: the tracker is choosing on motion alone, as it did before coded beacons
+              existed. This is the control arm.
+            </p>
+          )}
 
           {override && (
             <p className="text-[10px] leading-snug text-amber-700/90">
@@ -343,6 +372,112 @@ function EstimatorPanel(): React.JSX.Element | null {
           {robust.handoffRequiredDwell.toFixed(2)} s
         </p>
       )}
+    </div>
+  );
+}
+
+/** How each identity verdict is presented. Wording is the tracker's, not truth. */
+const IDENTITY_STYLE: Record<string, { style: string; label: string; meaning: string }> = {
+  match: {
+    style: 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700',
+    label: 'MATCH',
+    meaning: 'The watched source is sending the expected pattern.',
+  },
+  mismatch: {
+    style: 'border-red-500/60 bg-red-500/10 text-red-700',
+    label: 'MISMATCH',
+    meaning: 'The watched source is sending something else.',
+  },
+  ambiguous: {
+    style: 'border-amber-500/60 bg-amber-500/10 text-amber-700',
+    label: 'AMBIGUOUS',
+    meaning: 'More than one source fits the expected pattern. They cannot be told apart.',
+  },
+  unconfirmed: {
+    style: 'border-slate-400/60 bg-slate-400/10 text-slate-700',
+    label: 'UNCONFIRMED',
+    meaning: 'Between the thresholds: neither recognised nor refused.',
+  },
+  'insufficient-evidence': {
+    style: 'border-slate-400/60 bg-slate-400/10 text-slate-700',
+    label: 'NO EVIDENCE',
+    meaning: 'Not watched long enough, or the source is not modulating.',
+  },
+};
+
+/**
+ * What the correlator currently believes about the source being tracked.
+ *
+ * Rendered only when the running algorithm has an identity stage and it is
+ * switched on. Every figure is the tracker's own evidence about pixels it saw:
+ * a correlation, a recovered phase, and how much history went into them. There
+ * is no emitter name here and there cannot be one — the tracker is configured
+ * with a *pattern to expect*, not with the identity of an object in the world,
+ * and it has no way to know which simulated entity it is looking at.
+ *
+ * The correlation is a normalised (Pearson) coefficient on [-1, 1], invariant
+ * to brightness. It is **not** a probability and is not shown as a percentage.
+ */
+function IdentityPanel(): React.JSX.Element | null {
+  const debug = useSimulationStore((state) => state.algorithmDebug);
+  if (debug === null || !('identityEnabled' in debug)) return null;
+  if (!debug.identityEnabled) return null;
+
+  const state = debug.identityState;
+  const presentation =
+    state === null
+      ? {
+          style: 'border-slate-400/60 bg-slate-400/10 text-slate-700',
+          label: 'IDLE',
+          meaning: 'No candidate is being watched.',
+        }
+      : (IDENTITY_STYLE[state] ?? {
+          style: 'border-slate-400/60 bg-slate-400/10 text-slate-700',
+          label: state.toUpperCase(),
+          meaning: '',
+        });
+
+  return (
+    <div className="space-y-1.5 rounded-sm border border-violet-500/30 bg-violet-500/5 px-2 py-1.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[9px] font-semibold tracking-wider text-violet-700 uppercase">
+          Beacon identity — coded
+        </span>
+        <Badge
+          variant="outline"
+          className={cn('h-4 px-1.5 text-[9px] font-semibold tracking-wider', presentation.style)}
+        >
+          {presentation.label}
+        </Badge>
+      </div>
+
+      <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+        <Field
+          label="Correlation"
+          value={debug.codeCorrelation === null ? '—' : debug.codeCorrelation.toFixed(3)}
+        />
+        <Field
+          label="Code phase"
+          value={debug.codePhase === null ? '—' : `${(debug.codePhase * 1000).toFixed(0)} ms`}
+        />
+        <Field
+          label="Evidence"
+          value={
+            debug.identitySamples === null
+              ? '—'
+              : `${String(debug.identitySamples)} obs${debug.identitySpan === null ? '' : ` / ${debug.identitySpan.toFixed(1)} s`}`
+          }
+        />
+        <Field label="Watched sources" value={String(debug.identityCandidates)} />
+        <Field label="Refused this frame" value={String(debug.identityRejected)} />
+      </div>
+
+      {presentation.meaning !== '' && (
+        <p className="text-[10px] text-violet-700/90">{presentation.meaning}</p>
+      )}
+      <p className="text-[9px] text-muted-foreground">
+        Correlation against the expected signalling pattern, on [-1, 1]. Not a probability.
+      </p>
     </div>
   );
 }

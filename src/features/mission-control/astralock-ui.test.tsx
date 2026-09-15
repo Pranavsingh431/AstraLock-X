@@ -276,3 +276,69 @@ describe('demonstrating without truth on screen', () => {
     expect(useSimulationStore.getState().algorithmDebug?.centroidX).not.toBeNull();
   });
 });
+
+describe('the beacon identity panel', () => {
+  it('is absent on a scenario whose beacon carries no code', () => {
+    renderView();
+    act(() => {
+      useSimulationStore.getState().setAlgorithm('astralock-x');
+      useSimulationStore.getState().setAutonomy(true);
+    });
+    stepFor(10);
+
+    // Nothing to recognise, so nothing is claimed. Not a panel of dashes.
+    expect(screen.queryByText(/Beacon identity/i)).not.toBeInTheDocument();
+  });
+
+  it('reports the correlator’s own verdict on a coded scenario', () => {
+    renderView();
+    act(() => {
+      useSimulationStore.getState().loadScenarioById('code-clean');
+      useSimulationStore.getState().setAlgorithm('astralock-x');
+      useSimulationStore.getState().setAutonomy(true);
+    });
+    stepFor(12);
+
+    expect(screen.getByText(/Beacon identity — coded/i)).toBeInTheDocument();
+    expect(screen.getByText('MATCH')).toBeInTheDocument();
+    // The correlation is shown as a coefficient on [-1, 1], never as a percent.
+    expect(screen.getByText('Correlation')).toBeInTheDocument();
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Not a probability/i)).toBeInTheDocument();
+  });
+
+  it('names no emitter, because the tracker knows none', () => {
+    renderView();
+    act(() => {
+      useSimulationStore.getState().loadScenarioById('code-decoy-wrong');
+      useSimulationStore.getState().setAlgorithm('astralock-x');
+      useSimulationStore.getState().setAutonomy(true);
+    });
+    stepFor(12);
+
+    const panel = screen.getByText(/Beacon identity — coded/i).closest('div')!.parentElement!;
+    // The scenario's own labels for its emitters. A tracker that displayed one
+    // would be displaying something it was never given.
+    expect(panel.textContent).not.toMatch(/Coded beacon|Plausible intruder|target-\d/);
+  });
+
+  it('can be switched off, which is the control arm of the comparison', async () => {
+    const user = userEvent.setup();
+    renderView();
+    act(() => {
+      useSimulationStore.getState().loadScenarioById('code-clean');
+      useSimulationStore.getState().setAlgorithm('astralock-x');
+      useSimulationStore.getState().setAutonomy(true);
+    });
+    stepFor(12);
+
+    await user.click(screen.getByRole('checkbox', { name: 'Beacon identity' }));
+    expect(useSimulationStore.getState().identityEnabled).toBe(false);
+    expect(screen.getByText(/choosing on motion alone/i)).toBeInTheDocument();
+
+    stepFor(12);
+    // With identity off the tracker still works; it simply stops claiming to
+    // recognise anything.
+    expect(screen.queryByText(/Beacon identity — coded/i)).not.toBeInTheDocument();
+  });
+});

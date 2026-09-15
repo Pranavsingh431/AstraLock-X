@@ -15,6 +15,7 @@
  */
 
 import type { WorldState } from '@/core/contracts/ground-truth';
+import type { CodeWaveform } from '@/core/contracts/code-waveform';
 import type { SimulationConfig } from '@/core/contracts/simulation';
 import type { Meters, Normalized, Pixels } from '@/core/contracts/units';
 
@@ -52,6 +53,16 @@ export interface OpticalEmitter {
   readonly intensity: Normalized;
   /** Standard deviation of the point spread, in pixels. */
   readonly psfSigma: Pixels;
+  /**
+   * The temporal code this source is emitting, or `null` for a steady one.
+   *
+   * The *waveform*, not an identity. Two emitters carrying the same code are
+   * indistinguishable here and are meant to be: a code says what a source is
+   * signalling, and working out which physical object that is remains the
+   * tracker's problem. Nothing downstream may use the presence or contents of
+   * this field as a label.
+   */
+  readonly code: CodeWaveform | null;
 }
 
 /**
@@ -72,12 +83,27 @@ export function emittersFrom(
     const position = targetPositions[index];
     if (beacon === null || position === undefined) return;
 
+    const code = beacon.identityCode;
     emitters.push({
       id: emitterIdAt(index),
       hostEntityId: `target-${String(index)}`,
       position: { x: position.x, y: position.y, z: position.z },
       intensity: beacon.intensity,
       psfSigma: beacon.psfSigma,
+      code:
+        code === null || !code.enabled
+          ? null
+          : {
+              sequence: code.sequence,
+              symbolDuration: code.symbolDuration,
+              phaseOffset: code.phaseOffset,
+              // Levels are multipliers on the beacon's own intensity, so the
+              // waveform carries the product and the renderer stays unaware
+              // that any modulation happened.
+              onLevel: code.onIntensity,
+              offLevel: code.offIntensity,
+              repeat: code.repeat,
+            },
     });
   });
 

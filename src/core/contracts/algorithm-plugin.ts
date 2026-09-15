@@ -103,7 +103,21 @@ export interface TrackingOutput<TDebug = unknown> {
  * every algorithm that fills it in, and so a stage an algorithm does not have
  * reads as absent rather than as a stage called something else.
  */
-export type ProfiledStage = 'detector' | 'bearing-transform' | 'estimator' | 'controller';
+export type ProfiledStage =
+  | 'detector'
+  | 'bearing-transform'
+  | 'estimator'
+  | 'controller'
+  /**
+   * Temporal identity: candidate history upkeep, phase search and correlation.
+   *
+   * Its own stage rather than folded into the detector's. Phase 5 found and
+   * fixed a bug where one stage's host time was silently another's, and an
+   * identity correlator charged to the detector would be the same mistake with
+   * a different name — the detector's cost would appear to have tripled the day
+   * identity was switched on.
+   */
+  | 'identity';
 
 /**
  * A write-only sink for host wall-clock compute time.

@@ -16,9 +16,16 @@
 
 import { z } from 'zod';
 
+import { CODE_A } from '@/core/contracts/code-library';
+
 import { baselineDetectorConfigSchema } from '../baseline/config';
 
-export const ASTRALOCK_CONFIG_SCHEMA_VERSION = 1;
+/**
+ * Version 2 (Phase 8) adds the `identity` block. A version-1 document is read
+ * unchanged with identity disabled, which is exactly what it meant: a tracker
+ * that had no code correlator ran without one.
+ */
+export const ASTRALOCK_CONFIG_SCHEMA_VERSION = 2;
 
 const finite = z.number().finite();
 const positive = finite.positive();
@@ -183,6 +190,85 @@ export const trackQualityConfigSchema = z.strictObject({
   nisSmoothing: probability,
 });
 
+/**
+ * What the terminal expects the far end to be signalling.
+ *
+ * This is **configuration, not ground truth**. A terminal is told the pattern
+ * the remote beacon uses in the same way a radio is told a frequency: it says
+ * nothing about which object in the world is emitting, and working that out from
+ * pixels remains the tracker's problem.
+ *
+ * Note what is *not* here: no emitter id, no target index, no modulation phase,
+ * and no on/off levels. The phase is recovered by search, and the levels are
+ * divided out by normalisation — a receiver has no business assuming how bright
+ * the far terminal is.
+ *
+ * Disabled by default. With `enabled: false` the tracker behaves exactly as it
+ * did in Phase 7, which is what makes the ablation a clean comparison rather
+ * than an approximate one.
+ */
+export const identityConfigSchema = z
+  .strictObject({
+    enabled: z.boolean(),
+    /**
+     * The signalling pattern expected from the far terminal.
+     *
+     * Read-only, like every other configured value: a receiver setting is not
+     * something the tracker adjusts as it goes, and a mutable array here would
+     * make "the expected pattern changed during the run" expressible.
+     */
+    expectedSequence: z
+      .array(z.union([z.literal(0), z.literal(1)]))
+      .min(2)
+      .max(1024)
+      .readonly(),
+    /** Seconds per symbol, as the far terminal is expected to send them. */
+    symbolDuration: positive.max(60),
+
+    /** Correlation at or above which a candidate is accepted as the expected source. */
+    minCorrelation: finite.min(-1).max(1),
+    /** Correlation at or below which a candidate is rejected as a different source. */
+    mismatchCorrelation: finite.min(-1).max(1),
+    /** Fewest observations before any verdict other than insufficient evidence. */
+    minSamples: z.number().int().min(2).max(4096),
+    /** Fewest symbol durations the history must span before any verdict. */
+    minSpanSymbols: positive.max(1024),
+    /**
+     * Least observed brightness variation, standard deviation over mean, before
+     * a candidate may be recognised or refused.
+     */
+    minModulation: z.number().min(0).max(10),
+
+    /** Phase offsets tried across one code period. */
+    phaseSearchSteps: z.number().int().min(2).max(4096),
+    /** Once a phase is accepted, the sweep narrows to this many symbols either side. */
+    phaseTrackSymbols: positive.max(64),
+
+    /** Seconds of candidate history retained. */
+    historyWindow: positive.max(600),
+    /** Observations retained per candidate. */
+    historyCapacity: z.number().int().min(4).max(8192),
+    /**
+     * Radians of bearing a blob may move between frames and still be joined to
+     * one history. Bearing, not pixels: the image moves under the gimbal.
+     */
+    associationAngle: positive.max(10 * DEG),
+    /** Candidate histories tracked at once. */
+    maxCandidates: z.number().int().min(1).max(64),
+
+    /**
+     * Longest a candidate may sit in ACQUIRE waiting for identity evidence.
+     *
+     * Without this a tracker watching an unmodulated source would wait for ever
+     * for a verdict that can never come.
+     */
+    maxAcquireSeconds: positive.max(600),
+  })
+  .refine((identity) => identity.mismatchCorrelation < identity.minCorrelation, {
+    error: 'mismatchCorrelation must be below minCorrelation, or no result can be unconfirmed.',
+    path: ['mismatchCorrelation'],
+  });
+
 export const astraLockConfigSchema = z.strictObject({
   schemaVersion: z.literal(ASTRALOCK_CONFIG_SCHEMA_VERSION),
   detector: baselineDetectorConfigSchema,
@@ -194,6 +280,7 @@ export const astraLockConfigSchema = z.strictObject({
   recovery: recoveryConfigSchema,
   handoff: handoffConfigSchema,
   trackQuality: trackQualityConfigSchema,
+  identity: identityConfigSchema,
 });
 
 export type AstraLockConfig = z.infer<typeof astraLockConfigSchema>;
@@ -317,5 +404,70 @@ export const DEFAULT_ASTRALOCK_CONFIG: AstraLockConfig = astraLockConfigSchema.p
     sigmaReference: 1e-3,
     persistenceWindow: 30,
     nisSmoothing: 0.1,
+  },
+
+  identity: {
+    // Off by default. Every Phase 0-7 result was produced without a code
+    // correlator, and the default has to keep reproducing them; a scenario or a
+    // comparison that wants identity asks for it explicitly.
+    enabled: false,
+
+    // The bundled target pattern and the timing the bundled camera can resolve:
+    // four frames per symbol at 60 fps, fifteen symbols, one second per period.
+    // See docs/BEACON_IDENTITY.md for why two frames per symbol is the floor and
+    // four is the default.
+    expectedSequence: [...CODE_A],
+    symbolDuration: 4 / 60,
+
+    // Measured against what the codes actually achieve, not chosen by feel.
+    //
+    // A source sending the *expected* code scores about 0.93 on clean pixels —
+    // short of 1.0 because exposures straddling a symbol boundary see an
+    // intermediate level. A source sending the other length-15 m-sequence is
+    // bounded by their cross-correlation of 7/15 = 0.467.
+    //
+    // So the reject threshold has to sit **above** 0.467, or a wrong-code decoy
+    // can never be rejected at all — it scores its 0.466, lands between the
+    // thresholds, and is accepted as merely unconfirmed. An earlier value of 0.3
+    // did exactly that, and the hard-decoy scenario measured no improvement at
+    // all until this was corrected.
+    //
+    //   0.00 .......... 0.467 .. 0.55 ........ 0.65 .......... 1.00
+    //                    ^wrong   ^reject       ^accept   ^right code
+    //                     code                             (~0.93)
+    minCorrelation: 0.65,
+    mismatchCorrelation: 0.55,
+
+    // Half a second of continuous observation at 60 fps, spanning six symbols.
+    // Both bounds matter: samples alone can be crammed into one symbol by a fast
+    // camera, and a span alone can be met by two samples an age apart.
+    minSamples: 24,
+    minSpanSymbols: 6,
+
+    // A square wave between the bundled on and off levels reaches about 0.48
+    // once the detector's nonlinearity is included, and a source holding steady
+    // sits near the noise. Twelve per cent is clear of the noise and far below
+    // what any real modulation produces, so it separates "not signalling" from
+    // "signalling the wrong thing" without being a threshold anything sits on.
+    minModulation: 0.12,
+
+    // Sixty steps across a one-second period is 16.7 ms of resolution, which is
+    // one frame period — finer than the observations can distinguish anyway.
+    phaseSearchSteps: 60,
+    phaseTrackSymbols: 1,
+
+    // Two code periods of history, capped so a faster camera cannot grow it.
+    historyWindow: 2,
+    historyCapacity: 256,
+    // A quarter of a degree: about thirteen pixels on the 12-degree reference
+    // camera, which is roughly five point-spread widths. Wide enough to follow
+    // a moving blob between frames, tight enough that two sources the detector
+    // can separate are not joined into one history.
+    associationAngle: 0.25 * DEG,
+    maxCandidates: 8,
+
+    // Long enough for two full code periods plus margin. A candidate that has
+    // not produced a verdict by then is not going to.
+    maxAcquireSeconds: 4,
   },
 });

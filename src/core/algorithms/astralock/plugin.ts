@@ -53,6 +53,15 @@ import { blobBounds, detect } from '../baseline/detector';
 import type { AstraLockConfig } from './config';
 import { DEFAULT_ASTRALOCK_CONFIG, astraLockConfigSchema } from './config';
 import { PointingController } from './controller';
+import {
+  CandidateTracker,
+  classify,
+  searchPhase,
+  type IdentityReading,
+  type IdentitySample,
+  type IdentityState,
+  type TrackedCandidate,
+} from './identity';
 import type {
   Association,
   CandidateBearing,
@@ -159,6 +168,29 @@ export interface AstraLockDebug {
   readonly handoffRequiredDwell: number;
   readonly uncertaintyEllipse: UncertaintyEllipse | null;
   readonly priorSource: string | null;
+
+  // --- Beacon identity (Phase 8) ---
+  //
+  // The algorithm's own verdict about its own evidence, and nothing else. There
+  // is no field here naming a source, because the tracker cannot name one: it
+  // knows how well a candidate's brightness history matched the pattern it was
+  // configured to expect, and that is the whole of what it knows.
+  /** Whether a code correlator is running at all. */
+  readonly identityEnabled: boolean;
+  /** Verdict on the candidate currently being followed. */
+  readonly identityState: IdentityState | null;
+  /** Best normalised correlation found, on [-1, 1]. Not a probability. */
+  readonly codeCorrelation: number | null;
+  /** Recovered code phase, seconds into the code period. */
+  readonly codePhase: number | null;
+  /** Observations the verdict rested on. */
+  readonly identitySamples: number | null;
+  /** Seconds those observations spanned. */
+  readonly identitySpan: number | null;
+  /** Candidate histories currently being maintained. */
+  readonly identityCandidates: number;
+  /** Candidates turned down this frame on identity rather than geometry. */
+  readonly identityRejected: number;
 }
 
 let observationCounter = 0;
@@ -184,6 +216,8 @@ interface FrameWork {
   recoveryAge: number | null;
   localRadius: number | null;
   localIndex: number | null;
+  /** The identity verdict on whatever candidate was taken, if any. */
+  identity: IdentityReading | null;
 }
 
 class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
@@ -196,6 +230,14 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
   private readonly quality: TrackQuality;
   private readonly handoffGate: HandoffGate;
   private readonly search: WaypointSearch;
+  /**
+   * Candidate histories, or `null` when identity is disabled.
+   *
+   * Null rather than an inert instance so that a disabled run does no work at
+   * all: no histories, no correlations, no allocation. That is what makes
+   * "identity off" reproduce Phase 7 exactly instead of approximately.
+   */
+  private readonly tracker: CandidateTracker | null;
 
   private state: AstraLockState = 'search';
   private stateSince = 0;
@@ -209,6 +251,12 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
   private recoverStart = 0;
   private lastNis: number | null = null;
   private lastQuality: TrackQualityReading | null = null;
+  /** Code phase accepted on the tracked candidate, for the narrowed search. */
+  private lockedPhase: number | null = null;
+  /** The identity verdict on the candidate actually taken this frame. */
+  private lastIdentity: IdentityReading | null = null;
+  /** When the current ACQUIRE began waiting for identity evidence. */
+  private acquireStart = 0;
 
   constructor(init: AlgorithmInit<AstraLockConfig>) {
     this.config = init.config;
@@ -231,6 +279,16 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
         ? coverageWaypoints(s, fov, s.overlapFraction)
         : priorWaypoints(s.prior, s, fov, s.overlapFraction, s.priorSigmaExtent);
     this.search = new WaypointSearch(waypoints, s);
+
+    const identity = init.config.identity;
+    this.tracker = identity.enabled
+      ? new CandidateTracker({
+          associationAngle: identity.associationAngle,
+          historyWindow: identity.historyWindow,
+          historyCapacity: identity.historyCapacity,
+          maxCandidates: identity.maxCandidates,
+        })
+      : null;
   }
 
   public reset(): void {
@@ -239,6 +297,10 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
     this.quality.reset();
     this.handoffGate.reset();
     this.search.reset();
+    this.tracker?.reset();
+    this.lockedPhase = null;
+    this.lastIdentity = null;
+    this.acquireStart = 0;
     this.state = 'search';
     this.stateSince = 0;
     this.lastReason = 'commanded';
@@ -251,6 +313,118 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
     this.recoverStart = 0;
     this.lastNis = null;
     this.lastQuality = null;
+  }
+
+  /**
+   * Updates every candidate's brightness history and re-evaluates its identity.
+   *
+   * Returns a lookup from candidate to verdict, which `associate` consults. The
+   * lookup is by object reference into this frame's candidate array, so nothing
+   * persistent is keyed on anything that could act as an identifier.
+   *
+   * Returns `null` when identity is disabled, and the caller then does exactly
+   * what it did in Phase 7.
+   */
+  private evaluateIdentity(
+    candidates: readonly CandidateBearing[],
+    captureTime: number,
+    exposure: number,
+  ): Map<CandidateBearing, IdentityReading> | null {
+    const tracker = this.tracker;
+    if (tracker === null) return null;
+
+    const identity = this.config.identity;
+    const samples: IdentitySample[] = candidates.map((candidate) => ({
+      time: captureTime,
+      exposure,
+      u: candidate.u,
+      v: candidate.v,
+      azimuth: candidate.azimuth,
+      elevation: candidate.elevation,
+      // The detector's background-subtracted integral. Safe: a brightness, not
+      // a label.
+      intensity: candidate.blob.integratedIntensity,
+    }));
+
+    const tracks = tracker.observe(samples, captureTime);
+    const readings = new Map<CandidateBearing, IdentityReading>();
+
+    for (let index = 0; index < candidates.length; index += 1) {
+      const track: TrackedCandidate | undefined = tracks[index];
+      if (track === undefined) continue;
+
+      const observations = track.history.observations;
+      // Once a phase has been accepted the sweep narrows around it: the far
+      // terminal's clock does not move, so re-searching the whole period every
+      // frame is work with a known answer.
+      const result = searchPhase(
+        observations,
+        identity.expectedSequence,
+        identity.symbolDuration,
+        identity.phaseSearchSteps,
+        this.lockedPhase,
+        identity.phaseTrackSymbols,
+      );
+      const reading = classify(result, track.history.span, identity.symbolDuration, identity);
+      track.reading = reading;
+      readings.set(candidates[index]!, reading);
+    }
+
+    // A candidate is only unambiguous if it is the only one that matches. Two
+    // sources both carrying the expected pattern — or one carrying a rotation of
+    // it, which is the same thing to a phase search — cannot be separated by
+    // identity, and the tracker says so rather than picking one.
+    const matched = [...readings.entries()].filter(([, reading]) => reading.state === 'match');
+    if (matched.length > 1) {
+      for (const [candidate, reading] of matched) {
+        readings.set(candidate, { ...reading, state: 'ambiguous' });
+      }
+      // Identity abstains for this frame: every remaining candidate is demoted
+      // out of `match`, so the choice falls back entirely to the motion gate.
+      //
+      // Abstaining matters more than it sounds. Left ranking, the verdicts
+      // flicker between `match` and `ambiguous` as each history gains and loses
+      // a sample, and the rank-1 preference then drags selection back and forth
+      // between two sources it cannot actually tell apart. Measured on the
+      // rotated-code control that produced twenty false-lock episodes where
+      // identity-off produced two: not a limitation being reported, a tracker
+      // being made worse by evidence that does not discriminate.
+      for (const [candidate, reading] of readings) {
+        if (reading.state === 'match') readings.set(candidate, { ...reading, state: 'ambiguous' });
+      }
+    }
+
+    return readings;
+  }
+
+  /**
+   * Records the identity verdict on the candidate that was actually taken, and
+   * keeps the accepted code phase fresh so the search stays narrow.
+   */
+  private noteIdentity(
+    accepted: CandidateBearing | null,
+    readings: Map<CandidateBearing, IdentityReading> | null,
+    work: FrameWork,
+  ): void {
+    if (readings === null) {
+      this.lastIdentity = null;
+      return;
+    }
+    const reading = accepted === null ? null : (readings.get(accepted) ?? null);
+    this.lastIdentity = reading;
+    work.identity = reading;
+
+    if (reading?.state === 'match' && reading.correlation !== null) {
+      this.lockedPhase = reading.phase;
+    } else if (reading?.state === 'mismatch' || reading?.state === 'ambiguous') {
+      // Widen again. A lock is only worth keeping while it keeps being
+      // confirmed: if the candidate being followed has stopped matching — which
+      // is what happens when a crossing hands the history to a different source
+      // — then the phase was learned from something else, and searching only
+      // around it would reject the right source for not agreeing with the wrong
+      // one's clock.
+      this.lockedPhase = null;
+    }
   }
 
   private transition(to: AstraLockState, reason: PATTransitionReason, time: number): void {
@@ -280,11 +454,30 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
       candidateBearings(detection, frame, this.camera, c.detector.threshold),
     );
 
+    // Identity is evaluated once per frame for every candidate, whatever state
+    // the machine is in: evidence has to accumulate while searching, or a target
+    // would have to be watched all over again after acquisition.
+    // Timed only when there is a correlator to time. A stage that did not run
+    // is absent from the record rather than present at zero, which is what the
+    // other optional stages do and what keeps "identity cost nothing" from
+    // looking like a measurement of a stage that was never there.
+    const identityReadings =
+      this.tracker === null
+        ? null
+        : this.profiler.time('identity', () =>
+            this.evaluateIdentity(candidates, captureTime, frame.exposure as number),
+          );
+    const identityOf =
+      identityReadings === null
+        ? null
+        : (candidate: CandidateBearing): IdentityState | null =>
+            identityReadings.get(candidate)?.state ?? null;
+
     const work = emptyWork();
 
     switch (this.state) {
       case 'search': {
-        const best = strongestCandidate(candidates, c.acquisition.minCandidateScore);
+        const best = strongestCandidate(candidates, c.acquisition.minCandidateScore, identityOf);
         if (best !== null) {
           this.imm.initialise(best.azimuth, best.elevation, captureTime);
           this.evidence.start(captureTime);
@@ -292,6 +485,8 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
           this.handoffGate.reset();
           this.controller.reset();
           this.lastNis = null;
+          this.lockedPhase = null;
+          this.acquireStart = captureTime;
           work.accepted = best;
           this.transition('acquire', 'candidate-detected', time);
           work.intentTarget = { azimuth: 0, elevation: 0, offsetAzimuth: 0, offsetElevation: 0 };
@@ -317,6 +512,7 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
           c.acquisition.gateChi2,
           c.acquisition.maxBearingDisplacement,
           c.acquisition.minCandidateScore,
+          identityOf,
         );
         const accepted = work.association.accepted;
         if (accepted !== null && work.association.gate !== null) {
@@ -331,11 +527,46 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
           this.evidence.miss();
         }
 
-        if (this.evidence.ready) {
+        const acquireIdentity =
+          accepted === null || identityReadings === null
+            ? null
+            : (identityReadings.get(accepted) ?? null);
+        this.lastIdentity = acquireIdentity;
+        work.identity = acquireIdentity;
+
+        // Motion evidence and identity evidence are both required, and neither
+        // substitutes for the other. Phase 6's persistence and innovation checks
+        // still have to pass; when identity is enabled the candidate must also
+        // have been positively recognised, which takes about half a second of
+        // watching at the default timing.
+        //
+        // The wait is bounded. A candidate that never produces a verdict — an
+        // unmodulated source, or one seen too briefly — is abandoned rather than
+        // waited on for ever.
+        const identitySatisfied = identityReadings === null || acquireIdentity?.state === 'match';
+        const identityRefused =
+          acquireIdentity?.state === 'mismatch' || acquireIdentity?.state === 'ambiguous';
+        const waitedTooLong =
+          identityReadings !== null &&
+          captureTime - this.acquireStart > c.identity.maxAcquireSeconds;
+
+        if (acquireIdentity?.state === 'match' && acquireIdentity.correlation !== null) {
+          // Hold the recovered phase so the search can narrow from here.
+          this.lockedPhase = acquireIdentity.phase;
+        }
+
+        if (this.evidence.ready && identitySatisfied) {
           this.lastMeasurementTime = captureTime;
           this.misses = 0;
           this.transition('track', 'track-confirmed', time);
           work.intentTarget = { azimuth: 0, elevation: 0, offsetAzimuth: 0, offsetElevation: 0 };
+        } else if (identityRefused || waitedTooLong) {
+          // The candidate is the wrong source, or indistinguishable from one, or
+          // has produced no verdict in the time allowed. Back to searching.
+          this.imm.reset();
+          this.lockedPhase = null;
+          this.transition('search', 'track-lost', time);
+          work.waypoint = this.search.current;
         } else if (this.evidence.failed) {
           this.imm.reset();
           this.transition('search', 'track-lost', time);
@@ -356,6 +587,7 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
           c.gating.trackGateChi2,
           c.gating.trackMaxGateRadius,
           c.acquisition.minCandidateScore,
+          identityOf,
         );
         const accepted = work.association.accepted;
         if (accepted !== null && work.association.gate !== null) {
@@ -370,6 +602,8 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
           this.imm.applyNoMeasurement(prediction);
           this.misses += 1;
         }
+
+        this.noteIdentity(accepted, identityReadings, work);
 
         const estimate = this.imm.estimate();
         const sigma = ImmEstimator.angularSigma(estimate.covariance);
@@ -424,6 +658,7 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
           c.gating.recoverGateChi2,
           c.gating.recoverMaxGateRadius,
           c.acquisition.minCandidateScore,
+          identityOf,
         );
         const accepted = work.association.accepted;
         if (accepted !== null && work.association.gate !== null) {
@@ -441,6 +676,12 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
             ImmEstimator.angularSigma(this.imm.estimate().covariance),
           );
           this.lastQuality = work.quality;
+          // Identity survives a short RECOVER by construction: histories are
+          // time-bounded rather than cleared on a state change, so a gap shorter
+          // than the window leaves the evidence intact and reacquisition is
+          // checked against the same code it was following. A longer gap expires
+          // it, and the tracker has to earn the verdict again.
+          this.noteIdentity(accepted, identityReadings, work);
           // The estimator is kept: reacquisition continues the track it had.
           this.transition('track', 'candidate-detected', time);
           work.intentTarget = { azimuth: 0, elevation: 0, offsetAzimuth: 0, offsetElevation: 0 };
@@ -449,6 +690,7 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
 
         this.imm.applyNoMeasurement(prediction);
         this.misses += 1;
+        this.noteIdentity(null, identityReadings, work);
         const estimate = this.imm.estimate();
         const sigma = ImmEstimator.angularSigma(estimate.covariance);
         const age = captureTime - this.recoverStart;
@@ -462,6 +704,10 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
           this.search.startNearest({ azimuth: estimate.state[0]!, elevation: estimate.state[1]! });
           this.imm.reset();
           this.controller.reset();
+          // The track is abandoned, so the phase that went with it is too: the
+          // next candidate has to be recognised from scratch rather than
+          // inheriting a lock earned by a different source.
+          this.lockedPhase = null;
           this.transition('search', 'search-exhausted', time);
           work.waypoint = this.search.current;
           break;
@@ -688,6 +934,15 @@ class AstraLockInstance implements AlgorithmInstance<AstraLockDebug> {
       handoffRequiredDwell: this.config.handoff.dwell,
       uncertaintyEllipse: ellipse,
       priorSource: this.config.search.prior?.source ?? null,
+
+      identityEnabled: this.config.identity.enabled,
+      identityState: this.lastIdentity?.state ?? null,
+      codeCorrelation: this.lastIdentity?.correlation ?? null,
+      codePhase: this.lastIdentity === null ? null : this.lastIdentity.phase,
+      identitySamples: this.lastIdentity?.samples ?? null,
+      identitySpan: this.lastIdentity?.span ?? null,
+      identityCandidates: this.tracker?.candidates.length ?? 0,
+      identityRejected: work.association?.identityRejected ?? 0,
     };
 
     return {
@@ -777,6 +1032,7 @@ function emptyWork(): FrameWork {
     recoveryAge: null,
     localRadius: null,
     localIndex: null,
+    identity: null,
   };
 }
 

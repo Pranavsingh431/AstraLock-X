@@ -129,6 +129,12 @@ describe('sample files', () => {
       // Dimensionless disturbance truth: a multiplicative gain and a fraction.
       'truth_scintillation_gain',
       'truth_saturated_fraction',
+      // Beacon identity: a verdict, a correlation on [-1, 1], and three counts.
+      'identity_state',
+      'code_correlation',
+      'identity_samples',
+      'identity_candidates',
+      'identity_rejected',
     ]);
     for (const column of [...TELEMETRY_COLUMNS, ...EVALUATION_COLUMNS]) {
       if (unitless.has(column.name)) continue;

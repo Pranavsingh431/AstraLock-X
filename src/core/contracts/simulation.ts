@@ -12,6 +12,7 @@
 import { z } from 'zod';
 
 import { CLEAN_DISTURBANCES, type DisturbanceConfig, disturbanceConfigSchema } from './disturbance';
+import type { CodeSymbol } from './code-waveform';
 import type { Vec3 } from './geometry';
 import { positiveNumber, tagged, unitIntervalNumber, vec3Schema } from './schema';
 import {
@@ -119,24 +120,65 @@ export interface TargetConfig {
 }
 
 /**
- * An ideal optical emitter carried by a target.
+ * A temporal intensity code carried by a beacon.
  *
- * Phase 2 models emission as ideal: a fixed apparent intensity and a fixed
- * point-spread width, with no range falloff, no atmospheric attenuation and no
- * modulation. A real link budget would make `intensity` a function of
- * `transmitPower`, range and atmosphere; that arrives with the propagation
- * model, and until it does `transmitPower` is declared but unused.
+ * The beacon holds `onIntensity` while sending a 1 and `offIntensity` while
+ * sending a 0, both as multipliers on the beacon's own `intensity`. Symbol `k`
+ * of the sequence starts at `phaseOffset + k * symbolDuration`.
+ *
+ * **`offIntensity` is deliberately not required to be zero.** A beacon that
+ * switches fully off vanishes from the image for the whole of every zero
+ * symbol, and a tracker cannot follow something that is absent a third of the
+ * time. A modulation depth — bright and less bright — keeps the source
+ * continuously trackable while still carrying the pattern, which is how a
+ * beacon that has to be both followed and identified would actually be built.
+ * Full on-off keying remains expressible by setting `offIntensity` to zero, and
+ * the consequences of doing so are the scenario author's to accept.
+ *
+ * Symbol duration must be long enough that the camera can resolve the pattern;
+ * see docs/BEACON_IDENTITY.md for why that rules out sampling a high-frequency
+ * carrier, and `validatedSimulationConfigSchema` for the rule that enforces it.
+ */
+export interface BeaconIdentityCodeConfig {
+  readonly enabled: boolean;
+  /** Binary symbols. Non-empty; the pattern, not an identifier. */
+  readonly sequence: readonly CodeSymbol[];
+  readonly symbolDuration: Seconds;
+  /** When symbol 0 begins, in simulated seconds. */
+  readonly phaseOffset: Seconds;
+  /** Multiplier on the beacon's intensity while sending a 1. */
+  readonly onIntensity: Normalized;
+  /** Multiplier on the beacon's intensity while sending a 0. */
+  readonly offIntensity: Normalized;
+  /** Whether the sequence repeats, or is sent once and then held on. */
+  readonly repeat: boolean;
+}
+
+/**
+ * An optical emitter carried by a target.
+ *
+ * Emission is ideal in every respect except the two the project has since
+ * modelled: `intensity` is a fixed apparent peak with no range falloff, and a
+ * real link budget would make it a function of `transmitPower`, range and
+ * atmosphere. `transmitPower` is declared but unused.
+ *
+ * Phase 7 gave the *path* a time dependence (attenuation, scintillation).
+ * Phase 8 gives the *source* one: `identityCode`, when present and enabled,
+ * modulates the emitted intensity in time so that a receiver can tell one
+ * source from another by watching it rather than by being told.
  */
 export interface BeaconConfig {
   /** Emitted optical power. Declared; no link budget is computed yet. */
   readonly transmitPower: Watts;
   /**
    * Peak apparent intensity in a clean image, on [0, 1] of the format's full
-   * range. Constant with range in Phase 2, by design.
+   * range. Constant with range, by design.
    */
   readonly intensity: Normalized;
   /** Standard deviation of the point-spread function, in pixels. */
   readonly psfSigma: Pixels;
+  /** Temporal identity code, or `null` for an unmodulated source. */
+  readonly identityCode: BeaconIdentityCodeConfig | null;
 }
 
 /**
@@ -233,6 +275,33 @@ export interface SimulationConfig {
 // Configs arrive from disk and from the Scenario Lab, so they are parsed rather
 // than trusted. `z.number()` already rejects NaN and Infinity in Zod 4.
 
+/**
+ * Runtime schema for {@link BeaconIdentityCodeConfig}.
+ *
+ * Bounds are engineering limits rather than taste. A sequence longer than 1024
+ * symbols cannot be observed inside any run this project supports; a symbol
+ * shorter than a microsecond is not a thing a camera can see; and `offIntensity`
+ * below `onIntensity` is what makes the modulation a modulation rather than a
+ * constant.
+ */
+export const beaconIdentityCodeSchema = z
+  .strictObject({
+    enabled: z.boolean(),
+    sequence: z
+      .array(z.union([z.literal(0), z.literal(1)]))
+      .min(1)
+      .max(1024),
+    symbolDuration: tagged<Seconds>(z.number().positive().min(1e-6).max(60)),
+    phaseOffset: tagged<Seconds>(z.number().finite().min(-3600).max(3600)),
+    onIntensity: tagged<Normalized>(unitIntervalNumber),
+    offIntensity: tagged<Normalized>(unitIntervalNumber),
+    repeat: z.boolean(),
+  })
+  .refine((code) => code.offIntensity < code.onIntensity, {
+    error: 'Beacon offIntensity must be below onIntensity, or the code carries no information.',
+    path: ['offIntensity'],
+  });
+
 /** Runtime schema for {@link SimulationConfig}. */
 export const simulationConfigSchema = z.strictObject({
   schemaVersion: z.literal(SIMULATION_CONFIG_SCHEMA_VERSION),
@@ -263,6 +332,7 @@ export const simulationConfigSchema = z.strictObject({
             transmitPower: tagged<Watts>(positiveNumber),
             intensity: tagged<Normalized>(unitIntervalNumber),
             psfSigma: tagged<Pixels>(positiveNumber.max(64)),
+            identityCode: beaconIdentityCodeSchema.nullable().default(null),
           })
           .nullable(),
       }),
@@ -346,6 +416,33 @@ export const validatedSimulationConfigSchema = simulationConfigSchema
       error:
         'Tilt servo is too fast for the physics tick: 2*pi*naturalFrequency / tickRate must not exceed 0.5.',
       path: ['gimbal', 'tilt', 'naturalFrequency'],
+    },
+  )
+  /*
+   * A code the camera cannot resolve is not a code.
+   *
+   * The camera integrates over each exposure and reports one number per frame,
+   * so a symbol shorter than two frame periods cannot be recovered from that
+   * stream at all — the sampled sequence aliases, and no amount of correlation
+   * afterwards puts the information back. This is the rule that stops a
+   * scenario declaring a megahertz beacon and a 60 fps camera and quietly
+   * pretending the two are compatible.
+   *
+   * Two frames per symbol is the Nyquist floor. The bundled scenarios use four,
+   * because dropped frames and noise eat into the margin; see
+   * docs/BEACON_IDENTITY.md.
+   */
+  .refine(
+    (config) =>
+      config.targets.every((target) => {
+        const code = target.beacon?.identityCode;
+        if (code == null || !code.enabled) return true;
+        return code.symbolDuration >= 2 / config.camera.frameRate;
+      }),
+    {
+      error:
+        'A beacon symbol must last at least two camera frame periods, or the camera cannot resolve the code.',
+      path: ['targets'],
     },
   ) satisfies z.ZodType<SimulationConfig, unknown>;
 

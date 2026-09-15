@@ -415,3 +415,25 @@ definition v3 remain backward-compatible with earlier run directories: missing
 v3 fields parse as absent data rather than invented zeroes. A disturbed recorded
 run is recomputed cold from raw artifacts with zero differences in the test
 suite, exactly as a clean historical run is.
+
+## Phase 8 beacon identity provenance
+
+A coded scenario persists the beacon's `identityCode` in its `scenario.json`
+snapshot and inside the scenario fingerprint, so a run cannot be confused with
+one against an uncoded target. The tracker's configuration is recorded as well,
+including the sequence it was told to expect and whether identity was enabled at
+all, because the ON and OFF arms of a comparison differ only there and a record
+that did not say which arm it was would be unusable.
+
+Telemetry gains one stage timing (`host_identity_ms`) and six columns describing
+the algorithm's own verdicts — state, correlation, recovered phase, samples,
+span, candidates watched and candidates refused. All of them are the algorithm's
+opinion about pixels; none is truth, and none names a source. `identity_state`
+is the file's only text column added since Phase 5, and an earlier file, which
+lacks it, reads as an empty verdict rather than as a null one.
+
+Backward compatibility is unchanged in kind: a schema-1 or schema-2 run
+directory still loads, recomputes and verifies cold from its raw artifacts, and
+its absent identity columns and absent summary block parse as "never asked"
+rather than as zeroes. The test suite recomputes a stored Phase 5 run under its
+own definition with zero differences.

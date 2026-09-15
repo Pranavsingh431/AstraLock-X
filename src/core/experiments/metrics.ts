@@ -443,6 +443,7 @@ export class SummaryBuilder {
     bearingTransform: new SampleSeries(),
     estimator: new SampleSeries(),
     controller: new SampleSeries(),
+    identity: new SampleSeries(),
     algorithmTotal: new SampleSeries(),
     runtimeOrchestration: new SampleSeries(),
   };
@@ -458,6 +459,21 @@ export class SummaryBuilder {
   private falseLockExercised = false;
   private falseLockEpisodes = 0;
   private falseLockDuration = 0;
+
+  // Beacon identity (Phase 8). The algorithm's verdict per frame, kept so the
+  // evaluation pass can score it against truth. Telemetry is consumed in full
+  // before evaluation begins, so the lookup is always populated by then.
+  private identitySeen = false;
+  private readonly identityByFrame = new Map<number, string>();
+  private identityChallenges = 0;
+  private correctCodeAssociations = 0;
+  private wrongCodeAssociations = 0;
+  private ambiguousEpisodes = 0;
+  private insufficientEpisodes = 0;
+  private matchFrames = 0;
+  private mismatchFrames = 0;
+  private readonly matchCorrelation = new SampleSeries();
+  private previousIdentity: string | null = null;
   private trackDuration = 0;
   private trackWithoutLock = 0;
   private previous: {
@@ -595,6 +611,36 @@ export class SummaryBuilder {
     }
     if (sample.host_estimator_ms !== null) host.estimator.push(sample.host_estimator_ms);
     if (sample.host_controller_ms !== null) host.controller.push(sample.host_controller_ms);
+    // Guarded on being a number rather than on being non-null: a run recorded
+    // before the identity stage existed has this column absent, not null.
+    if (isNumber(sample.host_identity_ms)) host.identity.push(sample.host_identity_ms);
+
+    // An algorithm without a correlator writes an empty string here, and a run
+    // recorded before the column existed has it absent. Neither is a verdict.
+    const identity = sample.identity_state;
+    if (typeof identity === 'string' && identity.length > 0) {
+      this.identitySeen = true;
+      this.identityByFrame.set(sample.frame_id, identity);
+      if (identity === 'match') {
+        this.matchFrames += 1;
+        if (isNumber(sample.code_correlation)) this.matchCorrelation.push(sample.code_correlation);
+      }
+      if (identity === 'mismatch') this.mismatchFrames += 1;
+      // Episodes are runs, not frames: a verdict that holds for a second is one
+      // episode of not knowing, not sixty.
+      if (identity === 'ambiguous' && this.previousIdentity !== 'ambiguous') {
+        this.ambiguousEpisodes += 1;
+      }
+      if (
+        identity === 'insufficient-evidence' &&
+        this.previousIdentity !== 'insufficient-evidence'
+      ) {
+        this.insufficientEpisodes += 1;
+      }
+      this.previousIdentity = identity;
+    } else {
+      this.previousIdentity = null;
+    }
     if (sample.imm_ca_probability !== null) {
       this.framesWithImm += 1;
       if (this.trackingModes.includes(sample.pat_state)) {
@@ -675,6 +721,16 @@ export class SummaryBuilder {
       if (this.previous.inHandoff) this.handoffDuration += dt;
       if (this.previous.handoffValid) this.handoffValidDuration += dt;
     }
+    // Identity scoring. The challenge count is deliberately independent of
+    // whether identity is enabled, so an ON/OFF comparison is over the same
+    // number of opportunities rather than over whatever each arm happened to
+    // encounter.
+    if (inTrack && sample.truth_other_emitters_in_image > 0) this.identityChallenges += 1;
+    if (this.identityByFrame.get(sample.frame_id) === 'match') {
+      if (sample.truth_detection_on_other_emitter) this.wrongCodeAssociations += 1;
+      else if (sample.detection_present) this.correctCodeAssociations += 1;
+    }
+
     if (falseLocked && this.previous?.falseLocked !== true) this.falseLockEpisodes += 1;
     if (inHandoff && this.previous?.inHandoff !== true) this.handoffEpisodes += 1;
 
@@ -775,6 +831,19 @@ export class SummaryBuilder {
       // No competing emitter ever in view: the wrong-target challenge was never
       // posed. Reporting "0 false locks" without saying so would imply a
       // robustness the run never tested.
+      beaconIdentity: this.identitySeen
+        ? {
+            identityEnabled: true,
+            identityChallenges: this.identityChallenges,
+            correctCodeAssociations: this.correctCodeAssociations,
+            wrongCodeAssociations: this.wrongCodeAssociations,
+            ambiguousIdentityEpisodes: this.ambiguousEpisodes,
+            insufficientEvidenceEpisodes: this.insufficientEpisodes,
+            matchFrames: this.matchFrames,
+            mismatchFrames: this.mismatchFrames,
+            matchCorrelation: this.matchCorrelation.statistics('1'),
+          }
+        : null,
       falseLockExercised: this.falseLockExercised,
       falseLockEpisodes: this.falseLockEpisodes,
       falseLockDurationSeconds: this.falseLockExercised
@@ -792,6 +861,7 @@ export class SummaryBuilder {
         bearingTransform: this.host.bearingTransform.statistics('ms'),
         estimator: this.host.estimator.statistics('ms'),
         controller: this.host.controller.statistics('ms'),
+        identity: this.host.identity.statistics('ms'),
         algorithmTotal: this.host.algorithmTotal.statistics('ms'),
         runtimeOrchestration: this.host.runtimeOrchestration.statistics('ms'),
       },

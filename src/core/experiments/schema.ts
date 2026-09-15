@@ -479,6 +479,23 @@ export const telemetrySampleSchema = z.strictObject({
   host_estimator_ms: z.number().nullable(),
   host_controller_ms: z.number().nullable(),
   host_orchestration_ms: z.number(),
+  // --- Schema v3: beacon identity. Empty for an algorithm without a
+  // correlator, and for every v1 and v2 file.
+  //
+  // Everything here is the algorithm's verdict on its own evidence. There is no
+  // column naming a source, because the tracker cannot name one.
+  /** Identity correlation and phase search. Empty for an algorithm without one. */
+  host_identity_ms: z.number().nullable(),
+  /** The tracker's own verdict: match, mismatch, unconfirmed, ambiguous, insufficient. */
+  identity_state: z.string(),
+  /** Best normalised correlation, on [-1, 1]. Not a probability. */
+  code_correlation: z.number().nullable(),
+  /** Recovered code phase, seconds into the code period. */
+  code_phase_s: z.number().nullable(),
+  identity_samples: z.number().nullable(),
+  identity_span_s: z.number().nullable(),
+  identity_candidates: z.number().nullable(),
+  identity_rejected: z.number().nullable(),
   // --- Schema v2: estimator, association, control and recovery diagnostics.
   // Empty for an algorithm that does not report them, and for every v1 file.
   track_quality: z.number().nullable(),
@@ -500,6 +517,25 @@ export const telemetrySampleSchema = z.strictObject({
   handoff_dwell_s: z.number().nullable(),
 });
 export type TelemetrySample = z.infer<typeof telemetrySampleSchema>;
+
+/**
+ * Telemetry columns added in schema v3 (Phase 8); absent from v1 and v2 files.
+ *
+ * A run recorded before beacon identity existed has none of these, and its file
+ * is read with the shorter header and the columns filled as empty — which is the
+ * correct reading, since those runs had no correlator rather than a correlator
+ * that reported nothing.
+ */
+export const TELEMETRY_V3_COLUMNS = [
+  'host_identity_ms',
+  'identity_state',
+  'code_correlation',
+  'code_phase_s',
+  'identity_samples',
+  'identity_span_s',
+  'identity_candidates',
+  'identity_rejected',
+] as const;
 
 /**
  * Evaluation columns added in schema v3; absent from v1 and v2 files.
@@ -610,6 +646,9 @@ export const evaluationSampleSchema = z.strictObject({
 export type EvaluationSample = z.infer<typeof evaluationSampleSchema>;
 
 // --- Summary ----------------------------------------------------------------
+
+/** A measurement that was never taken. The value a stage with no samples reports. */
+const absentStatistic = { value: null, status: 'not-measured', unit: 'ms' } as const;
 
 const statisticsSchema = z.strictObject({
   count: z.number().int().nonnegative(),
@@ -798,6 +837,54 @@ export const experimentSummarySchema = z.strictObject({
   falseLockDurationSeconds: measurementSchema,
   falseLockRate: measurementSchema,
 
+  /**
+   * How the algorithm's own identity verdicts compare with the truth.
+   *
+   * `null` for a run in which no identity verdict was ever reported — the
+   * baseline, and AstraLock-X with identity switched off. A block of zeroes
+   * would claim the question was asked and answered negatively, which is a
+   * different statement from "the question was never asked".
+   *
+   * **Scored here and nowhere else.** The tracker states an opinion about its
+   * evidence; only the evaluator knows which emitter a detection actually sat
+   * on, so only the evaluator can say whether an opinion was right. Nothing in
+   * this block is visible to the algorithm.
+   */
+  beaconIdentity: z
+    .strictObject({
+      /** Whether any identity verdict was reported at all. Always true here. */
+      identityEnabled: z.boolean(),
+      /**
+       * Frames on which the tracker was tracking and at least one
+       * non-designated emitter was also in the image: the chances it had to be
+       * fooled. Counted whether or not identity is enabled, so the two arms of
+       * an ablation are compared over the same exposure.
+       */
+      identityChallenges: z.number().int().nonnegative(),
+      /** Frames where the tracker claimed MATCH and was on the designated target. */
+      correctCodeAssociations: z.number().int().nonnegative(),
+      /**
+       * Frames where the tracker claimed MATCH and was on some other emitter.
+       *
+       * The number that matters most: a confident identity claim that was
+       * wrong. Anything above zero is a recognition failure, not a near miss.
+       */
+      wrongCodeAssociations: z.number().int().nonnegative(),
+      /** Runs of consecutive frames reported AMBIGUOUS. */
+      ambiguousIdentityEpisodes: z.number().int().nonnegative(),
+      /** Runs of consecutive frames reported INSUFFICIENT-EVIDENCE. */
+      insufficientEvidenceEpisodes: z.number().int().nonnegative(),
+      /** Frames reported MATCH, MISMATCH, and everything else, for context. */
+      matchFrames: z.number().int().nonnegative(),
+      mismatchFrames: z.number().int().nonnegative(),
+      /** Correlation over frames the tracker called a match. */
+      matchCorrelation: statisticsSchema,
+    })
+    .nullable()
+    // Absent, not merely null, in every summary stored before identity existed.
+    // Those runs asked no identity question and their files must keep loading.
+    .default(null),
+
   // --- Host processing time (wall clock, diagnostics) ---
   /**
    * Coarse-to-fine handoff, or `null` for an algorithm that has no such state.
@@ -814,6 +901,22 @@ export const experimentSummarySchema = z.strictObject({
     bearingTransform: statisticsSchema,
     estimator: statisticsSchema,
     controller: statisticsSchema,
+    /**
+     * Identity correlation and phase search.
+     *
+     * Defaulted rather than required, because a summary stored before the
+     * stage existed has no such key and those files must keep loading. The
+     * default is an empty statistic — no samples, no values — which is exactly
+     * what a run that never ran the stage produces today.
+     */
+    identity: statisticsSchema.default(() => ({
+      count: 0,
+      mean: absentStatistic,
+      rms: absentStatistic,
+      median: absentStatistic,
+      p95: absentStatistic,
+      max: absentStatistic,
+    })),
     algorithmTotal: statisticsSchema,
     runtimeOrchestration: statisticsSchema,
   }),

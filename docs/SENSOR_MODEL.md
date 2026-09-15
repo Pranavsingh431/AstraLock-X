@@ -314,3 +314,39 @@ These are camera-observable engineering models, not a calibrated link budget or
 full wave-optics propagation. Their order, units, equations, deterministic RNG
 streams and tested limits are specified in
 [DISTURBANCE_MODEL.md](DISTURBANCE_MODEL.md).
+
+## Phase 8 coded beacon modulation
+
+A beacon may carry an `identityCode`: a binary sequence, a symbol duration, a
+phase offset and the two levels the emitter alternates between. Its effect on
+the image is a single multiplier on that emitter's intensity, and the multiplier
+is the **exposure integral** of the code, not its value at an instant:
+
+```
+  level(a, b) = (1 / (b - a)) * INTEGRAL from a to b of level(t) dt
+```
+
+where `[a, b]` is the exposure window, or the sub-exposure window when motion
+blur sub-sampling is active. A camera integrates optical power; it does not
+sample it, and evaluating the code at the capture time would report a level the
+sensor never collected whenever an exposure straddles a symbol boundary.
+
+The presence of a code forces the finite-exposure path even on an otherwise
+clean scenario, because a code is a time-varying quantity and the clean path
+renders an instant. A scenario with no coded beacon is unaffected, and clean
+still means byte-for-byte clean.
+
+Two constraints are enforced at scenario load rather than documented:
+
+- `symbolDuration >= 2 / camera.frameRate`. A code the camera cannot resolve is
+  rejected, so a scenario cannot claim a beacon rate the sensor could not
+  observe. See [ADR-0024](adr/0024-code-timing-follows-the-camera.md).
+- `offIntensity < onIntensity`, or the code carries no information.
+
+The truth record gains `emittedLevel`, the integrated level each emitter was
+actually sending on that frame. It is **privileged** — it is the answer to the
+question the tracker has to work out from pixels — and it travels in
+`SensorEvaluationTruth`, never in a frame.
+
+The receiving half is not here. It is in the algorithm graph and is described in
+[BEACON_IDENTITY.md](BEACON_IDENTITY.md).

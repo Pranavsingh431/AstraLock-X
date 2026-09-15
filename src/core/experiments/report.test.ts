@@ -13,6 +13,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_ASTRALOCK_CONFIG, astraLockXPat } from '@/core/algorithms';
+import { loadScenario } from '@/scenarios';
 
 import { renderStoredReport } from './report';
 import { buildRig, drive } from './rig.node';
@@ -74,5 +75,68 @@ describe('the frame statistics section', () => {
     expect(match).not.toBeNull();
     const [, rate, frames, window] = match!;
     expect(Number(rate)).toBe(Math.round(Number(frames) / Number(window)));
+  });
+});
+
+describe('the beacon identity section', () => {
+  /** Records a coded run with identity on or off and renders its report. */
+  async function codedReport(identity: boolean, runId: string): Promise<string> {
+    const storage = new MemoryStorage();
+    const code = loadScenario('code-decoy-hard').targets[0]!.beacon!.identityCode!;
+    const rig = buildRig({
+      scenario: 'code-decoy-hard',
+      storage,
+      runId,
+      plugin: astraLockXPat,
+      algorithmConfig: {
+        ...DEFAULT_ASTRALOCK_CONFIG,
+        identity: {
+          ...DEFAULT_ASTRALOCK_CONFIG.identity,
+          enabled: identity,
+          expectedSequence: code.sequence,
+          symbolDuration: code.symbolDuration as number,
+        },
+      },
+    });
+    await rig.recorder!.start({ autonomyActive: true });
+    drive(rig, 30);
+    const summary = await rig.recorder!.complete();
+    return renderStoredReport(storage, runId, summary);
+  }
+
+  it('reports what the tracker claimed and whether it was right', async () => {
+    const html = await codedReport(true, 'run-identity-on');
+
+    expect(html).toContain('Beacon identity');
+    expect(html).toContain('Challenges');
+    expect(html).toContain('Claimed recognition');
+    expect(html).toContain('Wrong recognitions');
+    expect(html).toContain('on the designated target');
+  });
+
+  it('says plainly that the correlation is not a probability', async () => {
+    const html = await codedReport(true, 'run-identity-probability');
+
+    expect(html).toContain('not a probability');
+    // A coefficient on [-1, 1], never dressed up as a percentage or a
+    // confidence. The section states the range rather than leaving a reader to
+    // assume one.
+    expect(html).toContain('[-1, 1]');
+  });
+
+  it('separates a wrong recognition from a false lock in the definitions', async () => {
+    const html = await codedReport(true, 'run-identity-definitions');
+
+    expect(html).toContain('Wrong recognition');
+    expect(html).toContain('what it claimed to have recognised');
+  });
+
+  it('has no identity section at all for a run that never gave a verdict', async () => {
+    // The same coded world, with the correlator switched off. An algorithm with
+    // no opinion to score must not be shown an empty table of identity results.
+    const html = await codedReport(false, 'run-identity-off');
+
+    expect(html).toContain('False lock on a wrong source');
+    expect(html).not.toContain('<h2>Beacon identity</h2>');
   });
 });

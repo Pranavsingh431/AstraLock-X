@@ -12,6 +12,7 @@ import { pixelToBearing } from '../baseline/bearing';
 import type { CameraSensorFrame, CameraState } from '@/core/contracts/sensors';
 
 import type { GateResult, ImmEstimator, ImmPrediction } from './imm';
+import type { IdentityState } from './identity';
 
 const clamp01 = (value: number): number => (value < 0 ? 0 : value > 1 ? 1 : value);
 
@@ -53,14 +54,35 @@ export function candidateBearings(
   });
 }
 
-/** Image-only ranking for SEARCH: strongest integrated intensity above a score floor. */
+/**
+ * Ranking for SEARCH: strongest integrated intensity above a score floor,
+ * skipping anything identity has already turned down.
+ *
+ * The brightness ranking is Phase 6's and is unchanged when `identityOf` is
+ * absent. What it adds is memory: identity evidence accumulates on every frame
+ * whatever state the machine is in, so by the time SEARCH looks at a source it
+ * has often been watched long enough to know it is the wrong one. Ignoring that
+ * would make the machine oscillate — SEARCH hands the brightest source to
+ * ACQUIRE, ACQUIRE refuses it on identity, SEARCH offers the same source again
+ * — and the real beacon, being dimmer, would never get a turn.
+ *
+ * Only settled refusals are skipped. A source identity has not yet judged is
+ * still eligible, because refusing to start on an unjudged source would mean
+ * never starting at all: the evidence only exists once something has been
+ * watched.
+ */
 export function strongestCandidate(
   candidates: readonly CandidateBearing[],
   minScore: number,
+  identityOf: ((candidate: CandidateBearing) => IdentityState | null) | null = null,
 ): CandidateBearing | null {
   let best: CandidateBearing | null = null;
   for (const c of candidates) {
     if (c.score < minScore) continue;
+    if (identityOf !== null) {
+      const state = identityOf(c);
+      if (state === 'mismatch' || state === 'ambiguous') continue;
+    }
     if (best === null || c.blob.integratedIntensity > best.blob.integratedIntensity) best = c;
   }
   return best;
@@ -69,8 +91,10 @@ export function strongestCandidate(
 export interface Association {
   readonly accepted: CandidateBearing | null;
   readonly gate: GateResult | null;
-  /** Candidates that were considered and fell outside the gate. */
+  /** Candidates that were considered and not taken. */
   readonly rejected: number;
+  /** Of those, how many were turned down on identity rather than on geometry. */
+  readonly identityRejected: number;
 }
 
 /**
@@ -79,8 +103,14 @@ export interface Association {
  * A candidate is admissible if its NIS is within the chi-square gate and its
  * angular innovation within `maxRadius`; the admissible candidate with the
  * smallest NIS is chosen. This prefers what the estimator expects over what is
- * brightest — and it does **not** establish identity: a decoy inside the gate
- * with a smaller NIS than the real beacon will be taken.
+ * brightest.
+ *
+ * On its own it does **not** establish identity: a decoy inside the gate with a
+ * smaller NIS than the real beacon will be taken, which is precisely the
+ * failure Phase 7 measured. When `identityOf` is supplied the choice becomes
+ * staged — the gate still decides what is admissible, and identity then decides
+ * between the admissible — and a candidate the correlator has rejected is not
+ * taken at all.
  */
 export function associate(
   imm: ImmEstimator,
@@ -89,25 +119,68 @@ export function associate(
   gateChi2: number,
   maxRadius: number,
   minScore: number,
+  /**
+   * Identity verdict for a candidate, or `null` when identity is not in use.
+   *
+   * Supplied as a lookup rather than carried on the candidate so that the
+   * geometric association stays exactly what it was when identity is disabled:
+   * the same function, the same comparisons, the same result.
+   */
+  identityOf: ((candidate: CandidateBearing) => IdentityState | null) | null = null,
 ): Association {
   let accepted: CandidateBearing | null = null;
   let acceptedGate: GateResult | null = null;
+  let acceptedRank = -1;
   let rejected = 0;
+  let identityRejected = 0;
+
   for (const c of candidates) {
     if (c.score < minScore) continue;
     const gate = imm.gate(prediction, c.azimuth, c.elevation);
     if (gate === null) continue;
     const radius = Math.hypot(gate.innovation[0] * Math.cos(c.elevation), gate.innovation[1]);
+
+    // Physics first, and physics is never overridden. A candidate outside the
+    // motion gate is not where the target can be, and no amount of code
+    // correlation makes it so — a decoy that somehow carried the right pattern
+    // still cannot have teleported.
     if (gate.nis > gateChi2 || radius > maxRadius) {
       rejected += 1;
       continue;
     }
-    if (acceptedGate === null || gate.nis < acceptedGate.nis) {
+
+    const state = identityOf === null ? null : identityOf(c);
+
+    // A candidate the correlator has positively rejected is not taken, even if
+    // it is the only one left. Following it would mean holding a source the
+    // evidence says is the wrong one; declining leaves the estimator coasting,
+    // which is what RECOVER is for and is the better failure.
+    //
+    // A mismatch needs enough evidence to be reached at all, so a transient
+    // cannot cause this.
+    if (state === 'mismatch') {
+      rejected += 1;
+      identityRejected += 1;
+      continue;
+    }
+
+    // Staged, not weighted. Identity chooses between candidates the physics has
+    // already admitted; within one identity class the smallest innovation wins,
+    // exactly as before. There is no arithmetic trading a correlation against a
+    // chi-square, because the two are not commensurable and a weight would only
+    // hide that.
+    const rank = state === 'match' ? 1 : 0;
+    if (
+      acceptedGate === null ||
+      rank > acceptedRank ||
+      (rank === acceptedRank && gate.nis < acceptedGate.nis)
+    ) {
       accepted = c;
       acceptedGate = gate;
+      acceptedRank = rank;
     }
   }
-  return { accepted, gate: acceptedGate, rejected };
+  return { accepted, gate: acceptedGate, rejected, identityRejected };
 }
 
 // --- Acquisition evidence -----------------------------------------------------

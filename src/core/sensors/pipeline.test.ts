@@ -41,6 +41,7 @@ const movingEmitter = (offset: number): OpticalEmitter => ({
   position: { x: offset, y: 500, z: 0 },
   intensity: 0.9 as never,
   psfSigma: 2 as never,
+  code: null,
 });
 
 /** A sampler whose emitter drifts with time, so frames genuinely differ. */

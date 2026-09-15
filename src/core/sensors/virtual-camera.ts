@@ -19,6 +19,7 @@
 
 import type { GroundTruthTainted } from '@/core/contracts/isolation';
 import { brandAsGroundTruth } from '@/core/contracts/ground-truth';
+import { integratedLevel } from '@/core/contracts/code-waveform';
 import { DisturbanceStack, type FrameDisturbance } from '@/core/disturbance';
 import type { CameraSensorFrame, PixelFormat } from '@/core/contracts/sensors';
 import type { SimulationConfig } from '@/core/contracts/simulation';
@@ -144,6 +145,17 @@ export class VirtualCameraSensor {
    */
   private readonly disturbances: DisturbanceStack | null;
   /**
+   * The stack, clean or not.
+   *
+   * Kept separately from `disturbances` because a scenario can need the
+   * integrating renderer without having any disturbance at all: a coded beacon
+   * alone is enough. A clean stack contributes nothing to a frame, and asking
+   * it for a transmittance or a base attitude returns the identity.
+   */
+  private readonly stack: DisturbanceStack;
+  /** Whether this run renders through the integrating path. */
+  private readonly integrating: boolean;
+  /**
    * Accumulation buffer for the disturbed path, allocated once.
    *
    * Only built when something can actually write to it: a clean run never
@@ -187,11 +199,20 @@ export class VirtualCameraSensor {
       options.config.seed,
       camera.frameRate,
     );
+    this.stack = stack;
+
+    // A modulated beacon needs the integrating path whatever the weather:
+    // reporting the code's level at one instant would be a sample the camera
+    // never took, and at the default timing an exposure can straddle a symbol
+    // boundary. So the presence of a code is, by itself, a reason to integrate.
+    const coded = options.config.targets.some(
+      (target) => target.beacon?.identityCode?.enabled === true,
+    );
     this.disturbances = stack.isClean ? null : stack;
-    this.accumulator =
-      this.disturbances === null
-        ? null
-        : new Float64Array(this.intrinsics.width * this.intrinsics.height);
+    this.integrating = !stack.isClean || coded;
+    this.accumulator = this.integrating
+      ? new Float64Array(this.intrinsics.width * this.intrinsics.height)
+      : null;
   }
 
   /**
@@ -360,11 +381,10 @@ export class VirtualCameraSensor {
    */
   public captureFrame(sampler: WorldSampler, frameIndex: number): SensorCapture {
     const captureTime = this.clock.captureTime(frameIndex);
-    const disturbances = this.disturbances;
-    if (disturbances === null) {
+    if (!this.integrating) {
       return this.rasterize(frameIndex, captureTime, sampler.sampleAt(captureTime));
     }
-    return this.rasterizeDisturbed(sampler, frameIndex, captureTime, disturbances);
+    return this.rasterizeDisturbed(sampler, frameIndex, captureTime, this.stack);
   }
 
   private rasterize(
@@ -433,6 +453,9 @@ export class VirtualCameraSensor {
           offsetAzimuth: radians(offsetAzimuth),
           offsetElevation: radians(offsetElevation),
           peakIntensity,
+          // The clean path never renders a coded emitter: a code forces the
+          // integrating path, so anything reaching here is steady.
+          emittedLevel: 1,
           pixelsWritten,
         }),
       );
@@ -549,7 +572,9 @@ export class VirtualCameraSensor {
       // Midpoint of each sub-interval. With one sub-sample this is exactly the
       // capture instant, so an exposure of one sample reproduces instantaneous
       // capture rather than merely approximating it.
-      const subTime = windowStart + subStep * (step + 0.5);
+      const subStart = windowStart + subStep * step;
+      const subEnd = subStart + subStep;
+      const subTime = subStart + subStep / 2;
       const sample = subSamples === 1 ? centreSample : sampler.sampleAt(subTime);
       if (subSamples > 1 && step === Math.floor(subSamples / 2)) centreSample = sample;
 
@@ -576,9 +601,21 @@ export class VirtualCameraSensor {
           continue;
         }
 
+        // The code's contribution is the **integral** of its level over this
+        // sub-interval, not its value at the midpoint. With a single sub-sample
+        // that interval is the whole exposure, so the exposure integral is
+        // exact rather than approximated; with several, each one carries its own
+        // exact share and the code is correctly weighted against the motion
+        // blur that the sub-sampling is there to produce.
+        // Nullish, not strictly null: a source with no code field and one with
+        // an explicit null are the same physical thing, an unmodulated emitter,
+        // and there is no third reading to preserve.
+        const codeLevel =
+          emitter.code == null ? 1 : integratedLevel(emitter.code, subStart, subEnd);
+
         // Radiometry: what survives the path, and how that varies in time.
         const transmittance = disturbances.transmittanceOver(projection.range);
-        const intensity = emitter.intensity * transmittance * realization.scintillation;
+        const intensity = emitter.intensity * codeLevel * transmittance * realization.scintillation;
 
         // Defocus spreads the same energy over a wider spot, so the peak falls
         // as sigma^2 rises and the integral is unchanged.
@@ -640,6 +677,14 @@ export class VirtualCameraSensor {
             Math.atan2(geometric.cameraY, Math.hypot(geometric.cameraX, geometric.cameraZ)),
           ),
           peakIntensity: attenuatedPeak.get(emitter.id) ?? 0,
+          emittedLevel:
+            emitter.code == null
+              ? 1
+              : integratedLevel(
+                  emitter.code,
+                  captureTime - exposure / 2,
+                  captureTime + exposure / 2,
+                ),
           pixelsWritten: pixelsWritten.get(emitter.id) ?? 0,
         }),
       );

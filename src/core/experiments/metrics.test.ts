@@ -124,6 +124,14 @@ const telemetryAt = (
   host_estimator_ms: 0.02,
   host_controller_ms: 0.03,
   host_orchestration_ms: 0.2,
+  host_identity_ms: null,
+  identity_state: '',
+  code_correlation: null,
+  code_phase_s: null,
+  identity_samples: null,
+  identity_span_s: null,
+  identity_candidates: null,
+  identity_rejected: null,
   track_quality: null,
   acquisition_evidence: null,
   innovation_nis: null,
@@ -611,5 +619,114 @@ describe('the summary records its own definitions', () => {
     expect(loose.coarseLockTime.value).toBe(0.5);
     expect(tight.coarseLockTime.value).toBeNull();
     expect(tight.metricsFingerprint).not.toBe(loose.metricsFingerprint);
+  });
+});
+
+// --- Beacon identity scoring (Phase 8) --------------------------------------
+
+describe('beacon identity scoring', () => {
+  /**
+   * A frame pair: what the algorithm said about identity, and what was true.
+   *
+   * The two files are joined on `frame_id`, so the pair is built together and
+   * given one. Ten frames a second keeps the arithmetic exact.
+   */
+  const frame = (
+    index: number,
+    identity: string,
+    truth: Partial<EvaluationSample> = {},
+    correlation: number | null = null,
+  ) => ({
+    telemetry: telemetryAt(index / 10, {
+      frame_id: index,
+      identity_state: identity,
+      code_correlation: correlation,
+    }),
+    evaluation: at(index / 10, {
+      frame_id: index,
+      detection_present: true,
+      truth_detector_centroid_error_px: 0,
+      ...truth,
+    }),
+  });
+
+  const score = (frames: readonly { telemetry: TelemetrySample; evaluation: EvaluationSample }[]) =>
+    summarise(
+      frames.map((f) => f.evaluation),
+      { telemetry: frames.map((f) => f.telemetry) },
+    ).beaconIdentity;
+
+  it('reports nothing at all for a run that never gave a verdict', () => {
+    // The baseline, and AstraLock-X with identity switched off. A block of
+    // zeroes would say the question was asked and answered; it was not asked.
+    expect(score([frame(0, ''), frame(1, '')])).toBeNull();
+  });
+
+  it('counts a confident verdict that was right as correct', () => {
+    const summary = score([
+      frame(0, 'match', {}, 0.9),
+      frame(1, 'match', {}, 0.8),
+      frame(2, 'match', {}, 0.7),
+    ]);
+    expect(summary).not.toBeNull();
+    expect(summary!.correctCodeAssociations).toBe(3);
+    expect(summary!.wrongCodeAssociations).toBe(0);
+    expect(summary!.matchFrames).toBe(3);
+    // Mean of 0.9, 0.8, 0.7.
+    expect(summary!.matchCorrelation.mean.value).toBeCloseTo(0.8, 12);
+  });
+
+  it('counts a confident verdict that was on another emitter as wrong', () => {
+    // The number that matters: the tracker said it recognised the beacon, and
+    // the detection it held was on something else.
+    const summary = score([
+      frame(0, 'match', { truth_detection_on_other_emitter: true }),
+      frame(1, 'match', { truth_detection_on_other_emitter: true }),
+      frame(2, 'match'),
+    ]);
+    expect(summary!.wrongCodeAssociations).toBe(2);
+    expect(summary!.correctCodeAssociations).toBe(1);
+  });
+
+  it('does not score a frame the tracker refused to be confident about', () => {
+    // MISMATCH, AMBIGUOUS and INSUFFICIENT are not claims of recognition, so
+    // they are neither credited nor charged — whatever the truth was.
+    const summary = score([
+      frame(0, 'mismatch', { truth_detection_on_other_emitter: true }),
+      frame(1, 'ambiguous'),
+      frame(2, 'insufficient-evidence'),
+      frame(3, 'unconfirmed'),
+    ]);
+    expect(summary!.correctCodeAssociations).toBe(0);
+    expect(summary!.wrongCodeAssociations).toBe(0);
+    expect(summary!.mismatchFrames).toBe(1);
+  });
+
+  it('counts runs of uncertainty as episodes rather than as frames', () => {
+    const summary = score([
+      frame(0, 'ambiguous'),
+      frame(1, 'ambiguous'),
+      frame(2, 'ambiguous'),
+      frame(3, 'match'),
+      frame(4, 'ambiguous'),
+      frame(5, 'insufficient-evidence'),
+      frame(6, 'insufficient-evidence'),
+    ]);
+    // Two runs of ambiguity, one run of insufficient evidence.
+    expect(summary!.ambiguousIdentityEpisodes).toBe(2);
+    expect(summary!.insufficientEvidenceEpisodes).toBe(1);
+  });
+
+  it('counts a challenge for every tracking frame shared with another emitter', () => {
+    // The denominator of the comparison: how many chances the tracker had to be
+    // fooled. Independent of what identity said, so an ON/OFF pair is compared
+    // over the same exposure.
+    const summary = score([
+      frame(0, 'match', { truth_other_emitters_in_image: 1 }),
+      frame(1, 'match', { truth_other_emitters_in_image: 2 }),
+      frame(2, 'match', { truth_other_emitters_in_image: 0 }),
+      frame(3, 'match', { truth_other_emitters_in_image: 1, pat_state: 'search' }),
+    ]);
+    expect(summary!.identityChallenges).toBe(2);
   });
 });

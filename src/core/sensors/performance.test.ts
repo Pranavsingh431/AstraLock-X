@@ -42,6 +42,7 @@ const emitter = (index: number, offset: number): OpticalEmitter => ({
   position: { x: offset, y: 1200, z: 0 },
   intensity: 0.9 as never,
   psfSigma: 2.5 as never,
+  code: null,
 });
 
 /** Three emitters drifting across the frame: a representative live scene. */

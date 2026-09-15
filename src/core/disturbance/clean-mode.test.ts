@@ -23,14 +23,24 @@ import {
   astraLockXPat,
   baselineKfPidPat,
 } from '@/core/algorithms';
+import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';
 import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
 import { ExactWorldSampler } from '@/core/sensors/world-sampler';
 import { SimulationEngine } from '@/core/simulation/engine';
 
 vi.setConfig({ testTimeout: 900_000 });
 
-/** The scenarios that existed before Phase 7, all of which are clean. */
-const PRE_PHASE_7 = SCENARIO_IDS.filter((id) => !id.startsWith('dist-'));
+/**
+ * The scenarios that existed before Phase 7, all of which are clean.
+ *
+ * `code-frame-loss` is excluded for the same reason the `dist-` set is: it is a
+ * later scenario that deliberately configures a disturbance. Every other coded
+ * scenario is clean and stays in the set, so the coded beacons are held to the
+ * same "clean means exactly clean" guarantee as everything before them.
+ */
+const PRE_PHASE_7 = SCENARIO_IDS.filter(
+  (id) => !id.startsWith('dist-') && id !== 'code-frame-loss',
+);
 
 describe('the scenarios that predate this phase', () => {
   it('are all clean, so none of them changed physics when disturbances arrived', () => {
@@ -157,5 +167,74 @@ describe('both algorithms in clean mode', () => {
       const trace = arm('astralock-moving', robust, 10);
       expect(trace.framesProcessed).toBeGreaterThan(500);
     }
+  });
+});
+
+describe('a coded scenario with identity switched off', () => {
+  /** One run's observable behaviour: modes, commands and the world it left. */
+  const behaviour = (identity: boolean) => {
+    const engine = new SimulationEngine(loadScenario('code-clean'));
+    const sensor = new VirtualCameraSensor({ config: engine.config });
+    const code = engine.config.targets[0]!.beacon!.identityCode!;
+    const runtime = new ClosedLoopRuntime({
+      engine,
+      sensor,
+      sampler: new ExactWorldSampler(engine),
+      plugin: astraLockXPat,
+      config: identity
+        ? {
+            ...DEFAULT_ASTRALOCK_CONFIG,
+            identity: {
+              ...DEFAULT_ASTRALOCK_CONFIG.identity,
+              enabled: true,
+              expectedSequence: code.sequence,
+              symbolDuration: code.symbolDuration as number,
+            },
+          }
+        : DEFAULT_ASTRALOCK_CONFIG,
+    });
+
+    const modes: string[] = [];
+    let last = '';
+    for (let tick = 0; tick < 30 * engine.config.tickRate; tick += 1) {
+      runtime.step(1);
+      const mode = runtime.algorithmOutput?.pat.mode;
+      if (mode !== undefined && mode !== last) {
+        modes.push(mode);
+        last = mode;
+      }
+    }
+    return {
+      modes,
+      commands: runtime.issuedCommands.map((c) => `${c.azimuth.toExponential(15)}`),
+      hash: engine.stateHash(),
+      debug: runtime.algorithmOutput?.debug as Record<string, unknown>,
+    };
+  };
+
+  it('is Phase 7, exactly', () => {
+    // The control arm has to be a *control*. If switching identity off left any
+    // trace — a different association, a different command, a different pixel —
+    // then the ON/OFF comparison would be measuring two changes rather than one.
+    const off = behaviour(false);
+
+    expect(off.debug['identityEnabled']).toBe(false);
+    expect(off.debug['identityState']).toBeNull();
+    expect(off.debug['identityCandidates']).toBe(0);
+    expect(off.debug['codeCorrelation']).toBeNull();
+    // No correlator was built, so no history was kept and nothing was measured.
+    expect(off.debug['identitySamples']).toBeNull();
+  });
+
+  it('differs from the identity arm only where identity had something to say', () => {
+    // Both arms acquire and track the same single source, so the state
+    // sequence is identical; what differs is the verdict reported alongside it.
+    const off = behaviour(false);
+    const on = behaviour(true);
+
+    expect(on.modes).toEqual(off.modes);
+    expect(on.commands).toEqual(off.commands);
+    expect(on.hash).toBe(off.hash);
+    expect(on.debug['identityState']).toBe('match');
   });
 });

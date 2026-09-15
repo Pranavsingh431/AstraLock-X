@@ -20,9 +20,30 @@ import { ClosedLoopRuntime } from '@/core/runtime/closed-loop';
 import { VirtualCameraSensor } from '@/core/sensors/virtual-camera';
 import { ExactWorldSampler } from '@/core/sensors/world-sampler';
 import { SimulationEngine } from '@/core/simulation/engine';
+import { parseSimulationConfig, type SimulationConfig } from '@/core/contracts/simulation';
 import { loadScenario, type ScenarioId } from '@/scenarios';
 
 vi.setConfig({ testTimeout: 600_000 });
+
+/**
+ * The robust configuration with identity enabled for a coded scenario.
+ *
+ * The expected pattern is read from the scenario *by the test*, which plays the
+ * part a mission plan plays for a real terminal. The two numbers that cross are
+ * a sequence and a symbol duration; nothing about the world does.
+ */
+function identityConfig(scenario: ScenarioId) {
+  const code = loadScenario(scenario).targets[0]!.beacon!.identityCode!;
+  return {
+    ...DEFAULT_ASTRALOCK_CONFIG,
+    identity: {
+      ...DEFAULT_ASTRALOCK_CONFIG.identity,
+      enabled: true,
+      expectedSequence: code.sequence,
+      symbolDuration: code.symbolDuration as number,
+    },
+  };
+}
 
 interface Run {
   readonly modes: readonly string[];
@@ -34,16 +55,21 @@ interface Run {
   readonly finalPan: number;
 }
 
-function run(scenario: ScenarioId, seconds: number, options: { blankPixels?: boolean } = {}): Run {
-  const engine = new SimulationEngine(loadScenario(scenario));
+function run(
+  scenario: ScenarioId,
+  seconds: number,
+  options: { blankPixels?: boolean; identity?: boolean; config?: SimulationConfig } = {},
+): Run {
+  const { identity = false, config: override, ...runtimeOptions } = options;
+  const engine = new SimulationEngine(override ?? loadScenario(scenario));
   const sensor = new VirtualCameraSensor({ config: engine.config });
   const runtime = new ClosedLoopRuntime({
     engine,
     sensor,
     sampler: new ExactWorldSampler(engine),
     plugin: astraLockXPat,
-    config: DEFAULT_ASTRALOCK_CONFIG,
-    ...options,
+    config: identity ? identityConfig(scenario) : DEFAULT_ASTRALOCK_CONFIG,
+    ...runtimeOptions,
   });
 
   const modes: string[] = [];
@@ -259,5 +285,99 @@ describe('deterministic replay', () => {
     } finally {
       Math.random = original;
     }
+  });
+});
+
+// --- G. Beacon identity is recognition, not a channel ------------------------
+
+describe('G. the correlator is given a pattern, never an answer', () => {
+  it('behaves identically when the emitters are renamed', () => {
+    // The strongest form of the anti-cheat check for identity. The same world,
+    // the same codes, the same pixels — but every label the simulator uses for
+    // its entities is different. A tracker reading an identifier anywhere in
+    // the observation path would produce a different run.
+    const original = loadScenario('code-decoy-hard');
+    const renamed = parseSimulationConfig({
+      ...original,
+      targets: original.targets.map((target, index) => ({
+        ...target,
+        label: index === 0 ? 'Zebra' : 'Aardvark',
+      })),
+      // Order matters too: a tracker quietly preferring the first entity would
+      // pass a renaming test and fail this one.
+      id: 'code-decoy-hard',
+    });
+
+    const a = run('code-decoy-hard', 30, { identity: true });
+    const b = run('code-decoy-hard', 30, { identity: true, config: renamed });
+
+    expect(b.modes).toEqual(a.modes);
+    expect(b.commands).toEqual(a.commands);
+    expect(b.finalPan).toBe(a.finalPan);
+  });
+
+  it('cannot recognise anything from blank pixels', () => {
+    // Identity has to be earned from light. With nothing in the image there is
+    // no candidate to watch, no history, and no verdict — not a default one.
+    const blank = run('code-clean', 20, { identity: true, blankPixels: true });
+
+    expect(blank.acquired).toBe(false);
+    expect(blank.debug!.identityEnabled).toBe(true);
+    expect(blank.debug!.identityState).toBeNull();
+    expect(blank.debug!.identityCandidates).toBe(0);
+    expect(blank.debug!.codeCorrelation).toBeNull();
+  });
+
+  it('reports no quantity it was not given or did not compute', () => {
+    const tracked = run('code-clean', 30, { identity: true });
+    const debug = tracked.debug as unknown as Record<string, unknown>;
+
+    // The verdict is about evidence, and the fields are the evidence. There is
+    // no emitter, no target index, no true phase and no true code.
+    expect(debug['identityState']).toBe('match');
+    for (const key of Object.keys(debug)) {
+      expect(key, key).not.toMatch(
+        /emitterId|hostEntity|entityId|designated|groundTruth|^truth|trueCode|truePhase|targetIndex/i,
+      );
+    }
+  });
+
+  it('never sees the true modulation phase, and has to find it', () => {
+    // The scenario transmits at a phase offset of 37 ms. The tracker is
+    // configured with the sequence and the symbol duration only, so the phase
+    // it reports is one it recovered by searching — and it lands on the right
+    // answer to within the resolution of the search.
+    const truePhase = loadScenario('code-clean').targets[0]!.beacon!.identityCode!
+      .phaseOffset as number;
+    const tracked = run('code-clean', 30, { identity: true });
+    const period =
+      DEFAULT_ASTRALOCK_CONFIG.identity.expectedSequence.length *
+      DEFAULT_ASTRALOCK_CONFIG.identity.symbolDuration;
+
+    expect(DEFAULT_ASTRALOCK_CONFIG.identity).not.toHaveProperty('phaseOffset');
+    const delta = Math.abs(((tracked.debug!.codePhase! - truePhase) % period) + period) % period;
+    expect(Math.min(delta, period - delta)).toBeLessThan(2 / 60);
+  });
+
+  it('is configured with a pattern that carries no brightness', () => {
+    // A receiver has no business assuming how bright its partner is, and the
+    // configuration has no field in which such an assumption could be stored.
+    const identity = DEFAULT_ASTRALOCK_CONFIG.identity as unknown as Record<string, unknown>;
+    expect(identity).not.toHaveProperty('onIntensity');
+    expect(identity).not.toHaveProperty('offIntensity');
+    expect(identity['expectedSequence']).toEqual(
+      expect.arrayContaining([expect.any(Number)]) as unknown,
+    );
+  });
+
+  it('reproduces a coded run exactly, twice', () => {
+    const a = run('code-decoy-hard', 30, { identity: true });
+    const b = run('code-decoy-hard', 30, { identity: true });
+
+    expect(b.modes).toEqual(a.modes);
+    expect(b.commands).toEqual(a.commands);
+    expect(b.stateHash).toBe(a.stateHash);
+    expect(b.debug!.codeCorrelation).toBe(a.debug!.codeCorrelation);
+    expect(b.debug!.codePhase).toBe(a.debug!.codePhase);
   });
 });

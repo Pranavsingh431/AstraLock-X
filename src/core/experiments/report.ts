@@ -650,6 +650,38 @@ ${statRow('Image SNR', d.imageSnrDb, 2)}
 `;
 }
 
+/**
+ * What the tracker claimed about beacon identity, scored against the truth.
+ *
+ * Absent entirely for a run that never gave a verdict. An algorithm without a
+ * correlator has no opinion to score, and printing an empty identity table
+ * under its name would suggest it had failed a test it never sat.
+ */
+function identitySection(s: ExperimentSummary): string {
+  const identity = s.beaconIdentity;
+  if (identity === null || identity === undefined) return '';
+
+  const claims = identity.correctCodeAssociations + identity.wrongCodeAssociations;
+  const wrong = identity.wrongCodeAssociations;
+
+  return `
+<h2>Beacon identity</h2>
+<p class="note">The tracker is configured with the pattern it expects the far terminal to send, and recognises a source by watching its brightness over time. It is <em>not</em> told which object in the world is the target. Everything in the left column is the tracker's own verdict on its own evidence; the right column is the evaluator checking it against truth the tracker never saw.</p>
+<table class="kv">
+<tr><th>Challenges</th><td>${String(identity.identityChallenges)} frames <span class="sub">Tracking frames that shared the image with another emitter: the chances this run gave the tracker to be fooled. Counted the same way whether identity was enabled or not.</span></td></tr>
+<tr><th>Claimed recognition</th><td>${String(identity.matchFrames)} frames${claims === 0 ? '' : ` &middot; <strong>${String(identity.correctCodeAssociations)} on the designated target</strong>, ${String(wrong)} on another emitter`}</td></tr>
+<tr><th>Wrong recognitions</th><td>${
+    wrong === 0
+      ? 'None. Every frame the tracker called a match was on the designated target.'
+      : `<strong>${String(wrong)}</strong> — the tracker stated recognition while holding a detection on a different emitter. A confident claim that was wrong, not a near miss.`
+  }</td></tr>
+<tr><th>Refused</th><td>${String(identity.mismatchFrames)} frames called a mismatch</td></tr>
+<tr><th>Could not tell</th><td>${String(identity.ambiguousIdentityEpisodes)} ambiguous ${identity.ambiguousIdentityEpisodes === 1 ? 'episode' : 'episodes'} &middot; ${String(identity.insufficientEvidenceEpisodes)} insufficient-evidence ${identity.insufficientEvidenceEpisodes === 1 ? 'episode' : 'episodes'} <span class="sub">Runs of consecutive frames, not frame counts. Abstaining is a result, not a failure: two sources sending the same pattern cannot be told apart by watching them.</span></td></tr>
+</table>
+<table>${statHead('Correlation on frames called a match')}<tbody>${statRow('Normalised code correlation', identity.matchCorrelation)}</tbody></table>
+<p class="note">The correlation is a Pearson coefficient between observed brightness and the exposure-integrated shape of the expected code, on [-1, 1]. It is invariant to brightness, so a brighter source does not score better for being brighter. <strong>It is not a probability</strong> and no confidence should be read off it.</p>`;
+}
+
 function robustSections(s: ExperimentSummary): string {
   const parts: string[] = [];
   const threshold = (s.metricsConfig as { handoffValidityThresholdRad?: number })
@@ -901,6 +933,7 @@ ${
 <tr><th>Rate (of time in TRACK)</th><td>${show(s.falseLockRate)}</td></tr>
 </table>
 
+${identitySection(s)}
 ${robustSections(s)}
 ${disturbanceSection(s)}
 <h2>Frame statistics</h2>
@@ -928,6 +961,7 @@ ${statRow('Detector', s.hostProcessingTime.detector)}
 ${statRow('Pixel → bearing transform', s.hostProcessingTime.bearingTransform)}
 ${statRow('Kalman estimator', s.hostProcessingTime.estimator)}
 ${statRow('Controller (PID or scan)', s.hostProcessingTime.controller)}
+${statRow('Beacon identity', s.hostProcessingTime.identity)}
 ${statRow('Algorithm total', s.hostProcessingTime.algorithmTotal)}
 ${statRow('Runtime orchestration', s.hostProcessingTime.runtimeOrchestration)}
 </tbody>
@@ -975,6 +1009,7 @@ ${notable.map((e) => `<tr><td>${String(e.sequence)}</td><td>${e.simulationTime.t
 <p><strong>First detection</strong>: the first frame with a candidate within ${String(config.detectionAssociationRadiusPx)} px of the designated target's true projected centre and no other emitter nearer.</p>
 <p><strong>Lock retention</strong> = locked time ÷ trackable time, both integrated by zero-order hold on the earlier sample over intervals starting at or after first coarse lock while the target was within travel and range. Time pointed the wrong way stays in the denominator. No acquisition gives 0; no trackable opportunity gives N/A.</p>
 <p><strong>False lock</strong>: time in TRACK with the selected detection nearer a non-designated emitter than the designated one. High pointing error alone is a loss of lock, not a false lock.</p>
+<p><strong>Wrong recognition</strong>: a frame on which the tracker reported MATCH while its detection sat on a non-designated emitter. Distinct from a false lock, which is about where the tracker was pointing; this is about what it claimed to have recognised.</p>
 <p><strong>Statistics</strong>: mean, root-mean-square, and linearly interpolated median and 95th percentile (type 7) over the stated window. <strong>N/A</strong>: meaningless in this context. <strong>Not modelled</strong>: the simulation does not model the physics. <strong>Not measured</strong>: modelled, but no sample existed. None is ever shown as a number.</p>
 <p>Generated offline from the stored artifacts. No network resources are referenced.</p>
 </footer>

@@ -253,6 +253,7 @@ class HostStageProfiler implements StageProfiler {
     'bearing-transform': null,
     estimator: null,
     controller: null,
+    identity: null,
   };
 
   public time<T>(stage: ProfiledStage, work: () => T): T {
@@ -269,6 +270,7 @@ class HostStageProfiler implements StageProfiler {
     this.totals['bearing-transform'] = null;
     this.totals.estimator = null;
     this.totals.controller = null;
+    this.totals.identity = null;
   }
 }
 
@@ -591,6 +593,7 @@ export class ClosedLoopRuntime {
                 'bearing-transform': t['bearing-transform'],
                 estimator: t.estimator,
                 controller: t.controller,
+                identity: t.identity,
               },
             },
           });

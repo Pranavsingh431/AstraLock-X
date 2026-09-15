@@ -278,3 +278,31 @@ fingerprinted and stored with the physical scenario. A second, evaluator-only
 stack reproduces the same frame-indexed realization to score it without feeding
 truth back into the runtime. The exact layer ordering, equations and limits are
 in [DISTURBANCE_MODEL.md](DISTURBANCE_MODEL.md).
+
+## Coded beacon identity (Phase 8)
+
+A beacon may modulate its emitted intensity to a binary code. The modulation is
+applied where the physics is — inside image formation, integrated exactly over
+each exposure — so what reaches a tracker is a brightness that varies frame to
+frame, and nothing else.
+
+The receiving half lives in the algorithm graph, in
+`src/core/algorithms/astralock/identity.ts`. It keeps a bounded brightness
+history per detected blob, joined across frames by bearing, and correlates each
+against the exposure-integrated shape of the pattern it has been **configured**
+to expect. The tracker is told the pattern, the way a radio is told a frequency;
+it is never told which object in the world is emitting, what any emitter is
+actually sending, or what the transmitter's phase is. Phase is recovered by
+search.
+
+The one module both halves share is `src/core/contracts/code-waveform.ts`, the
+integral of a square wave over an interval. Sharing it is deliberate — two
+implementations of the same integral would eventually disagree — and leaks
+nothing: the sensor calls it with the scenario's code and the tracker calls it
+with its own configured one, and neither can see the other's arguments.
+
+Identity is ranked after physics and never overrides it, and the evaluator
+scores the tracker's verdicts against truth the tracker never saw. The codes,
+the timing constraint the camera imposes, the correlator and the measured
+results are in [BEACON_IDENTITY.md](BEACON_IDENTITY.md); the decisions are
+ADR-0023, ADR-0024 and ADR-0025.

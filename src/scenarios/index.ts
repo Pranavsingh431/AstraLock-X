@@ -20,6 +20,14 @@ import astralockStationary from './astralock-stationary.json';
 import cameraBoresight from './camera-boresight.json';
 import cameraOutsideFov from './camera-target-outside-fov.json';
 import circular from './circular.json';
+import codeAmbiguous from './code-ambiguous.json';
+import codeClean from './code-clean.json';
+import codeDecoyHard from './code-decoy-hard.json';
+import codeDecoyUncoded from './code-decoy-uncoded.json';
+import codeIdentical from './code-identical.json';
+import codeDecoyWrong from './code-decoy-wrong.json';
+import codeFrameLoss from './code-frame-loss.json';
+import codeInsufficient from './code-insufficient.json';
 import distCombined from './dist-combined.json';
 import distDecoyEasy from './dist-decoy-easy.json';
 import distDecoyHard from './dist-decoy-hard.json';
@@ -66,6 +74,14 @@ export const SCENARIO_IDS = [
   'dist-decoy-easy',
   'dist-decoy-hard',
   'dist-combined',
+  'code-clean',
+  'code-decoy-uncoded',
+  'code-decoy-wrong',
+  'code-decoy-hard',
+  'code-ambiguous',
+  'code-identical',
+  'code-insufficient',
+  'code-frame-loss',
 ] as const;
 
 export type ScenarioId = (typeof SCENARIO_IDS)[number];
@@ -97,6 +113,14 @@ const RAW_SCENARIOS: Record<ScenarioId, unknown> = {
   'dist-decoy-easy': distDecoyEasy,
   'dist-decoy-hard': distDecoyHard,
   'dist-combined': distCombined,
+  'code-clean': codeClean,
+  'code-decoy-uncoded': codeDecoyUncoded,
+  'code-decoy-wrong': codeDecoyWrong,
+  'code-decoy-hard': codeDecoyHard,
+  'code-ambiguous': codeAmbiguous,
+  'code-identical': codeIdentical,
+  'code-insufficient': codeInsufficient,
+  'code-frame-loss': codeFrameLoss,
 };
 
 const cache = new Map<ScenarioId, SimulationConfig>();

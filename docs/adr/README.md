@@ -29,5 +29,8 @@ supersedes the old one, so the reasoning at the time stays visible.
 | [0020](0020-disturbance-randomness-is-indexed-by-frame.md) | A disturbance realization is a function of the frame index            | Accepted |
 | [0021](0021-image-snr-is-defined-or-absent.md)             | Image SNR is stated with its formula, or not stated at all            | Accepted |
 | [0022](0022-dropped-frames-are-absent-frames.md)           | A dropped frame is an absent frame                                    | Accepted |
+| [0023](0023-identity-is-a-configured-expectation.md)       | The tracker is configured with a pattern, never told which source     | Accepted |
+| [0024](0024-code-timing-follows-the-camera.md)             | The code is designed for the camera, not the other way round          | Accepted |
+| [0025](0025-identity-is-evidence-not-proof.md)             | Identity is evidence, and is ranked after physics                     | Accepted |
 
 Use [0000-template.md](0000-template.md) for new records.
