@@ -3,6 +3,17 @@
 Engineering workbench for coarse **Pointing, Acquisition and Tracking (PAT)** of
 mobile **Free Space Optical Communication (FSOC)** links.
 
+[![CI](https://github.com/Pranavsingh431/AstraLock-X/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Pranavsingh431/AstraLock-X/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-607D8B.svg)](https://github.com/Pranavsingh431/AstraLock-X/actions/workflows/ci.yml)
+[![Status](https://img.shields.io/badge/status-prototype%20%C2%B7%20frozen-blue.svg)](docs/PHASE_STATUS.md)
+
+[![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB.svg)](https://tauri.app)
+[![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0%20strict-3178C6.svg)](https://www.typescriptlang.org)
+[![Rust](https://img.shields.io/badge/Rust-1.98-CE422B.svg)](https://www.rust-lang.org)
+[![Node](https://img.shields.io/badge/Node-24%20LTS-5FA04E.svg)](https://nodejs.org)
+
 A cross-platform desktop application for developing, simulating and
 benchmarking coarse PAT systems. It runs offline, produces reproducible
 experiments, and reports measured results rather than illustrative ones.
