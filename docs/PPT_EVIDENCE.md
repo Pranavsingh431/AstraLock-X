@@ -184,7 +184,9 @@ six keys: `tick`, `time`, `frame`, `camera`, `gimbal`, `previousCommand`. The
 test suite asserts that set exactly, and asserts that no key matches
 `/engine|world|truth|evaluat|scenario|target|emitter|disturb/i`.
 
-Five independent barriers (ADR-0003): compile-time proofs, `defineAlgorithm`
+Five independent barriers, enumerated in
+[ALGORITHM_PLUGIN.md](ALGORITHM_PLUGIN.md) and motivated by
+[ADR-0003](adr/0003-ground-truth-isolation.md): compile-time proofs, `defineAlgorithm`
 admission, an ESLint import barrier on the privileged modules, a runtime
 `guardTrackingInput`, and `.test-d.ts` type-level proofs.
 
